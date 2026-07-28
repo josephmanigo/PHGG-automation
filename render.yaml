@@ -32,12 +32,14 @@ services:
         value: "1345795374962704465"
       - key: MOBILE_SCRIM_BOARD_CHANNEL_ID
         value: "1345799937358565407"
+      - key: MOBILE_SCRIM_BOARD_MESSAGE_ID
+        value: "1531616206073893045"
       - key: MOBILE_SCRIM_CANCEL_CHANNEL_ID
         value: "1345800858138574979"
       - key: MOBILE_SCRIM_BANNER_ASSET_ID
         value: "1531588588372885615"
       - key: MOBILE_SCRIM_ALWAYS_OPEN
-        value: "false"
+        value: "true"
       - key: MOBILE_SCRIM_REQUIRE_VALID_NICKNAME
         value: "true"
       - key: MOBILE_SCRIM_MAX_SLOTS

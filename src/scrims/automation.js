@@ -325,8 +325,21 @@ export function installScrimAutomation(client, config, botConfig) {
       config.label,
     )
     await loadCycle()
-    state.boardMessageId =
-      existing && boardCycleId(existing) === state.cycleStartMessageId ? existing.id : null
+    const cycleBoard =
+      existing && boardCycleId(existing) === state.cycleStartMessageId
+        ? existing
+        : null
+    if (cycleBoard) {
+      state.boardMessageId = cycleBoard.id
+    } else if (config.boardMessageId) {
+      const configuredBoard = await boardChannel.messages
+        .fetch(config.boardMessageId)
+        .catch(() => null)
+      state.boardMessageId =
+        configuredBoard?.author.id === readyClient.user.id
+          ? configuredBoard.id
+          : null
+    }
     await syncBoard()
     console.log(
       `${config.label} scrim automation ready: ${state.registrationOpen ? 'OPEN' : 'CLOSED'}, ` +

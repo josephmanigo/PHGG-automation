@@ -4,6 +4,18 @@ function value(name, fallback = '') {
 
 const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1346107866951581817'
 const DEFAULT_SCRIM_RULES_MESSAGE_IDS = '1412431092031553547'
+const DEFAULT_SCRIMS = {
+  MOBILE: {
+    channels: {
+      registration: '1345795374962704465',
+      board: '1345799937358565407',
+      cancel: '1345800858138574979',
+    },
+    bannerAssetId: '1531588588372885615',
+    boardMessageId: '1531616206073893045',
+    alwaysOpen: true,
+  },
+}
 
 function required(name) {
   const result = value(name)
@@ -45,15 +57,19 @@ function parseInteger(name, raw, fallback, { min, max }) {
 }
 
 function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
+  const defaults = DEFAULT_SCRIMS[scope] ?? {}
   const variable = (suffix) => `${scope}_SCRIM_${suffix}`
   const read = (suffix, fallback = '') => {
     const legacyValue = legacy ? value(`SCRIM_${suffix}`) : ''
     return value(variable(suffix), legacyValue || fallback)
   }
   const channels = {
-    registration: read('REGISTRATION_CHANNEL_ID'),
-    board: read('BOARD_CHANNEL_ID'),
-    cancel: read('CANCEL_CHANNEL_ID'),
+    registration: read(
+      'REGISTRATION_CHANNEL_ID',
+      defaults.channels?.registration,
+    ),
+    board: read('BOARD_CHANNEL_ID', defaults.channels?.board),
+    cancel: read('CANCEL_CHANNEL_ID', defaults.channels?.cancel),
   }
   const suppliedChannels = Object.values(channels).filter(Boolean)
   if (suppliedChannels.length > 0 && suppliedChannels.length !== 3) {
@@ -67,9 +83,14 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     enabled: suppliedChannels.length === 3,
     channels,
     openerIds: idSet(read('OPENER_IDS')),
-    bannerAssetId: read('BANNER_ASSET_ID'),
+    bannerAssetId: read('BANNER_ASSET_ID', defaults.bannerAssetId),
     bannerUrl: read('BANNER_URL'),
-    alwaysOpen: parseBoolean(variable('ALWAYS_OPEN'), read('ALWAYS_OPEN')),
+    boardMessageId: read('BOARD_MESSAGE_ID', defaults.boardMessageId),
+    alwaysOpen: parseBoolean(
+      variable('ALWAYS_OPEN'),
+      read('ALWAYS_OPEN'),
+      defaults.alwaysOpen,
+    ),
     requireValidNickname: parseBoolean(
       variable('REQUIRE_VALID_NICKNAME'),
       read('REQUIRE_VALID_NICKNAME'),

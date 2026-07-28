@@ -118,3 +118,45 @@ test('uses the PHGG scrim rules source when Render overrides are absent', () => 
     }
   }
 })
+
+test('uses the PHGG Mobile channels and current historical board by default', () => {
+  const keys = [
+    'DISCORD_BOT_TOKEN',
+    'DISCORD_GUILD_ID',
+    'MOBILE_SCRIM_REGISTRATION_CHANNEL_ID',
+    'MOBILE_SCRIM_BOARD_CHANNEL_ID',
+    'MOBILE_SCRIM_CANCEL_CHANNEL_ID',
+    'MOBILE_SCRIM_BANNER_ASSET_ID',
+    'MOBILE_SCRIM_BOARD_MESSAGE_ID',
+    'MOBILE_SCRIM_ALWAYS_OPEN',
+    'SCRIM_REGISTRATION_CHANNEL_ID',
+    'SCRIM_BOARD_CHANNEL_ID',
+    'SCRIM_CANCEL_CHANNEL_ID',
+    'SCRIM_BANNER_ASSET_ID',
+    'SCRIM_BOARD_MESSAGE_ID',
+    'SCRIM_ALWAYS_OPEN',
+  ]
+  const previous = new Map(keys.map((key) => [key, process.env[key]]))
+  for (const key of keys) delete process.env[key]
+  Object.assign(process.env, {
+    DISCORD_BOT_TOKEN: 'test-token',
+    DISCORD_GUILD_ID: 'test-guild',
+  })
+
+  try {
+    const mobile = loadConfig().scrims.find(({ label }) => label === 'MOBILE')
+    assert.deepEqual(mobile.channels, {
+      registration: '1345795374962704465',
+      board: '1345799937358565407',
+      cancel: '1345800858138574979',
+    })
+    assert.equal(mobile.bannerAssetId, '1531588588372885615')
+    assert.equal(mobile.boardMessageId, '1531616206073893045')
+    assert.equal(mobile.alwaysOpen, true)
+  } finally {
+    for (const [key, oldValue] of previous) {
+      if (oldValue === undefined) delete process.env[key]
+      else process.env[key] = oldValue
+    }
+  }
+})
