@@ -40,6 +40,7 @@ const DEFAULT_SCRIMS = {
     title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
     titleEmojiId: '1337103312989716592',
     timeLabel: '10:00PM PH Time',
+    fixedTimeLabel: true,
     roundsLabel: '4 Rounds | 2SB-1DV-1SI',
   },
 }
@@ -159,7 +160,9 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
       defaults.title ??
       read('TITLE', `${brandName.toUpperCase()} ${scope} SCRIMMAGE SLOT LIST`),
     titleEmojiId: read('TITLE_EMOJI_ID', defaults.titleEmojiId),
-    timeLabel: read('TIME_LABEL', defaults.timeLabel ?? '10:00 PM PH Time'),
+    timeLabel: defaults.fixedTimeLabel
+      ? defaults.timeLabel
+      : read('TIME_LABEL', defaults.timeLabel ?? '10:00 PM PH Time'),
     roundsLabel: read(
       'ROUNDS_LABEL',
       defaults.roundsLabel ?? '4 Rounds | 1SB-1DV-2SI',

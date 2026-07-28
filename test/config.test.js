@@ -168,6 +168,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     MOBILE_SCRIM_ALWAYS_OPEN: 'true',
     MOBILE_SCRIM_TITLE: 'PH GAMING GUILD MOBILE SCRIMMAGE',
     PC_SCRIM_ALWAYS_OPEN: 'true',
+    PC_SCRIM_TIME_LABEL: '08:00 PM (PC) PH Time',
   })
 
   try {
