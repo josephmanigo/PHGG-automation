@@ -119,7 +119,7 @@ test('uses the PHGG scrim rules source when Render overrides are absent', () => 
   }
 })
 
-test('uses the PHGG Mobile channels and current historical board by default', () => {
+test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
   const keys = [
     'DISCORD_BOT_TOKEN',
     'DISCORD_GUILD_ID',
@@ -127,14 +127,23 @@ test('uses the PHGG Mobile channels and current historical board by default', ()
     'MOBILE_SCRIM_BOARD_CHANNEL_ID',
     'MOBILE_SCRIM_CANCEL_CHANNEL_ID',
     'MOBILE_SCRIM_BANNER_ASSET_ID',
-    'MOBILE_SCRIM_BOARD_MESSAGE_ID',
     'MOBILE_SCRIM_ALWAYS_OPEN',
+    'MOBILE_SCRIM_MAX_SLOTS',
+    'MOBILE_SCRIM_EMPTY_WAITLIST_ROWS',
     'SCRIM_REGISTRATION_CHANNEL_ID',
     'SCRIM_BOARD_CHANNEL_ID',
     'SCRIM_CANCEL_CHANNEL_ID',
     'SCRIM_BANNER_ASSET_ID',
-    'SCRIM_BOARD_MESSAGE_ID',
     'SCRIM_ALWAYS_OPEN',
+    'SCRIM_MAX_SLOTS',
+    'SCRIM_EMPTY_WAITLIST_ROWS',
+    'PC_SCRIM_REGISTRATION_CHANNEL_ID',
+    'PC_SCRIM_BOARD_CHANNEL_ID',
+    'PC_SCRIM_CANCEL_CHANNEL_ID',
+    'PC_SCRIM_BANNER_ASSET_ID',
+    'PC_SCRIM_ALWAYS_OPEN',
+    'PC_SCRIM_MAX_SLOTS',
+    'PC_SCRIM_EMPTY_WAITLIST_ROWS',
   ]
   const previous = new Map(keys.map((key) => [key, process.env[key]]))
   for (const key of keys) delete process.env[key]
@@ -151,8 +160,20 @@ test('uses the PHGG Mobile channels and current historical board by default', ()
       cancel: '1345800858138574979',
     })
     assert.equal(mobile.bannerAssetId, '1531588588372885615')
-    assert.equal(mobile.boardMessageId, '1531616206073893045')
-    assert.equal(mobile.alwaysOpen, true)
+    assert.equal(mobile.alwaysOpen, false)
+    assert.equal(mobile.maxSlots, 25)
+    assert.equal(mobile.emptyWaitlistRows, 4)
+
+    const pc = loadConfig().scrims.find(({ label }) => label === 'PC')
+    assert.deepEqual(pc.channels, {
+      registration: '1340963116954947635',
+      board: '1340963180809031721',
+      cancel: '1340963218582929430',
+    })
+    assert.equal(pc.bannerAssetId, '1531588588372885615')
+    assert.equal(pc.alwaysOpen, false)
+    assert.equal(pc.maxSlots, 25)
+    assert.equal(pc.emptyWaitlistRows, 4)
   } finally {
     for (const [key, oldValue] of previous) {
       if (oldValue === undefined) delete process.env[key]

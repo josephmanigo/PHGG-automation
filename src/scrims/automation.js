@@ -1,5 +1,4 @@
 import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
-import { formatNickname } from '../nickname.js'
 import {
   parseCancelContent,
   parseMineContent,
@@ -295,7 +294,7 @@ export function installScrimAutomation(client, config, botConfig) {
       const { message } = event
       if (event.type === 'registration') {
         const registration = validateRegistrationContent(message.content)
-        if (registration.valid && (await hasValidServerNickname(message))) {
+        if (registration.valid) {
           const results = board.registerMany(registration.teams, message.id)
           await setRegistrationReaction(
             message,
@@ -325,21 +324,10 @@ export function installScrimAutomation(client, config, botConfig) {
       config.label,
     )
     await loadCycle()
-    const cycleBoard =
+    state.boardMessageId =
       existing && boardCycleId(existing) === state.cycleStartMessageId
-        ? existing
+        ? existing.id
         : null
-    if (cycleBoard) {
-      state.boardMessageId = cycleBoard.id
-    } else if (config.boardMessageId) {
-      const configuredBoard = await boardChannel.messages
-        .fetch(config.boardMessageId)
-        .catch(() => null)
-      state.boardMessageId =
-        configuredBoard?.author.id === readyClient.user.id
-          ? configuredBoard.id
-          : null
-    }
     await syncBoard()
     console.log(
       `${config.label} scrim automation ready: ${state.registrationOpen ? 'OPEN' : 'CLOSED'}, ` +
@@ -374,15 +362,6 @@ export function installScrimAutomation(client, config, botConfig) {
     await message.react(wanted).catch(() => undefined)
   }
 
-  async function hasValidServerNickname(message) {
-    if (!config.requireValidNickname) return true
-    const member =
-      message.member ??
-      (await message.guild?.members.fetch(message.author.id).catch(() => null))
-    if (!member?.nickname) return false
-    return formatNickname(member.nickname).ok
-  }
-
   async function handleRegistration(message) {
     if (isRegistrationOpener(message, config)) {
       trustOpenerAuthor(message, config)
@@ -402,14 +381,7 @@ export function installScrimAutomation(client, config, botConfig) {
     }
     if (!registration.valid) {
       console.warn(
-        `${config.label} registration rejected for ${message.author.tag}: use "CLAN TAG - TEAM NAME |🇵🇭".`,
-      )
-      await message.react('❌').catch(() => undefined)
-      return
-    }
-    if (!(await hasValidServerNickname(message))) {
-      console.warn(
-        `${config.label} registration rejected for ${message.author.tag}: the member has no valid server nickname.`,
+        `${config.label} registration rejected for ${message.author.tag}: use "🇵🇭 | CLAN TAG - TEAM NAME".`,
       )
       await message.react('❌').catch(() => undefined)
       return
@@ -447,6 +419,10 @@ export function installScrimAutomation(client, config, botConfig) {
     const mine = parseMineContent(message.content)
     const referenceId = message.reference?.messageId
     if (!mine || !referenceId) return
+    const referencedMessage = await message.channel.messages
+      .fetch(referenceId)
+      .catch(() => null)
+    if (!referencedMessage || !parseCancelContent(referencedMessage.content)) return
     const result = board.claim(mine, referenceId, message.id)
     if (result.status === 'claimed') {
       await syncBoard()

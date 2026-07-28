@@ -32,20 +32,18 @@ services:
         value: "1345795374962704465"
       - key: MOBILE_SCRIM_BOARD_CHANNEL_ID
         value: "1345799937358565407"
-      - key: MOBILE_SCRIM_BOARD_MESSAGE_ID
-        value: "1531616206073893045"
       - key: MOBILE_SCRIM_CANCEL_CHANNEL_ID
         value: "1345800858138574979"
       - key: MOBILE_SCRIM_BANNER_ASSET_ID
         value: "1531588588372885615"
       - key: MOBILE_SCRIM_ALWAYS_OPEN
-        value: "true"
+        value: "false"
       - key: MOBILE_SCRIM_REQUIRE_VALID_NICKNAME
-        value: "true"
+        value: "false"
       - key: MOBILE_SCRIM_MAX_SLOTS
-        value: "20"
+        value: "25"
       - key: MOBILE_SCRIM_EMPTY_WAITLIST_ROWS
-        value: "11"
+        value: "4"
       - key: MOBILE_SCRIM_TITLE
         value: PH GAMING GUILD MOBILE SCRIMMAGE
       - key: MOBILE_SCRIM_TIME_LABEL
@@ -63,11 +61,11 @@ services:
       - key: PC_SCRIM_ALWAYS_OPEN
         value: "false"
       - key: PC_SCRIM_REQUIRE_VALID_NICKNAME
-        value: "true"
+        value: "false"
       - key: PC_SCRIM_MAX_SLOTS
-        value: "20"
+        value: "25"
       - key: PC_SCRIM_EMPTY_WAITLIST_ROWS
-        value: "11"
+        value: "4"
       - key: PC_SCRIM_TITLE
         value: "PH GAMING GUILD BS OPERATION: DOMINATION"
       - key: PC_SCRIM_TIME_LABEL

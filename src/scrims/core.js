@@ -28,7 +28,10 @@ export function makeTeam(tag, name) {
 }
 
 function parseRegistrationLine(line) {
-  const match = /^\s*(.{1,16}?)\s*-\s*(.{1,64}?)\s*\|\s*🇵🇭\s*$/u.exec(line)
+  const match =
+    /^\s*[\u{1F1E6}-\u{1F1FF}]{2}\s*\|\s*(.{1,16}?)\s*-\s*(.{1,64}?)\s*$/u.exec(
+      line,
+    )
   return match ? makeTeam(match[1], match[2]) : null
 }
 

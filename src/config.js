@@ -12,8 +12,14 @@ const DEFAULT_SCRIMS = {
       cancel: '1345800858138574979',
     },
     bannerAssetId: '1531588588372885615',
-    boardMessageId: '1531616206073893045',
-    alwaysOpen: true,
+  },
+  PC: {
+    channels: {
+      registration: '1340963116954947635',
+      board: '1340963180809031721',
+      cancel: '1340963218582929430',
+    },
+    bannerAssetId: '1531588588372885615',
   },
 }
 
@@ -85,12 +91,7 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     openerIds: idSet(read('OPENER_IDS')),
     bannerAssetId: read('BANNER_ASSET_ID', defaults.bannerAssetId),
     bannerUrl: read('BANNER_URL'),
-    boardMessageId: read('BOARD_MESSAGE_ID', defaults.boardMessageId),
-    alwaysOpen: parseBoolean(
-      variable('ALWAYS_OPEN'),
-      read('ALWAYS_OPEN'),
-      defaults.alwaysOpen,
-    ),
+    alwaysOpen: parseBoolean(variable('ALWAYS_OPEN'), read('ALWAYS_OPEN')),
     requireValidNickname: parseBoolean(
       variable('REQUIRE_VALID_NICKNAME'),
       read('REQUIRE_VALID_NICKNAME'),
