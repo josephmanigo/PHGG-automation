@@ -10,10 +10,13 @@ import {
 const MAX_WAITLIST_DISPLAY = 40
 const ALWAYS_OPEN_CYCLE_ID = 'ALWAYS_OPEN'
 const CANCEL_SLOT_FORMAT_MESSAGE = [
-  '❌ **Wrong format.** Use:',
+  '❌ **WRONG FORMAT**',
+  'Follow this format:',
   '`CANCEL - TEAM NAME`',
-  '',
-  'To claim a canceled slot, reply directly to its **CANCEL** message with:',
+].join('\n')
+const MINE_SLOT_FORMAT_MESSAGE = [
+  '❌ **WRONG FORMAT**',
+  'Follow this format:',
   '`MINE - CLAN TAG TEAM NAME`',
 ].join('\n')
 
@@ -451,9 +454,14 @@ export function installScrimAutomation(client, config, botConfig) {
     await message.react('❌').catch(() => undefined)
   }
 
-  async function rejectCancellationFormat(message) {
+  async function rejectCancellationFormat(message, expectedCommand = 'CANCEL') {
     await setCancellationFormatReaction(message, false)
-    await reply(message, CANCEL_SLOT_FORMAT_MESSAGE)
+    await reply(
+      message,
+      expectedCommand === 'MINE'
+        ? MINE_SLOT_FORMAT_MESSAGE
+        : CANCEL_SLOT_FORMAT_MESSAGE,
+    )
   }
 
   async function handleRegistration(message) {
@@ -489,7 +497,11 @@ export function installScrimAutomation(client, config, botConfig) {
     const mine = parseMineContent(message.content)
     const referenceId = message.reference?.messageId
     if (!cancel && (!mine || !referenceId)) {
-      if (config.label === 'MOBILE') await rejectCancellationFormat(message)
+      if (config.label === 'MOBILE') {
+        const expectedCommand =
+          /^\s*MINE\b/i.test(message.content) || referenceId ? 'MINE' : 'CANCEL'
+        await rejectCancellationFormat(message, expectedCommand)
+      }
       return
     }
     if (config.label === 'MOBILE') {
@@ -522,7 +534,9 @@ export function installScrimAutomation(client, config, botConfig) {
       .fetch(referenceId)
       .catch(() => null)
     if (!referencedMessage || !parseCancelContent(referencedMessage.content)) {
-      if (config.label === 'MOBILE') await rejectCancellationFormat(message)
+      if (config.label === 'MOBILE') {
+        await rejectCancellationFormat(message, 'MINE')
+      }
       return
     }
     const result = board.claim(mine, referenceId, message.id)
@@ -538,7 +552,7 @@ export function installScrimAutomation(client, config, botConfig) {
         `⚠️ **${result.team.name}** is already in slot **${slotCode(result.slotIndex)}**.`,
       )
     } else if (result.status === 'invalid_team' && config.label === 'MOBILE') {
-      await rejectCancellationFormat(message)
+      await rejectCancellationFormat(message, 'MINE')
     } else {
       await reply(message, '❌ That canceled slot is no longer available.')
     }
