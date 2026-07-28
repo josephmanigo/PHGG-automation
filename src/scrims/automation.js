@@ -297,10 +297,6 @@ export function installScrimAutomation(client, config, botConfig) {
         .fetch(config.bannerAssetId)
         .catch(() => null)
     }
-    for (const message of registrationMessages) {
-      await clearBotRegistrationReactions(message)
-    }
-
     const opener =
       [...registrationMessages]
         .reverse()
@@ -394,7 +390,7 @@ export function installScrimAutomation(client, config, botConfig) {
       const reaction = message.reactions.cache.find(
         (entry) => entry.emoji.name === emoji,
       )
-      if (reaction && client.user) {
+      if (reaction?.me && client.user) {
         await reaction.users.remove(client.user.id).catch(() => undefined)
       }
     }
@@ -406,9 +402,13 @@ export function installScrimAutomation(client, config, botConfig) {
     const oldReaction = message.reactions.cache.find(
       (reaction) => reaction.emoji.name === unwanted,
     )
-    if (oldReaction && client.user) {
+    if (oldReaction?.me && client.user) {
       await oldReaction.users.remove(client.user.id).catch(() => undefined)
     }
+    const currentReaction = message.reactions.cache.find(
+      (reaction) => reaction.emoji.name === wanted,
+    )
+    if (currentReaction?.me) return
     await message.react(wanted).catch(() => undefined)
   }
 
