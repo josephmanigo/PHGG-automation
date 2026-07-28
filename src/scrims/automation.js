@@ -264,7 +264,7 @@ export function installScrimAutomation(client, config, botConfig) {
         : null)
     if (opener) {
       openRegistration(opener)
-      await markOpeningMessage(opener)
+      await clearRejectedOpenerReaction(opener)
     } else if (config.alwaysOpen) {
       board.reset()
       state.registrationOpen = true
@@ -331,14 +331,13 @@ export function installScrimAutomation(client, config, botConfig) {
     await message.reply({ content, allowedMentions: { parse: [] } }).catch(() => undefined)
   }
 
-  async function markOpeningMessage(message) {
+  async function clearRejectedOpenerReaction(message) {
     const rejectedReaction = message.reactions.cache.find(
       (reaction) => reaction.emoji.name === '❌',
     )
     if (rejectedReaction && client.user) {
       await rejectedReaction.users.remove(client.user.id).catch(() => undefined)
     }
-    await message.react('✅').catch(() => undefined)
   }
 
   async function hasValidServerNickname(message) {
@@ -355,7 +354,7 @@ export function installScrimAutomation(client, config, botConfig) {
       trustOpenerAuthor(message, config)
       openRegistration(message, { createBoard: true })
       await syncBoard()
-      await markOpeningMessage(message)
+      await clearRejectedOpenerReaction(message)
       return
     }
 
