@@ -13,9 +13,9 @@ import {
   trustOpenerAuthor,
 } from '../src/scrims/automation.js'
 
-test('parses the NightRaid flag-first registration lines atomically', () => {
+test('parses PHGG flag-last registration lines atomically', () => {
   const result = validateRegistrationContent(
-    ['🇵🇭 | ABC - ALPHA TEAM', '🇵🇭 | XYZ - BRAVO TEAM'].join('\n'),
+    ['ABC - ALPHA TEAM | 🇵🇭', 'XYZ - BRAVO TEAM | 🇵🇭'].join('\n'),
   )
   assert.equal(result.valid, true)
   assert.deepEqual(
@@ -32,8 +32,8 @@ test('parses the NightRaid flag-first registration lines atomically', () => {
   })
 })
 
-test('accepts the exact NightRaid AMT registration format', () => {
-  const result = validateRegistrationContent('🇵🇭 | AMT - THE UNCLAIMED')
+test('accepts the exact displayed AMT registration format', () => {
+  const result = validateRegistrationContent('AMT - THE UNCLAIMED | 🇵🇭')
   assert.equal(result.valid, true)
   assert.deepEqual(
     result.teams.map(({ tag, name }) => ({ tag, name })),
@@ -41,9 +41,11 @@ test('accepts the exact NightRaid AMT registration format', () => {
   )
 })
 
-test('rejects flag-last registrations and accepts any flag like NightRaid', () => {
-  assert.equal(validateRegistrationContent('ABC - ALPHA TEAM | 🇵🇭').valid, false)
-  assert.equal(validateRegistrationContent('🇺🇸 | ABC - ALPHA TEAM').valid, true)
+test('requires the Philippine flag at the end', () => {
+  assert.equal(validateRegistrationContent('ABC - ALPHA TEAM | 🇵🇭').valid, true)
+  assert.equal(validateRegistrationContent('2EZ4 - TEST TEAM |🇵🇭').valid, true)
+  assert.equal(validateRegistrationContent('🇵🇭 | ABC - ALPHA TEAM').valid, false)
+  assert.equal(validateRegistrationContent('ABC - ALPHA TEAM | 🇺🇸').valid, false)
 })
 
 test('recognizes the official mobile registration opening GIF asset', () => {

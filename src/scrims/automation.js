@@ -383,7 +383,7 @@ export function installScrimAutomation(client, config, botConfig) {
     }
     if (!registration.valid) {
       console.warn(
-        `${config.label} registration rejected for ${message.author.tag}: use "🇵🇭 | CLAN TAG - TEAM NAME".`,
+        `${config.label} registration rejected for ${message.author.tag}: use "CLAN TAG - TEAM NAME | 🇵🇭".`,
       )
       await message.react('❌').catch(() => undefined)
       return
