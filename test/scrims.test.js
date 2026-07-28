@@ -60,6 +60,23 @@ test('recognizes the official mobile registration opening GIF asset', () => {
   )
 })
 
+test('recognizes an official registration opening GIF by Discord message ID', () => {
+  const message = {
+    id: '1531588588372885615',
+    content: '',
+    author: { id: 'unlisted-user' },
+    attachments: new Map(),
+    embeds: [],
+  }
+  assert.equal(
+    isRegistrationOpener(message, {
+      bannerAssetId: '1531588588372885615',
+      openerIds: new Set(),
+    }),
+    true,
+  )
+})
+
 test('fills slots, then waitlist, and prevents duplicates', () => {
   const board = new ScrimBoard(2)
   assert.equal(board.register(makeTeam('A', 'ALPHA')).status, 'slot')

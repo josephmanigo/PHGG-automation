@@ -17,6 +17,7 @@ function isGifUrl(value) {
 
 function messageSignals(message) {
   return [
+    message.id,
     message.content,
     ...[...message.attachments.values()].flatMap((attachment) => [
       attachment.id,
@@ -231,9 +232,17 @@ export function installScrimAutomation(client, config, botConfig) {
     const registrationMessages = [
       ...(await registrationChannel.messages.fetch({ limit: 100 })).values(),
     ].sort((left, right) => left.createdTimestamp - right.createdTimestamp)
-    const opener = [...registrationMessages]
+    let opener = [...registrationMessages]
       .reverse()
       .find((message) => isRegistrationOpener(message, config))
+    if (!opener && config.bannerAssetId) {
+      const exactMessage = await registrationChannel.messages
+        .fetch(config.bannerAssetId)
+        .catch(() => null)
+      if (exactMessage && isRegistrationOpener(exactMessage, config)) {
+        opener = exactMessage
+      }
+    }
     if (opener) {
       openRegistration(opener)
     } else if (config.alwaysOpen) {
@@ -319,11 +328,24 @@ export function installScrimAutomation(client, config, botConfig) {
     }
 
     const registration = validateRegistrationContent(message.content)
-    if (
-      !state.registrationOpen ||
-      !registration.valid ||
-      !(await hasValidServerNickname(message))
-    ) {
+    if (!state.registrationOpen) {
+      console.warn(
+        `${config.label} registration rejected for ${message.author.tag}: the official opening GIF was not detected.`,
+      )
+      await message.react('❌').catch(() => undefined)
+      return
+    }
+    if (!registration.valid) {
+      console.warn(
+        `${config.label} registration rejected for ${message.author.tag}: use "CLAN TAG - TEAM NAME | 🇵🇭".`,
+      )
+      await message.react('❌').catch(() => undefined)
+      return
+    }
+    if (!(await hasValidServerNickname(message))) {
+      console.warn(
+        `${config.label} registration rejected for ${message.author.tag}: the member has no valid server nickname.`,
+      )
       await message.react('❌').catch(() => undefined)
       return
     }
