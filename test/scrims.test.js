@@ -13,6 +13,8 @@ import {
   isAutomatedRegistrationOpener,
   isRegistrationOpener,
   replayScrimEvents,
+  SCRIM_CHECK_REACTION_ID,
+  SCRIM_CROSS_REACTION_ID,
 } from '../src/scrims/automation.js'
 
 test('parses PHGG flag-last registration lines atomically', () => {
@@ -32,6 +34,11 @@ test('parses PHGG flag-last registration lines atomically', () => {
     valid: false,
     teams: [],
   })
+})
+
+test('uses the configured PHGG custom registration reactions', () => {
+  assert.equal(SCRIM_CHECK_REACTION_ID, '1472902880120934431')
+  assert.equal(SCRIM_CROSS_REACTION_ID, '1470736595673157754')
 })
 
 test('accepts the exact displayed AMT registration format', () => {
