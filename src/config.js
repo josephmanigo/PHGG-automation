@@ -2,6 +2,9 @@ function value(name, fallback = '') {
   return process.env[name]?.trim() || fallback
 }
 
+const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1346107866951581817'
+const DEFAULT_SCRIM_RULES_MESSAGE_IDS = '1412431092031553547'
+
 function required(name) {
   const result = value(name)
   if (!result) throw new Error(`Missing required environment variable: ${name}`)
@@ -110,8 +113,14 @@ export function loadConfig() {
   const brandName = value('BOT_BRAND_NAME', 'PHGG')
   const nicknameChannelId = value('DISCORD_NICKNAME_CHANNEL_ID')
   const rulesChannelId = value('DISCORD_RULES_CHANNEL_ID')
-  const scrimRulesChannelId = value('SCRIM_RULES_CHANNEL_ID')
-  const scrimRulesMessageIds = value('SCRIM_RULES_MESSAGE_IDS')
+  const scrimRulesChannelId = value(
+    'SCRIM_RULES_CHANNEL_ID',
+    DEFAULT_SCRIM_RULES_CHANNEL_ID,
+  )
+  const scrimRulesMessageIds = value(
+    'SCRIM_RULES_MESSAGE_IDS',
+    DEFAULT_SCRIM_RULES_MESSAGE_IDS,
+  )
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean)

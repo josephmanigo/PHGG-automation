@@ -89,3 +89,32 @@ test('loads independent mobile and PC scrim channel sets', () => {
     }
   }
 })
+
+test('uses the PHGG scrim rules source when Render overrides are absent', () => {
+  const keys = [
+    'DISCORD_BOT_TOKEN',
+    'DISCORD_GUILD_ID',
+    'SCRIM_RULES_CHANNEL_ID',
+    'SCRIM_RULES_MESSAGE_IDS',
+  ]
+  const previous = new Map(keys.map((key) => [key, process.env[key]]))
+  Object.assign(process.env, {
+    DISCORD_BOT_TOKEN: 'test-token',
+    DISCORD_GUILD_ID: 'test-guild',
+  })
+  delete process.env.SCRIM_RULES_CHANNEL_ID
+  delete process.env.SCRIM_RULES_MESSAGE_IDS
+
+  try {
+    assert.deepEqual(loadConfig().rules.scrims, {
+      enabled: true,
+      channelId: '1346107866951581817',
+      messageIds: ['1412431092031553547'],
+    })
+  } finally {
+    for (const [key, oldValue] of previous) {
+      if (oldValue === undefined) delete process.env[key]
+      else process.env[key] = oldValue
+    }
+  }
+})
