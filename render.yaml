@@ -68,6 +68,8 @@ services:
         value: "1531386417434071191"
       - key: PC_SCRIM_BANNER_SIGNAL_IDS
         value: "1531386417123426384"
+      - key: PC_SCRIM_BOARD_HEADER_MESSAGE_ID
+        value: "1531616934385418320"
       - key: PC_SCRIM_ALWAYS_OPEN
         value: "false"
       - key: PC_SCRIM_REQUIRE_VALID_NICKNAME

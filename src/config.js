@@ -31,6 +31,7 @@ const DEFAULT_SCRIMS = {
     },
     bannerAssetId: '1531386417434071191',
     bannerSignalIds: ['1531386417123426384'],
+    boardHeaderMessageId: '1531616934385418320',
     alwaysOpen: false,
     maxSlots: 25,
     emptyWaitlistRows: 11,

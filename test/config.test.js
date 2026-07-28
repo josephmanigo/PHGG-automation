@@ -149,6 +149,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     'PC_SCRIM_CANCEL_CHANNEL_ID',
     'PC_SCRIM_BANNER_ASSET_ID',
     'PC_SCRIM_BANNER_SIGNAL_IDS',
+    'PC_SCRIM_BOARD_HEADER_MESSAGE_ID',
     'PC_SCRIM_ALWAYS_OPEN',
     'PC_SCRIM_MAX_SLOTS',
     'PC_SCRIM_EMPTY_WAITLIST_ROWS',
@@ -205,6 +206,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       [...pc.bannerSignalIds],
       ['1531386417123426384'],
     )
+    assert.equal(pc.boardHeaderMessageId, '1531616934385418320')
     assert.equal(pc.alwaysOpen, false)
     assert.equal(pc.maxSlots, 25)
     assert.equal(pc.emptyWaitlistRows, 11)
