@@ -195,20 +195,60 @@ async function textChannel(client, channelId) {
   return channel
 }
 
+async function recentScheduledBotMessages(
+  channel,
+  clientUserId,
+  scheduler,
+  runKey,
+) {
+  return [
+    ...(await channel.messages.fetch({ limit: 100 })).values(),
+  ].filter((message) => {
+    if (message.author.id !== clientUserId) return false
+    const local = localDateTime(
+      new Date(message.createdTimestamp),
+      scheduler.timezone,
+    )
+    const scheduled = timeParts(scheduler.time)
+    const scheduledMinutes =
+      Number(scheduled.hour) * 60 + Number(scheduled.minute)
+    return local.dateKey === runKey && local.minutes >= scheduledMinutes
+  })
+}
+
+async function publishAfterMessageOnce(
+  client,
+  action,
+  scheduler,
+  runKey,
+) {
+  const channel = await textChannel(client, action.channelId)
+  const source = await channel.messages.fetch(action.messageId)
+  const recent = await recentScheduledBotMessages(
+    channel,
+    client.user.id,
+    scheduler,
+    runKey,
+  )
+  const signature = messageSignature(source)
+  if (recent.some((message) => messageSignature(message) === signature)) {
+    return false
+  }
+  await channel.send(clonePayload(source, scheduler.allowMentions))
+  return true
+}
+
 async function publishGroup(client, group, scheduler, runKey) {
   const channel = await textChannel(client, group.channelId)
   const sources = await Promise.all(
     group.messageIds.map((messageId) => channel.messages.fetch(messageId)),
   )
-  const recent = [
-    ...(await channel.messages.fetch({ limit: 100 })).values(),
-  ].filter((message) => {
-    if (message.author.id !== client.user.id) return false
-    const local = localDateTime(new Date(message.createdTimestamp), scheduler.timezone)
-    const scheduled = timeParts(scheduler.time)
-    const scheduledMinutes = Number(scheduled.hour) * 60 + Number(scheduled.minute)
-    return local.dateKey === runKey && local.minutes >= scheduledMinutes
-  })
+  const recent = await recentScheduledBotMessages(
+    channel,
+    client.user.id,
+    scheduler,
+    runKey,
+  )
   const remainingRecent = [...recent]
   const datedMessageIds = new Set(group.dateMessageIds ?? [])
   const dateLabel = announcementDateLabel(runKey)
@@ -233,8 +273,17 @@ async function publishGroup(client, group, scheduler, runKey) {
     )
     posted += 1
   }
+  let afterPosted = 0
+  for (const action of group.afterMessages ?? []) {
+    if (await publishAfterMessageOnce(client, action, scheduler, runKey)) {
+      afterPosted += 1
+    }
+  }
   console.log(
-    `${group.label} weekly announcement ${posted > 0 ? `posted (${posted} messages)` : 'already posted'} for ${runKey}.`,
+    `${group.label} weekly announcement ` +
+      `${posted > 0 ? `posted (${posted} messages)` : 'already posted'} ` +
+      `with ${afterPosted > 0 ? `${afterPosted} follow-up` : 'follow-up already posted'} ` +
+      `for ${runKey}.`,
   )
 }
 

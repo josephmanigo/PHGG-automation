@@ -10,6 +10,7 @@ import {
 } from '../src/scrims/core.js'
 import {
   buildEmbeds,
+  isAutomatedRegistrationOpener,
   isRegistrationOpener,
   replayScrimEvents,
 } from '../src/scrims/automation.js'
@@ -118,6 +119,40 @@ test('recognizes the PC starter GIF attachment signal', () => {
       openerIds: new Set(),
     }),
     true,
+  )
+})
+
+test('recognizes only the bot-owned copied mobile starter GIF', () => {
+  const message = {
+    id: 'copied-mobile-starter',
+    content: '',
+    author: { id: 'phgg-bot' },
+    attachments: new Map([
+      [
+        'new-discord-attachment',
+        {
+          id: 'new-discord-attachment',
+          name: 'Mob_Reg.gif',
+          url: 'https://cdn.discordapp.com/new-discord-attachment/Mob_Reg.gif',
+        },
+      ],
+    ]),
+    embeds: [],
+  }
+  const config = {
+    automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+  }
+  assert.equal(
+    isAutomatedRegistrationOpener(message, config, 'phgg-bot'),
+    true,
+  )
+  assert.equal(
+    isAutomatedRegistrationOpener(
+      { ...message, author: { id: 'another-user' } },
+      config,
+      'phgg-bot',
+    ),
+    false,
   )
 })
 

@@ -9,6 +9,15 @@ const ANNOUNCEMENT_DATE_MESSAGE_IDS = {
   MOBILE: ['1531386979907014667'],
   PC: ['1531386923203952910'],
 }
+const ANNOUNCEMENT_AFTER_MESSAGES = {
+  MOBILE: [
+    {
+      channelId: '1345795374962704465',
+      messageId: '1531385928105594940',
+    },
+  ],
+  PC: [],
+}
 const DEFAULT_SCRIMS = {
   MOBILE: {
     channels: {
@@ -18,6 +27,7 @@ const DEFAULT_SCRIMS = {
     },
     bannerAssetId: '1531385928105594940',
     bannerSignalIds: ['1531385927811989674'],
+    automatedStarterAttachmentNames: ['Mob_Reg.gif'],
     boardHeaderMessageId: '1531588588372885615',
     boardTemplateMessageId: '1529059937068777620',
     alwaysOpen: false,
@@ -36,6 +46,7 @@ const DEFAULT_SCRIMS = {
     },
     bannerAssetId: '1531386417434071191',
     bannerSignalIds: ['1531386417123426384'],
+    automatedStarterAttachmentNames: ['PC_reg.gif'],
     boardHeaderMessageId: '1531616934385418320',
     alwaysOpen: false,
     maxSlots: 25,
@@ -120,6 +131,9 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     bannerSignalIds: idSet(
       read('BANNER_SIGNAL_IDS', defaults.bannerSignalIds?.join(',')),
     ),
+    automatedStarterAttachmentNames: new Set(
+      defaults.automatedStarterAttachmentNames ?? [],
+    ),
     bannerUrl: read('BANNER_URL'),
     boardHeaderMessageId: read(
       'BOARD_HEADER_MESSAGE_ID',
@@ -192,6 +206,7 @@ function loadAnnouncementConfig(scope) {
     channelId,
     messageIds,
     dateMessageIds: ANNOUNCEMENT_DATE_MESSAGE_IDS[scope] ?? [],
+    afterMessages: ANNOUNCEMENT_AFTER_MESSAGES[scope] ?? [],
   }
 }
 

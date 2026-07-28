@@ -86,6 +86,26 @@ export function isRegistrationOpener(message, config) {
   return hasConfiguredStarterSignal(message, config)
 }
 
+export function isAutomatedRegistrationOpener(message, config, botUserId) {
+  if (!botUserId || message.author?.id !== botUserId) return false
+  if (validateRegistrationContent(message.content).valid) return false
+  const expectedNames = new Set(
+    [...(config.automatedStarterAttachmentNames ?? [])].map((name) =>
+      name.toLowerCase(),
+    ),
+  )
+  return [...message.attachments.values()].some((attachment) =>
+    expectedNames.has((attachment.name ?? '').toLowerCase()),
+  )
+}
+
+function isCycleOpener(message, config, botUserId) {
+  return (
+    isRegistrationOpener(message, config) ||
+    isAutomatedRegistrationOpener(message, config, botUserId)
+  )
+}
+
 function dateLabel(timezone) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -348,7 +368,7 @@ export function installScrimAutomation(client, config, botConfig) {
     const opener =
       [...registrationMessages]
         .reverse()
-        .find((message) => isRegistrationOpener(message, config)) ??
+        .find((message) => isCycleOpener(message, config, client.user?.id)) ??
       (configuredOpener && isRegistrationOpener(configuredOpener, config)
         ? configuredOpener
         : null)
@@ -467,7 +487,7 @@ export function installScrimAutomation(client, config, botConfig) {
   }
 
   async function handleRegistration(message) {
-    if (isRegistrationOpener(message, config)) {
+    if (isCycleOpener(message, config, client.user?.id)) {
       openRegistration(message, { createBoard: true })
       await syncBoard()
       await clearBotRegistrationReactions(message)
@@ -582,10 +602,17 @@ export function installScrimAutomation(client, config, botConfig) {
   })
 
   client.on(Events.MessageCreate, (message) => {
-    if (message.author.bot || !message.inGuild()) return
+    if (!message.inGuild()) return
     if (message.channelId === config.channels.registration) {
+      if (
+        message.author.bot &&
+        !isAutomatedRegistrationOpener(message, config, client.user?.id)
+      ) {
+        return
+      }
       if (claimMessage(message.id)) queue(() => handleRegistration(message))
     } else if (message.channelId === config.channels.cancel) {
+      if (message.author.bot) return
       if (claimMessage(message.id)) queue(() => handleCancellation(message))
     }
   })
