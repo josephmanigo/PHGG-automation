@@ -156,6 +156,33 @@ test('recognizes only the bot-owned copied mobile starter GIF', () => {
   )
 })
 
+test('recognizes the bot-owned copied PC starter GIF', () => {
+  const message = {
+    id: 'copied-pc-starter',
+    content: '',
+    author: { id: 'phgg-bot' },
+    attachments: new Map([
+      [
+        'new-pc-attachment',
+        {
+          id: 'new-pc-attachment',
+          name: 'PC_reg.gif',
+          url: 'https://cdn.discordapp.com/new-pc-attachment/PC_reg.gif',
+        },
+      ],
+    ]),
+    embeds: [],
+  }
+  assert.equal(
+    isAutomatedRegistrationOpener(
+      message,
+      { automatedStarterAttachmentNames: new Set(['PC_reg.gif']) },
+      'phgg-bot',
+    ),
+    true,
+  )
+})
+
 test('rejects a different GIF even when posted by an administrator', () => {
   assert.equal(
     isRegistrationOpener(

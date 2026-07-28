@@ -83,7 +83,12 @@ test('loads independent mobile and PC scrim channel sets', () => {
         channelId: 'pc-announcements',
         messageIds: ['pc-message-1', 'pc-message-2'],
         dateMessageIds: ['1531386923203952910'],
-        afterMessages: [],
+        afterMessages: [
+          {
+            channelId: '1340963116954947635',
+            messageId: '1531386417434071191',
+          },
+        ],
       },
     ])
     assert.deepEqual(config.rules.scrims, {

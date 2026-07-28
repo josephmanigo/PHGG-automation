@@ -16,7 +16,12 @@ const ANNOUNCEMENT_AFTER_MESSAGES = {
       messageId: '1531385928105594940',
     },
   ],
-  PC: [],
+  PC: [
+    {
+      channelId: '1340963116954947635',
+      messageId: '1531386417434071191',
+    },
+  ],
 }
 const DEFAULT_SCRIMS = {
   MOBILE: {
