@@ -79,8 +79,8 @@ test('loads independent mobile and PC scrim channel sets', () => {
     ])
     assert.deepEqual(config.rules.scrims, {
       enabled: true,
-      channelId: 'scrim-rules-channel',
-      messageIds: ['scrim-rules-message'],
+      channelId: '1345795209417457685',
+      messageIds: ['1346107866951581817', '1412431092031553547'],
     })
   } finally {
     for (const [key, oldValue] of previous) {
@@ -90,7 +90,7 @@ test('loads independent mobile and PC scrim channel sets', () => {
   }
 })
 
-test('uses the PHGG scrim rules source when Render overrides are absent', () => {
+test('ignores stale Render overrides for the PHGG scrim rules source', () => {
   const keys = [
     'DISCORD_BOT_TOKEN',
     'DISCORD_GUILD_ID',
@@ -101,15 +101,15 @@ test('uses the PHGG scrim rules source when Render overrides are absent', () => 
   Object.assign(process.env, {
     DISCORD_BOT_TOKEN: 'test-token',
     DISCORD_GUILD_ID: 'test-guild',
+    SCRIM_RULES_CHANNEL_ID: 'old-invalid-channel',
+    SCRIM_RULES_MESSAGE_IDS: 'old-invalid-message',
   })
-  delete process.env.SCRIM_RULES_CHANNEL_ID
-  delete process.env.SCRIM_RULES_MESSAGE_IDS
 
   try {
     assert.deepEqual(loadConfig().rules.scrims, {
       enabled: true,
-      channelId: '1346107866951581817',
-      messageIds: ['1412431092031553547'],
+      channelId: '1345795209417457685',
+      messageIds: ['1346107866951581817', '1412431092031553547'],
     })
   } finally {
     for (const [key, oldValue] of previous) {
