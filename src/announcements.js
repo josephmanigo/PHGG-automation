@@ -59,14 +59,64 @@ function localDateTime(date, timezone) {
   }
 }
 
-function cloneEmbed(embed) {
+export function announcementDateLabel(runKey) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(runKey)
+  if (!match) throw new Error(`Invalid announcement run date: ${runKey}.`)
+  const date = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12),
+  )
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    weekday: 'long',
+  }).formatToParts(date)
+  const part = (type) => parts.find((entry) => entry.type === type)?.value ?? ''
+  return `${part('month')} ${part('day')}, ${part('year')} (${part('weekday')})`
+}
+
+export function replaceAnnouncementDate(value, dateLabel) {
+  if (!value) return value
+  return value.replace(
+    /(\bDATE\b\s*:\s*\*{0,2}\s*)[^\r\n]*/gi,
+    `$1${dateLabel}`,
+  )
+}
+
+function cloneEmbed(embed, dateLabel = null) {
   const result = new EmbedBuilder()
-  if (embed.title) result.setTitle(embed.title)
-  if (embed.description) result.setDescription(embed.description)
+  if (embed.title) {
+    result.setTitle(
+      dateLabel ? replaceAnnouncementDate(embed.title, dateLabel) : embed.title,
+    )
+  }
+  if (embed.description) {
+    result.setDescription(
+      dateLabel
+        ? replaceAnnouncementDate(embed.description, dateLabel)
+        : embed.description,
+    )
+  }
   if (embed.url) result.setURL(embed.url)
   if (embed.color !== null) result.setColor(embed.color)
   if (embed.timestamp) result.setTimestamp(new Date(embed.timestamp))
-  if (embed.fields.length > 0) result.setFields(embed.fields)
+  if (embed.fields.length > 0) {
+    result.setFields(
+      embed.fields.map((field) => ({
+        ...field,
+        name: dateLabel
+          ? replaceAnnouncementDate(field.name, dateLabel)
+          : field.name,
+        value:
+          dateLabel && /^\s*\**\s*DATE\s*:?\s*\**\s*$/i.test(field.name)
+            ? dateLabel
+            : dateLabel
+              ? replaceAnnouncementDate(field.value, dateLabel)
+              : field.value,
+      })),
+    )
+  }
   if (embed.author?.name) {
     result.setAuthor({
       name: embed.author.name,
@@ -82,31 +132,48 @@ function cloneEmbed(embed) {
   return result
 }
 
-function messageSignature(message) {
+function messageSignature(message, normalizeDate = false) {
+  const text = (value) =>
+    normalizeDate ? replaceAnnouncementDate(value, '<DATE>') : value
   return JSON.stringify({
-    content: message.content,
+    content: text(message.content),
     attachments: [...message.attachments.values()].map((attachment) => ({
       name: attachment.name,
       size: attachment.size,
     })),
     embeds: message.embeds.map((embed) => ({
-      title: embed.title,
-      description: embed.description,
+      title: text(embed.title),
+      description: text(embed.description),
       url: embed.url,
       image: embed.image?.url,
       thumbnail: embed.thumbnail?.url,
+      fields: embed.fields.map((field) => ({
+        name: field.name,
+        value:
+          normalizeDate && /^\s*\**\s*DATE\s*:?\s*\**\s*$/i.test(field.name)
+            ? '<DATE>'
+            : text(field.value),
+      })),
     })),
   })
 }
 
-function clonePayload(message, allowMentions) {
+function clonePayload(message, allowMentions, dateLabel = null) {
   const payload = {
     allowedMentions: allowMentions
       ? { parse: ['everyone', 'roles', 'users'], repliedUser: false }
       : { parse: [], repliedUser: false },
   }
-  if (message.content) payload.content = message.content
-  if (message.embeds.length > 0) payload.embeds = message.embeds.slice(0, 10).map(cloneEmbed)
+  if (message.content) {
+    payload.content = dateLabel
+      ? replaceAnnouncementDate(message.content, dateLabel)
+      : message.content
+  }
+  if (message.embeds.length > 0) {
+    payload.embeds = message.embeds
+      .slice(0, 10)
+      .map((embed) => cloneEmbed(embed, dateLabel))
+  }
   if (message.attachments.size > 0) {
     payload.files = [...message.attachments.values()].map((attachment) => ({
       attachment: attachment.url,
@@ -142,21 +209,28 @@ async function publishGroup(client, group, scheduler, runKey) {
     const scheduledMinutes = Number(scheduled.hour) * 60 + Number(scheduled.minute)
     return local.dateKey === runKey && local.minutes >= scheduledMinutes
   })
-  const existingCounts = new Map()
-  for (const message of recent) {
-    const signature = messageSignature(message)
-    existingCounts.set(signature, (existingCounts.get(signature) ?? 0) + 1)
-  }
+  const remainingRecent = [...recent]
+  const datedMessageIds = new Set(group.dateMessageIds ?? [])
+  const dateLabel = announcementDateLabel(runKey)
 
   let posted = 0
   for (const source of sources) {
-    const signature = messageSignature(source)
-    const existing = existingCounts.get(signature) ?? 0
-    if (existing > 0) {
-      existingCounts.set(signature, existing - 1)
+    const updatesDate = datedMessageIds.has(source.id)
+    const signature = messageSignature(source, updatesDate)
+    const existingIndex = remainingRecent.findIndex(
+      (message) => messageSignature(message, updatesDate) === signature,
+    )
+    if (existingIndex >= 0) {
+      remainingRecent.splice(existingIndex, 1)
       continue
     }
-    await channel.send(clonePayload(source, scheduler.allowMentions))
+    await channel.send(
+      clonePayload(
+        source,
+        scheduler.allowMentions,
+        updatesDate ? dateLabel : null,
+      ),
+    )
     posted += 1
   }
   console.log(

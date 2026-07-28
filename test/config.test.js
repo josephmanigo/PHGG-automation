@@ -69,12 +69,14 @@ test('loads independent mobile and PC scrim channel sets', () => {
         enabled: true,
         channelId: 'mobile-announcements',
         messageIds: ['mobile-message-1', 'mobile-message-2'],
+        dateMessageIds: ['1531386979907014667'],
       },
       {
         label: 'PC',
         enabled: true,
         channelId: 'pc-announcements',
         messageIds: ['pc-message-1', 'pc-message-2'],
+        dateMessageIds: [],
       },
     ])
     assert.deepEqual(config.rules.scrims, {

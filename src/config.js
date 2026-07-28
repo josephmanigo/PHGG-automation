@@ -5,6 +5,10 @@ function value(name, fallback = '') {
 const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1345795209417457685'
 const DEFAULT_SCRIM_RULES_MESSAGE_IDS =
   '1346107866951581817,1412431092031553547'
+const ANNOUNCEMENT_DATE_MESSAGE_IDS = {
+  MOBILE: ['1531386979907014667'],
+  PC: [],
+}
 const DEFAULT_SCRIMS = {
   MOBILE: {
     channels: {
@@ -187,6 +191,7 @@ function loadAnnouncementConfig(scope) {
     enabled: Boolean(channelId),
     channelId,
     messageIds,
+    dateMessageIds: ANNOUNCEMENT_DATE_MESSAGE_IDS[scope] ?? [],
   }
 }
 
