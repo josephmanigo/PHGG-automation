@@ -1,4 +1,4 @@
-import { EmbedBuilder, Events } from 'discord.js'
+import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
 import { formatNickname } from '../nickname.js'
 import {
   parseCancelContent,
@@ -59,7 +59,10 @@ export function isRegistrationOpener(message, config) {
     messageSignals(message).some((value) => value.includes(config.bannerAssetId))
   const trustedSender =
     config.openerIds.has(message.author?.id) || learnedOpenerIds.has(message.author?.id)
-  return Boolean(officialAsset || (trustedSender && isGif(message)))
+  const authorizedManager =
+    message.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
+    message.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)
+  return Boolean(officialAsset || ((trustedSender || authorizedManager) && isGif(message)))
 }
 
 export function trustOpenerAuthor(message, config) {
@@ -293,7 +296,11 @@ export function installScrimAutomation(client, config, botConfig) {
       if (event.type === 'registration') {
         const registration = validateRegistrationContent(message.content)
         if (registration.valid && (await hasValidServerNickname(message))) {
-          board.registerMany(registration.teams, message.id)
+          const results = board.registerMany(registration.teams, message.id)
+          await setRegistrationReaction(
+            message,
+            results.some((result) => result.status !== 'duplicate'),
+          )
         }
         continue
       }
@@ -332,12 +339,26 @@ export function installScrimAutomation(client, config, botConfig) {
   }
 
   async function clearRejectedOpenerReaction(message) {
-    const rejectedReaction = message.reactions.cache.find(
-      (reaction) => reaction.emoji.name === '❌',
-    )
-    if (rejectedReaction && client.user) {
-      await rejectedReaction.users.remove(client.user.id).catch(() => undefined)
+    for (const emoji of ['❌', '✅']) {
+      const reaction = message.reactions.cache.find(
+        (entry) => entry.emoji.name === emoji,
+      )
+      if (reaction && client.user) {
+        await reaction.users.remove(client.user.id).catch(() => undefined)
+      }
     }
+  }
+
+  async function setRegistrationReaction(message, accepted) {
+    const wanted = accepted ? '✅' : '❌'
+    const unwanted = accepted ? '❌' : '✅'
+    const oldReaction = message.reactions.cache.find(
+      (reaction) => reaction.emoji.name === unwanted,
+    )
+    if (oldReaction && client.user) {
+      await oldReaction.users.remove(client.user.id).catch(() => undefined)
+    }
+    await message.react(wanted).catch(() => undefined)
   }
 
   async function hasValidServerNickname(message) {
@@ -383,7 +404,7 @@ export function installScrimAutomation(client, config, botConfig) {
     const results = board.registerMany(registration.teams, message.id)
     await syncBoard()
     const added = results.some((result) => result.status !== 'duplicate')
-    await message.react(added ? '✅' : '❌').catch(() => undefined)
+    await setRegistrationReaction(message, added)
   }
 
   async function handleCancellation(message) {

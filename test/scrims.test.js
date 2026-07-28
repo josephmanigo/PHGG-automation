@@ -123,6 +123,33 @@ test('learns the official starter author and accepts their future GIF posts', ()
   )
 })
 
+test('accepts a starter GIF posted by a server administrator', () => {
+  assert.equal(
+    isRegistrationOpener(
+      {
+        id: 'admin-starter',
+        content: '',
+        author: { id: 'server-admin' },
+        member: { permissions: { has: () => true } },
+        attachments: new Map([
+          [
+            'admin-gif',
+            {
+              id: 'admin-gif',
+              name: 'scrimmage.gif',
+              url: 'https://cdn.discordapp.com/admin-scrimmage.gif',
+              contentType: 'image/gif',
+            },
+          ],
+        ]),
+        embeds: [],
+      },
+      { bannerAssetId: 'different-id', openerIds: new Set() },
+    ),
+    true,
+  )
+})
+
 test('fills slots, then waitlist, and prevents duplicates', () => {
   const board = new ScrimBoard(2)
   assert.equal(board.register(makeTeam('A', 'ALPHA')).status, 'slot')
