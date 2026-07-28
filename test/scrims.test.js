@@ -15,7 +15,7 @@ import {
 
 test('parses one or more flag registration lines atomically', () => {
   const result = validateRegistrationContent(
-    ['ABC - ALPHA TEAM | 🇵🇭', 'XYZ - BRAVO TEAM | 🇵🇭'].join('\n'),
+    ['ABC - ALPHA TEAM |🇵🇭', 'XYZ - BRAVO TEAM |🇵🇭'].join('\n'),
   )
   assert.equal(result.valid, true)
   assert.deepEqual(
@@ -26,10 +26,19 @@ test('parses one or more flag registration lines atomically', () => {
     ],
   )
 
-  assert.deepEqual(validateRegistrationContent('ABC - ALPHA | 🇵🇭\nbad line'), {
+  assert.deepEqual(validateRegistrationContent('ABC - ALPHA |🇵🇭\nbad line'), {
     valid: false,
     teams: [],
   })
+})
+
+test('accepts the exact displayed AMT registration format', () => {
+  const result = validateRegistrationContent('AMT - THE UNCLAIMED |🇵🇭')
+  assert.equal(result.valid, true)
+  assert.deepEqual(
+    result.teams.map(({ tag, name }) => ({ tag, name })),
+    [{ tag: 'AMT', name: 'THE UNCLAIMED' }],
+  )
 })
 
 test('rejects the old flag-first registration format and non-Philippine flags', () => {
