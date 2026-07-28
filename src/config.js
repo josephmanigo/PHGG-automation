@@ -12,6 +12,9 @@ const DEFAULT_SCRIMS = {
       cancel: '1345800858138574979',
     },
     bannerAssetId: '1531385928105594940',
+    bannerSignalIds: ['1531385927811989674'],
+    boardHeaderMessageId: '1531588588372885615',
+    boardTemplateMessageId: '1529059937068777620',
     alwaysOpen: false,
   },
   PC: {
@@ -92,7 +95,18 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     channels,
     openerIds: idSet(read('OPENER_IDS')),
     bannerAssetId: read('BANNER_ASSET_ID', defaults.bannerAssetId),
+    bannerSignalIds: idSet(
+      read('BANNER_SIGNAL_IDS', defaults.bannerSignalIds?.join(',')),
+    ),
     bannerUrl: read('BANNER_URL'),
+    boardHeaderMessageId: read(
+      'BOARD_HEADER_MESSAGE_ID',
+      defaults.boardHeaderMessageId,
+    ),
+    boardTemplateMessageId: read(
+      'BOARD_TEMPLATE_MESSAGE_ID',
+      defaults.boardTemplateMessageId,
+    ),
     alwaysOpen:
       defaults.alwaysOpen ??
       parseBoolean(variable('ALWAYS_OPEN'), read('ALWAYS_OPEN')),

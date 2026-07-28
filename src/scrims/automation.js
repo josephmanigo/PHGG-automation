@@ -27,12 +27,23 @@ function messageSignals(message) {
   ].filter(Boolean)
 }
 
+function starterSignalIds(config) {
+  return [
+    config.bannerAssetId,
+    ...[...(config.bannerSignalIds ?? [])],
+  ].filter(Boolean)
+}
+
+function hasConfiguredStarterSignal(message, config) {
+  const signals = messageSignals(message)
+  return starterSignalIds(config).some((starterId) =>
+    signals.some((value) => value.includes(starterId)),
+  )
+}
+
 export function isRegistrationOpener(message, config) {
   if (validateRegistrationContent(message.content).valid) return false
-  return Boolean(
-    config.bannerAssetId &&
-      messageSignals(message).some((value) => value.includes(config.bannerAssetId)),
-  )
+  return hasConfiguredStarterSignal(message, config)
 }
 
 function dateLabel(timezone) {
@@ -51,7 +62,7 @@ function displayTeam(team) {
   return team ? `${team.tag.padEnd(5)} - ${team.name}` : ''
 }
 
-function buildEmbeds(board, state, config, botConfig) {
+function buildEmbeds(board, state, config, botConfig, templateMessage = null) {
   const date = dateLabel(botConfig.timezone)
   state.lastRenderedDate = date
   const slotLines = board.slots.map(
@@ -71,9 +82,10 @@ function buildEmbeds(board, state, config, botConfig) {
 
   const marker =
     `${botConfig.brandName.toUpperCase()} ${config.label} SCRIM BOARD • LIVE`
+  const templateMain = templateMessage?.embeds?.[0]
   const main = new EmbedBuilder()
-    .setColor(botConfig.color)
-    .setTitle(`🎟️ ${config.title} 🎟️`)
+    .setColor(templateMain?.color ?? botConfig.color)
+    .setTitle(templateMain?.title ?? `🎟️ ${config.title} 🎟️`)
     .setDescription(
       [
         `📅 **DATE:** ${date}`,
@@ -86,11 +98,15 @@ function buildEmbeds(board, state, config, botConfig) {
         '```',
       ].join('\n'),
     )
-  if (config.bannerUrl) main.setImage(config.bannerUrl)
+  const templateImage = templateMain?.image?.url
+  if (config.bannerUrl || templateImage) {
+    main.setImage(config.bannerUrl || templateImage)
+  }
 
+  const templateWaiting = templateMessage?.embeds?.[1]
   const waiting = new EmbedBuilder()
-    .setColor(botConfig.color)
-    .setTitle('WAIT LIST')
+    .setColor(templateWaiting?.color ?? templateMain?.color ?? botConfig.color)
+    .setTitle(templateWaiting?.title ?? 'WAIT LIST')
     .setDescription(['```', ...waitLines, '```'].join('\n'))
     .setFooter({
       text: state.cycleStartMessageId
@@ -159,6 +175,8 @@ export function installScrimAutomation(client, config, botConfig) {
   let initialized = Promise.resolve()
   let queueValue = Promise.resolve()
   const processedMessages = new Set()
+  let boardTemplate = null
+  let boardTemplateLoaded = false
 
   function openRegistration(message, { createBoard = false } = {}) {
     board.reset()
@@ -175,11 +193,65 @@ export function installScrimAutomation(client, config, botConfig) {
     state.cycleStartMessageId = null
   }
 
+  async function loadBoardTemplate(channel) {
+    if (boardTemplateLoaded) return boardTemplate
+    boardTemplateLoaded = true
+    if (!config.boardTemplateMessageId) return null
+    boardTemplate = await channel.messages
+      .fetch(config.boardTemplateMessageId)
+      .catch((reason) => {
+        console.warn(
+          `${config.label} board template ${config.boardTemplateMessageId} could not be fetched:`,
+          reason instanceof Error ? reason.message : reason,
+        )
+        return null
+      })
+    return boardTemplate
+  }
+
+  async function copyBoardHeader(channel) {
+    if (!config.boardHeaderMessageId) return null
+    const source = await channel.messages
+      .fetch(config.boardHeaderMessageId)
+      .catch((reason) => {
+        console.warn(
+          `${config.label} board header ${config.boardHeaderMessageId} could not be fetched:`,
+          reason instanceof Error ? reason.message : reason,
+        )
+        return null
+      })
+    if (!source) return null
+
+    const files = [...source.attachments.values()].map((attachment) => ({
+      attachment: attachment.url,
+      name: attachment.name ?? `attachment-${attachment.id}`,
+    }))
+    const payload = {
+      content: source.content || undefined,
+      embeds: source.embeds
+        .filter((embed) => embed.type === 'rich')
+        .map((embed) => embed.toJSON()),
+      files,
+      allowedMentions: { parse: [] },
+    }
+    if (!payload.content && payload.embeds.length === 0 && files.length === 0) {
+      return null
+    }
+    return channel.send(payload).catch((reason) => {
+      console.warn(
+        `${config.label} board header could not be copied:`,
+        reason instanceof Error ? reason.message : reason,
+      )
+      return null
+    })
+  }
+
   async function syncBoard() {
     if (!state.registrationOpen) return null
     const channel = await readableChannel(client, config.channels.board)
+    const template = await loadBoardTemplate(channel)
     const payload = {
-      embeds: buildEmbeds(board, state, config, botConfig),
+      embeds: buildEmbeds(board, state, config, botConfig, template),
       allowedMentions: { parse: [] },
     }
     if (state.boardMessageId) {
@@ -192,6 +264,7 @@ export function installScrimAutomation(client, config, botConfig) {
       }
     }
 
+    await copyBoardHeader(channel)
     const message = await channel.send(payload)
     state.boardMessageId = message.id
     await message
@@ -208,9 +281,9 @@ export function installScrimAutomation(client, config, botConfig) {
     const registrationMessages = [
       ...(await registrationChannel.messages.fetch({ limit: 100 })).values(),
     ].sort((left, right) => left.createdTimestamp - right.createdTimestamp)
-    let configuredOpener = config.bannerAssetId
+    let configuredOpener = starterSignalIds(config).length > 0
       ? registrationMessages.find((message) =>
-          messageSignals(message).some((value) => value.includes(config.bannerAssetId)),
+          hasConfiguredStarterSignal(message, config),
         )
       : null
     if (!configuredOpener && config.bannerAssetId) {

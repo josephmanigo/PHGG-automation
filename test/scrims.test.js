@@ -51,11 +51,11 @@ test('recognizes only the configured registration starter asset', () => {
     author: { id: 'unlisted-user' },
     attachments: new Map([
       [
-        '1531385928105594940',
+        '1531385927811989674',
         {
-          id: '1531385928105594940',
+          id: '1531385927811989674',
           name: 'mobile-registration.gif',
-          url: 'https://cdn.discordapp.com/attachments/channel/1531385928105594940/file.gif',
+          url: 'https://media.discordapp.net/attachments/1345795374962704465/1531385927811989674/Mob_Reg.gif',
           contentType: 'image/gif',
         },
       ],
@@ -65,6 +65,7 @@ test('recognizes only the configured registration starter asset', () => {
   assert.equal(
     isRegistrationOpener(message, {
       bannerAssetId: '1531385928105594940',
+      bannerSignalIds: new Set(['1531385927811989674']),
       openerIds: new Set(),
     }),
     true,
@@ -82,6 +83,7 @@ test('recognizes the configured starter by Discord message ID', () => {
   assert.equal(
     isRegistrationOpener(message, {
       bannerAssetId: '1531385928105594940',
+      bannerSignalIds: new Set(['1531385927811989674']),
       openerIds: new Set(),
     }),
     true,
@@ -109,7 +111,11 @@ test('rejects a different GIF even when posted by an administrator', () => {
         ]),
         embeds: [],
       },
-      { bannerAssetId: 'different-id', openerIds: new Set() },
+      {
+        bannerAssetId: 'different-id',
+        bannerSignalIds: new Set(['different-asset']),
+        openerIds: new Set(),
+      },
     ),
     false,
   )
