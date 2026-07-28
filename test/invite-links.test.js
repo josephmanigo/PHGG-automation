@@ -41,3 +41,31 @@ test('prefers a permanent unlimited server invite', () => {
   ])
   assert.equal(selectBestInvite(invites).code, 'official')
 })
+
+test('never returns an expiring or limited invite', () => {
+  const invites = new Map([
+    [
+      'expiring',
+      {
+        code: 'expiring',
+        url: 'https://discord.gg/expiring',
+        temporary: false,
+        expiresTimestamp: Date.now() + 86_400_000,
+        maxUses: 0,
+        uses: 0,
+      },
+    ],
+    [
+      'limited',
+      {
+        code: 'limited',
+        url: 'https://discord.gg/limited',
+        temporary: false,
+        expiresTimestamp: null,
+        maxUses: 100,
+        uses: 0,
+      },
+    ],
+  ])
+  assert.equal(selectBestInvite(invites), null)
+})
