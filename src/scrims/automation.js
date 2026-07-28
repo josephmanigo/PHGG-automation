@@ -41,6 +41,35 @@ function hasConfiguredStarterSignal(message, config) {
   )
 }
 
+export function replayScrimEvents(board, events) {
+  const registrationOutcomes = []
+  for (const event of events) {
+    const { message } = event
+    if (event.type === 'registration') {
+      const registration = validateRegistrationContent(message.content)
+      if (registration.valid) {
+        board.registerMany(registration.teams, message.id)
+      }
+      registrationOutcomes.push({
+        message,
+        accepted: registration.valid,
+      })
+      continue
+    }
+
+    const cancel = parseCancelContent(message.content)
+    if (cancel) {
+      board.cancel(cancel, message.id)
+      continue
+    }
+    const mine = parseMineContent(message.content)
+    if (mine && message.reference?.messageId) {
+      board.claim(mine, message.reference.messageId, message.id)
+    }
+  }
+  return registrationOutcomes
+}
+
 export function isRegistrationOpener(message, config) {
   if (validateRegistrationContent(message.content).valid) return false
   return hasConfiguredStarterSignal(message, config)
@@ -336,27 +365,9 @@ export function installScrimAutomation(client, config, botConfig) {
       )
       .sort((left, right) => left.message.createdTimestamp - right.message.createdTimestamp)
 
-    for (const event of events) {
-      const { message } = event
-      if (event.type === 'registration') {
-        const registration = validateRegistrationContent(message.content)
-        if (registration.valid) {
-          board.registerMany(registration.teams, message.id)
-          await setRegistrationReaction(message, true)
-        } else {
-          await setRegistrationReaction(message, false)
-        }
-        continue
-      }
-      const cancel = parseCancelContent(message.content)
-      if (cancel) {
-        board.cancel(cancel, message.id)
-        continue
-      }
-      const mine = parseMineContent(message.content)
-      if (mine && message.reference?.messageId) {
-        board.claim(mine, message.reference.messageId, message.id)
-      }
+    const registrationOutcomes = replayScrimEvents(board, events)
+    for (const { message, accepted } of registrationOutcomes) {
+      await setRegistrationReaction(message, accepted)
     }
   }
 

@@ -11,6 +11,7 @@ import {
 import {
   buildEmbeds,
   isRegistrationOpener,
+  replayScrimEvents,
 } from '../src/scrims/automation.js'
 
 test('parses PHGG flag-last registration lines atomically', () => {
@@ -179,6 +180,51 @@ test('renders the exact 20-slot PHGG board layout', () => {
   assert.ok(rendered.description.includes('## WAIT LIST'))
   assert.ok(rendered.description.includes('01   :'))
   assert.equal(rendered.footer, undefined)
+})
+
+test('rebuild uses only an edited registration message’s latest content', () => {
+  const board = new ScrimBoard(20)
+  const originalMessage = {
+    id: 'registration-message',
+    content: 'OLD - ORIGINAL TEAM | 🇵🇭',
+  }
+  replayScrimEvents(board, [
+    { type: 'registration', message: originalMessage },
+  ])
+  assert.equal(board.slots[0].name, 'ORIGINAL TEAM')
+
+  board.reset()
+  replayScrimEvents(board, [
+    {
+      type: 'registration',
+      message: {
+        ...originalMessage,
+        content: 'NEW - UPDATED TEAM | 🇵🇭',
+      },
+    },
+  ])
+  assert.equal(board.find('ORIGINAL TEAM'), null)
+  assert.equal(board.slots[0].tag, 'NEW')
+  assert.equal(board.slots[0].name, 'UPDATED TEAM')
+})
+
+test('rebuild removes a deleted registration from team slots', () => {
+  const board = new ScrimBoard(20)
+  replayScrimEvents(board, [
+    {
+      type: 'registration',
+      message: {
+        id: 'registration-message',
+        content: 'AMT - THE UNCLAIMED | 🇵🇭',
+      },
+    },
+  ])
+  assert.equal(board.slots.filter(Boolean).length, 1)
+
+  board.reset()
+  replayScrimEvents(board, [])
+  assert.equal(board.slots.filter(Boolean).length, 0)
+  assert.equal(board.waitlist.length, 0)
 })
 
 test('cancellation promotes the first waiting team into the exact slot', () => {
