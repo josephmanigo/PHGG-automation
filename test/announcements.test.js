@@ -1,0 +1,19 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { scheduledRunKey } from '../src/announcements.js'
+
+const schedule = {
+  timezone: 'Asia/Manila',
+  weekday: 'Tuesday',
+  time: '11:30',
+}
+
+test('matches Tuesday at 11:30 AM Philippine time', () => {
+  assert.equal(scheduledRunKey(new Date('2026-07-28T03:30:00.000Z'), schedule), '2026-07-28')
+})
+
+test('does not run before, after, or on another weekday', () => {
+  assert.equal(scheduledRunKey(new Date('2026-07-28T03:29:59.000Z'), schedule), null)
+  assert.equal(scheduledRunKey(new Date('2026-07-28T03:31:00.000Z'), schedule), null)
+  assert.equal(scheduledRunKey(new Date('2026-07-29T03:30:00.000Z'), schedule), null)
+})

@@ -1,0 +1,92 @@
+services:
+  - type: web
+    name: phgg-discord-bot
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 10
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.1
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: BOT_BRAND_NAME
+        value: PHGG
+      - key: BOT_COLOR
+        value: "#ED1C24"
+      - key: BOT_TIMEZONE
+        value: Asia/Manila
+      - key: DISCORD_NICKNAME_CHANNEL_ID
+        value: "1270790990772437073"
+      - key: SCRIM_RULES_CHANNEL_ID
+        value: "1346107866951581817"
+      - key: SCRIM_RULES_MESSAGE_IDS
+        value: "1412431092031553547"
+      - key: MOBILE_SCRIM_REGISTRATION_CHANNEL_ID
+        value: "1345795374962704465"
+      - key: MOBILE_SCRIM_BOARD_CHANNEL_ID
+        value: "1345799937358565407"
+      - key: MOBILE_SCRIM_CANCEL_CHANNEL_ID
+        value: "1345800858138574979"
+      - key: MOBILE_SCRIM_BANNER_ASSET_ID
+        value: "1531588588372885615"
+      - key: MOBILE_SCRIM_ALWAYS_OPEN
+        value: "false"
+      - key: MOBILE_SCRIM_REQUIRE_VALID_NICKNAME
+        value: "true"
+      - key: MOBILE_SCRIM_MAX_SLOTS
+        value: "20"
+      - key: MOBILE_SCRIM_EMPTY_WAITLIST_ROWS
+        value: "11"
+      - key: MOBILE_SCRIM_TITLE
+        value: PH GAMING GUILD MOBILE SCRIMMAGE
+      - key: MOBILE_SCRIM_TIME_LABEL
+        value: 08:00 PM PH Time
+      - key: MOBILE_SCRIM_ROUNDS_LABEL
+        value: 4 Rounds | 2SB-1DV-1SI
+      - key: PC_SCRIM_REGISTRATION_CHANNEL_ID
+        value: "1340963116954947635"
+      - key: PC_SCRIM_BOARD_CHANNEL_ID
+        value: "1340963180809031721"
+      - key: PC_SCRIM_CANCEL_CHANNEL_ID
+        value: "1340963218582929430"
+      - key: PC_SCRIM_BANNER_ASSET_ID
+        value: "1531588588372885615"
+      - key: PC_SCRIM_ALWAYS_OPEN
+        value: "false"
+      - key: PC_SCRIM_REQUIRE_VALID_NICKNAME
+        value: "true"
+      - key: PC_SCRIM_MAX_SLOTS
+        value: "20"
+      - key: PC_SCRIM_EMPTY_WAITLIST_ROWS
+        value: "11"
+      - key: PC_SCRIM_TITLE
+        value: "PH GAMING GUILD BS OPERATION: DOMINATION"
+      - key: PC_SCRIM_TIME_LABEL
+        value: 08:00 PM (PC) PH Time
+      - key: PC_SCRIM_ROUNDS_LABEL
+        value: 4 Rounds | 2SB-1DV-1SI
+      - key: ANNOUNCEMENT_TIMEZONE
+        value: Asia/Manila
+      - key: ANNOUNCEMENT_WEEKDAY
+        value: Tuesday
+      - key: ANNOUNCEMENT_TIME
+        value: "11:30"
+      - key: ANNOUNCEMENT_ALLOW_MENTIONS
+        value: "true"
+      - key: MOBILE_ANNOUNCEMENT_CHANNEL_ID
+        value: "1345793370454495242"
+      - key: MOBILE_ANNOUNCEMENT_MESSAGE_IDS
+        value: "1531386132703613029,1531386979907014667"
+      - key: PC_ANNOUNCEMENT_CHANNEL_ID
+        value: "1345794008471044176"
+      - key: PC_ANNOUNCEMENT_MESSAGE_IDS
+        value: "1531386761190838283,1531386923203952910"
+      - key: SERVER_INVITE_KEYWORD_ENABLED
+        value: "true"

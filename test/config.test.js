@@ -1,0 +1,91 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { loadConfig } from '../src/config.js'
+
+test('loads independent mobile and PC scrim channel sets', () => {
+  const keys = [
+    'DISCORD_BOT_TOKEN',
+    'DISCORD_GUILD_ID',
+    'MOBILE_SCRIM_REGISTRATION_CHANNEL_ID',
+    'MOBILE_SCRIM_BOARD_CHANNEL_ID',
+    'MOBILE_SCRIM_CANCEL_CHANNEL_ID',
+    'PC_SCRIM_REGISTRATION_CHANNEL_ID',
+    'PC_SCRIM_BOARD_CHANNEL_ID',
+    'PC_SCRIM_CANCEL_CHANNEL_ID',
+    'MOBILE_ANNOUNCEMENT_CHANNEL_ID',
+    'MOBILE_ANNOUNCEMENT_MESSAGE_IDS',
+    'PC_ANNOUNCEMENT_CHANNEL_ID',
+    'PC_ANNOUNCEMENT_MESSAGE_IDS',
+    'SCRIM_RULES_CHANNEL_ID',
+    'SCRIM_RULES_MESSAGE_IDS',
+  ]
+  const previous = new Map(keys.map((key) => [key, process.env[key]]))
+  Object.assign(process.env, {
+    DISCORD_BOT_TOKEN: 'test-token',
+    DISCORD_GUILD_ID: 'test-guild',
+    MOBILE_SCRIM_REGISTRATION_CHANNEL_ID: 'mobile-registration',
+    MOBILE_SCRIM_BOARD_CHANNEL_ID: 'mobile-board',
+    MOBILE_SCRIM_CANCEL_CHANNEL_ID: 'mobile-cancel',
+    PC_SCRIM_REGISTRATION_CHANNEL_ID: 'pc-registration',
+    PC_SCRIM_BOARD_CHANNEL_ID: 'pc-board',
+    PC_SCRIM_CANCEL_CHANNEL_ID: 'pc-cancel',
+    MOBILE_ANNOUNCEMENT_CHANNEL_ID: 'mobile-announcements',
+    MOBILE_ANNOUNCEMENT_MESSAGE_IDS: 'mobile-message-1,mobile-message-2',
+    PC_ANNOUNCEMENT_CHANNEL_ID: 'pc-announcements',
+    PC_ANNOUNCEMENT_MESSAGE_IDS: 'pc-message-1,pc-message-2',
+    SCRIM_RULES_CHANNEL_ID: 'scrim-rules-channel',
+    SCRIM_RULES_MESSAGE_IDS: 'scrim-rules-message',
+  })
+
+  try {
+    const config = loadConfig()
+    assert.equal(config.scrims.length, 2)
+    assert.deepEqual(
+      config.scrims.map(({ label, enabled, channels }) => ({ label, enabled, channels })),
+      [
+        {
+          label: 'MOBILE',
+          enabled: true,
+          channels: {
+            registration: 'mobile-registration',
+            board: 'mobile-board',
+            cancel: 'mobile-cancel',
+          },
+        },
+        {
+          label: 'PC',
+          enabled: true,
+          channels: {
+            registration: 'pc-registration',
+            board: 'pc-board',
+            cancel: 'pc-cancel',
+          },
+        },
+      ],
+    )
+    assert.deepEqual(config.announcements.groups, [
+      {
+        label: 'MOBILE',
+        enabled: true,
+        channelId: 'mobile-announcements',
+        messageIds: ['mobile-message-1', 'mobile-message-2'],
+      },
+      {
+        label: 'PC',
+        enabled: true,
+        channelId: 'pc-announcements',
+        messageIds: ['pc-message-1', 'pc-message-2'],
+      },
+    ])
+    assert.deepEqual(config.rules.scrims, {
+      enabled: true,
+      channelId: 'scrim-rules-channel',
+      messageIds: ['scrim-rules-message'],
+    })
+  } finally {
+    for (const [key, oldValue] of previous) {
+      if (oldValue === undefined) delete process.env[key]
+      else process.env[key] = oldValue
+    }
+  }
+})
