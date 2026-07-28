@@ -37,7 +37,7 @@ services:
       - key: MOBILE_SCRIM_BANNER_ASSET_ID
         value: "1531588588372885615"
       - key: MOBILE_SCRIM_ALWAYS_OPEN
-        value: "false"
+        value: "true"
       - key: MOBILE_SCRIM_REQUIRE_VALID_NICKNAME
         value: "false"
       - key: MOBILE_SCRIM_MAX_SLOTS
@@ -59,7 +59,7 @@ services:
       - key: PC_SCRIM_BANNER_ASSET_ID
         value: "1531588588372885615"
       - key: PC_SCRIM_ALWAYS_OPEN
-        value: "false"
+        value: "true"
       - key: PC_SCRIM_REQUIRE_VALID_NICKNAME
         value: "false"
       - key: PC_SCRIM_MAX_SLOTS

@@ -325,7 +325,9 @@ export function installScrimAutomation(client, config, botConfig) {
     )
     await loadCycle()
     state.boardMessageId =
-      existing && boardCycleId(existing) === state.cycleStartMessageId
+      existing &&
+      (state.cycleStartMessageId === ALWAYS_OPEN_CYCLE_ID ||
+        boardCycleId(existing) === state.cycleStartMessageId)
         ? existing.id
         : null
     await syncBoard()
