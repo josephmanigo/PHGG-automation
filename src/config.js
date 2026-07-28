@@ -11,8 +11,8 @@ const DEFAULT_SCRIMS = {
       board: '1345799937358565407',
       cancel: '1345800858138574979',
     },
-    bannerAssetId: '1531588588372885615',
-    alwaysOpen: true,
+    bannerAssetId: '1531385928105594940',
+    alwaysOpen: false,
   },
   PC: {
     channels: {
@@ -20,8 +20,8 @@ const DEFAULT_SCRIMS = {
       board: '1340963180809031721',
       cancel: '1340963218582929430',
     },
-    bannerAssetId: '1531588588372885615',
-    alwaysOpen: true,
+    bannerAssetId: '1531385928105594940',
+    alwaysOpen: false,
   },
 }
 

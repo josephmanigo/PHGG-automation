@@ -35,9 +35,9 @@ services:
       - key: MOBILE_SCRIM_CANCEL_CHANNEL_ID
         value: "1345800858138574979"
       - key: MOBILE_SCRIM_BANNER_ASSET_ID
-        value: "1531588588372885615"
+        value: "1531385928105594940"
       - key: MOBILE_SCRIM_ALWAYS_OPEN
-        value: "true"
+        value: "false"
       - key: MOBILE_SCRIM_REQUIRE_VALID_NICKNAME
         value: "false"
       - key: MOBILE_SCRIM_MAX_SLOTS
@@ -57,9 +57,9 @@ services:
       - key: PC_SCRIM_CANCEL_CHANNEL_ID
         value: "1340963218582929430"
       - key: PC_SCRIM_BANNER_ASSET_ID
-        value: "1531588588372885615"
+        value: "1531385928105594940"
       - key: PC_SCRIM_ALWAYS_OPEN
-        value: "true"
+        value: "false"
       - key: PC_SCRIM_REQUIRE_VALID_NICKNAME
         value: "false"
       - key: PC_SCRIM_MAX_SLOTS

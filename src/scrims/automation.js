@@ -1,4 +1,4 @@
-import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
+import { EmbedBuilder, Events } from 'discord.js'
 import {
   parseCancelContent,
   parseMineContent,
@@ -9,12 +9,6 @@ import {
 
 const MAX_WAITLIST_DISPLAY = 40
 const ALWAYS_OPEN_CYCLE_ID = 'ALWAYS_OPEN'
-const learnedOpenerIds = new Set()
-
-function isGifUrl(value) {
-  return /(?:\.gif(?:$|[?#])|tenor\.com|giphy\.com)/i.test(value ?? '')
-}
-
 function messageSignals(message) {
   return [
     message.id,
@@ -33,43 +27,12 @@ function messageSignals(message) {
   ].filter(Boolean)
 }
 
-function isGif(message) {
-  return (
-    isGifUrl(message.content) ||
-    [...message.attachments.values()].some(
-      (attachment) =>
-        attachment.contentType?.includes('gif') ||
-        /\.gif$/i.test(attachment.name ?? '') ||
-        isGifUrl(attachment.url),
-    ) ||
-    message.embeds.some(
-      (embed) =>
-        embed.type === 'gifv' ||
-        /tenor|giphy/i.test(embed.provider?.name ?? '') ||
-        [embed.url, embed.image?.url, embed.thumbnail?.url, embed.video?.url].some(isGifUrl),
-    )
-  )
-}
-
 export function isRegistrationOpener(message, config) {
   if (validateRegistrationContent(message.content).valid) return false
-  const officialAsset =
+  return Boolean(
     config.bannerAssetId &&
-    messageSignals(message).some((value) => value.includes(config.bannerAssetId))
-  const trustedSender =
-    config.openerIds.has(message.author?.id) || learnedOpenerIds.has(message.author?.id)
-  const authorizedManager =
-    message.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
-    message.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)
-  return Boolean(officialAsset || ((trustedSender || authorizedManager) && isGif(message)))
-}
-
-export function trustOpenerAuthor(message, config) {
-  const authorId = message?.author?.id
-  if (!authorId) return false
-  config.openerIds.add(authorId)
-  learnedOpenerIds.add(authorId)
-  return true
+      messageSignals(message).some((value) => value.includes(config.bannerAssetId)),
+  )
 }
 
 function dateLabel(timezone) {
@@ -255,7 +218,9 @@ export function installScrimAutomation(client, config, botConfig) {
         .fetch(config.bannerAssetId)
         .catch(() => null)
     }
-    if (configuredOpener) trustOpenerAuthor(configuredOpener, config)
+    for (const message of registrationMessages) {
+      await clearBotRegistrationReactions(message)
+    }
 
     const opener =
       [...registrationMessages]
@@ -266,7 +231,7 @@ export function installScrimAutomation(client, config, botConfig) {
         : null)
     if (opener) {
       openRegistration(opener)
-      await clearRejectedOpenerReaction(opener)
+      await clearBotRegistrationReactions(opener)
     } else if (config.alwaysOpen) {
       board.reset()
       state.registrationOpen = true
@@ -295,11 +260,7 @@ export function installScrimAutomation(client, config, botConfig) {
       if (event.type === 'registration') {
         const registration = validateRegistrationContent(message.content)
         if (registration.valid) {
-          const results = board.registerMany(registration.teams, message.id)
-          await setRegistrationReaction(
-            message,
-            results.some((result) => result.status !== 'duplicate'),
-          )
+          board.registerMany(registration.teams, message.id)
         }
         continue
       }
@@ -341,7 +302,7 @@ export function installScrimAutomation(client, config, botConfig) {
     await message.reply({ content, allowedMentions: { parse: [] } }).catch(() => undefined)
   }
 
-  async function clearRejectedOpenerReaction(message) {
+  async function clearBotRegistrationReactions(message) {
     for (const emoji of ['❌', '✅']) {
       const reaction = message.reactions.cache.find(
         (entry) => entry.emoji.name === emoji,
@@ -352,24 +313,11 @@ export function installScrimAutomation(client, config, botConfig) {
     }
   }
 
-  async function setRegistrationReaction(message, accepted) {
-    const wanted = accepted ? '✅' : '❌'
-    const unwanted = accepted ? '❌' : '✅'
-    const oldReaction = message.reactions.cache.find(
-      (reaction) => reaction.emoji.name === unwanted,
-    )
-    if (oldReaction && client.user) {
-      await oldReaction.users.remove(client.user.id).catch(() => undefined)
-    }
-    await message.react(wanted).catch(() => undefined)
-  }
-
   async function handleRegistration(message) {
     if (isRegistrationOpener(message, config)) {
-      trustOpenerAuthor(message, config)
       openRegistration(message, { createBoard: true })
       await syncBoard()
-      await clearRejectedOpenerReaction(message)
+      await clearBotRegistrationReactions(message)
       return
     }
 
@@ -378,20 +326,19 @@ export function installScrimAutomation(client, config, botConfig) {
       console.warn(
         `${config.label} registration rejected for ${message.author.tag}: the official opening GIF was not detected.`,
       )
-      await message.react('❌').catch(() => undefined)
+      await clearBotRegistrationReactions(message)
       return
     }
     if (!registration.valid) {
       console.warn(
         `${config.label} registration rejected for ${message.author.tag}: use "CLAN TAG - TEAM NAME | 🇵🇭".`,
       )
-      await message.react('❌').catch(() => undefined)
+      await clearBotRegistrationReactions(message)
       return
     }
-    const results = board.registerMany(registration.teams, message.id)
+    board.registerMany(registration.teams, message.id)
     await syncBoard()
-    const added = results.some((result) => result.status !== 'duplicate')
-    await setRegistrationReaction(message, added)
+    await clearBotRegistrationReactions(message)
   }
 
   async function handleCancellation(message) {

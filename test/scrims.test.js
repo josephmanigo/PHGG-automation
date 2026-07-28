@@ -8,10 +8,7 @@ import {
   slotCode,
   validateRegistrationContent,
 } from '../src/scrims/core.js'
-import {
-  isRegistrationOpener,
-  trustOpenerAuthor,
-} from '../src/scrims/automation.js'
+import { isRegistrationOpener } from '../src/scrims/automation.js'
 
 test('parses PHGG flag-last registration lines atomically', () => {
   const result = validateRegistrationContent(
@@ -48,17 +45,17 @@ test('requires the Philippine flag at the end', () => {
   assert.equal(validateRegistrationContent('ABC - ALPHA TEAM | 🇺🇸').valid, false)
 })
 
-test('recognizes the official mobile registration opening GIF asset', () => {
+test('recognizes only the configured registration starter asset', () => {
   const message = {
     content: '',
     author: { id: 'unlisted-user' },
     attachments: new Map([
       [
-        '1531588588372885615',
+        '1531385928105594940',
         {
-          id: '1531588588372885615',
+          id: '1531385928105594940',
           name: 'mobile-registration.gif',
-          url: 'https://cdn.discordapp.com/attachments/channel/1531588588372885615/file.gif',
+          url: 'https://cdn.discordapp.com/attachments/channel/1531385928105594940/file.gif',
           contentType: 'image/gif',
         },
       ],
@@ -67,16 +64,16 @@ test('recognizes the official mobile registration opening GIF asset', () => {
   }
   assert.equal(
     isRegistrationOpener(message, {
-      bannerAssetId: '1531588588372885615',
+      bannerAssetId: '1531385928105594940',
       openerIds: new Set(),
     }),
     true,
   )
 })
 
-test('recognizes an official registration opening GIF by Discord message ID', () => {
+test('recognizes the configured starter by Discord message ID', () => {
   const message = {
-    id: '1531588588372885615',
+    id: '1531385928105594940',
     content: '',
     author: { id: 'unlisted-user' },
     attachments: new Map(),
@@ -84,48 +81,14 @@ test('recognizes an official registration opening GIF by Discord message ID', ()
   }
   assert.equal(
     isRegistrationOpener(message, {
-      bannerAssetId: '1531588588372885615',
+      bannerAssetId: '1531385928105594940',
       openerIds: new Set(),
     }),
     true,
   )
 })
 
-test('learns the official starter author and accepts their future GIF posts', () => {
-  const config = {
-    bannerAssetId: 'official-source-message',
-    openerIds: new Set(),
-  }
-  assert.equal(
-    trustOpenerAuthor({ author: { id: 'trusted-starter' } }, config),
-    true,
-  )
-  assert.equal(
-    isRegistrationOpener(
-      {
-        id: 'new-message-id',
-        content: '',
-        author: { id: 'trusted-starter' },
-        attachments: new Map([
-          [
-            'new-attachment',
-            {
-              id: 'new-attachment',
-              name: 'scrimmage.gif',
-              url: 'https://cdn.discordapp.com/new-scrimmage.gif',
-              contentType: 'image/gif',
-            },
-          ],
-        ]),
-        embeds: [],
-      },
-      config,
-    ),
-    true,
-  )
-})
-
-test('accepts a starter GIF posted by a server administrator', () => {
+test('rejects a different GIF even when posted by an administrator', () => {
   assert.equal(
     isRegistrationOpener(
       {
@@ -148,7 +111,7 @@ test('accepts a starter GIF posted by a server administrator', () => {
       },
       { bannerAssetId: 'different-id', openerIds: new Set() },
     ),
-    true,
+    false,
   )
 })
 
@@ -159,6 +122,15 @@ test('fills slots, then waitlist, and prevents duplicates', () => {
   assert.equal(board.register(makeTeam('C', 'CHARLIE')).status, 'waitlist')
   assert.equal(board.register(makeTeam('A', 'ALPHA')).status, 'duplicate')
   assert.equal(board.waitlist.length, 1)
+})
+
+test('keeps a duplicate registration on the board only once', () => {
+  const board = new ScrimBoard(25)
+  const team = makeTeam('AMT', 'THE UNCLAIMED')
+  assert.equal(board.register(team).status, 'slot')
+  assert.equal(board.register(team).status, 'duplicate')
+  assert.equal(board.slots.filter(Boolean).length, 1)
+  assert.equal(board.waitlist.length, 0)
 })
 
 test('cancellation promotes the first waiting team into the exact slot', () => {

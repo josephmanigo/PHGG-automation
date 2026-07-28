@@ -150,8 +150,8 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
   Object.assign(process.env, {
     DISCORD_BOT_TOKEN: 'test-token',
     DISCORD_GUILD_ID: 'test-guild',
-    MOBILE_SCRIM_ALWAYS_OPEN: 'false',
-    PC_SCRIM_ALWAYS_OPEN: 'false',
+    MOBILE_SCRIM_ALWAYS_OPEN: 'true',
+    PC_SCRIM_ALWAYS_OPEN: 'true',
   })
 
   try {
@@ -161,8 +161,8 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       board: '1345799937358565407',
       cancel: '1345800858138574979',
     })
-    assert.equal(mobile.bannerAssetId, '1531588588372885615')
-    assert.equal(mobile.alwaysOpen, true)
+    assert.equal(mobile.bannerAssetId, '1531385928105594940')
+    assert.equal(mobile.alwaysOpen, false)
     assert.equal(mobile.maxSlots, 25)
     assert.equal(mobile.emptyWaitlistRows, 4)
 
@@ -172,8 +172,8 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       board: '1340963180809031721',
       cancel: '1340963218582929430',
     })
-    assert.equal(pc.bannerAssetId, '1531588588372885615')
-    assert.equal(pc.alwaysOpen, true)
+    assert.equal(pc.bannerAssetId, '1531385928105594940')
+    assert.equal(pc.alwaysOpen, false)
     assert.equal(pc.maxSlots, 25)
     assert.equal(pc.emptyWaitlistRows, 4)
   } finally {
