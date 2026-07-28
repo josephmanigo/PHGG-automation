@@ -8,7 +8,10 @@ import {
   slotCode,
   validateRegistrationContent,
 } from '../src/scrims/core.js'
-import { isRegistrationOpener } from '../src/scrims/automation.js'
+import {
+  isRegistrationOpener,
+  trustOpenerAuthor,
+} from '../src/scrims/automation.js'
 
 test('parses one or more flag registration lines atomically', () => {
   const result = validateRegistrationContent(
@@ -73,6 +76,40 @@ test('recognizes an official registration opening GIF by Discord message ID', ()
       bannerAssetId: '1531588588372885615',
       openerIds: new Set(),
     }),
+    true,
+  )
+})
+
+test('learns the official starter author and accepts their future GIF posts', () => {
+  const config = {
+    bannerAssetId: 'official-source-message',
+    openerIds: new Set(),
+  }
+  assert.equal(
+    trustOpenerAuthor({ author: { id: 'trusted-starter' } }, config),
+    true,
+  )
+  assert.equal(
+    isRegistrationOpener(
+      {
+        id: 'new-message-id',
+        content: '',
+        author: { id: 'trusted-starter' },
+        attachments: new Map([
+          [
+            'new-attachment',
+            {
+              id: 'new-attachment',
+              name: 'scrimmage.gif',
+              url: 'https://cdn.discordapp.com/new-scrimmage.gif',
+              contentType: 'image/gif',
+            },
+          ],
+        ]),
+        embeds: [],
+      },
+      config,
+    ),
     true,
   )
 })

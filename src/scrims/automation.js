@@ -10,6 +10,7 @@ import {
 
 const MAX_WAITLIST_DISPLAY = 40
 const ALWAYS_OPEN_CYCLE_ID = 'ALWAYS_OPEN'
+const learnedOpenerIds = new Set()
 
 function isGifUrl(value) {
   return /(?:\.gif(?:$|[?#])|tenor\.com|giphy\.com)/i.test(value ?? '')
@@ -56,7 +57,17 @@ export function isRegistrationOpener(message, config) {
   const officialAsset =
     config.bannerAssetId &&
     messageSignals(message).some((value) => value.includes(config.bannerAssetId))
-  return Boolean(officialAsset || (config.openerIds.has(message.author?.id) && isGif(message)))
+  const trustedSender =
+    config.openerIds.has(message.author?.id) || learnedOpenerIds.has(message.author?.id)
+  return Boolean(officialAsset || (trustedSender && isGif(message)))
+}
+
+export function trustOpenerAuthor(message, config) {
+  const authorId = message?.author?.id
+  if (!authorId) return false
+  config.openerIds.add(authorId)
+  learnedOpenerIds.add(authorId)
+  return true
 }
 
 function dateLabel(timezone) {
@@ -232,19 +243,28 @@ export function installScrimAutomation(client, config, botConfig) {
     const registrationMessages = [
       ...(await registrationChannel.messages.fetch({ limit: 100 })).values(),
     ].sort((left, right) => left.createdTimestamp - right.createdTimestamp)
-    let opener = [...registrationMessages]
-      .reverse()
-      .find((message) => isRegistrationOpener(message, config))
-    if (!opener && config.bannerAssetId) {
-      const exactMessage = await registrationChannel.messages
+    let configuredOpener = config.bannerAssetId
+      ? registrationMessages.find((message) =>
+          messageSignals(message).some((value) => value.includes(config.bannerAssetId)),
+        )
+      : null
+    if (!configuredOpener && config.bannerAssetId) {
+      configuredOpener = await registrationChannel.messages
         .fetch(config.bannerAssetId)
         .catch(() => null)
-      if (exactMessage && isRegistrationOpener(exactMessage, config)) {
-        opener = exactMessage
-      }
     }
+    if (configuredOpener) trustOpenerAuthor(configuredOpener, config)
+
+    const opener =
+      [...registrationMessages]
+        .reverse()
+        .find((message) => isRegistrationOpener(message, config)) ??
+      (configuredOpener && isRegistrationOpener(configuredOpener, config)
+        ? configuredOpener
+        : null)
     if (opener) {
       openRegistration(opener)
+      await markOpeningMessage(opener)
     } else if (config.alwaysOpen) {
       board.reset()
       state.registrationOpen = true
@@ -311,6 +331,16 @@ export function installScrimAutomation(client, config, botConfig) {
     await message.reply({ content, allowedMentions: { parse: [] } }).catch(() => undefined)
   }
 
+  async function markOpeningMessage(message) {
+    const rejectedReaction = message.reactions.cache.find(
+      (reaction) => reaction.emoji.name === '❌',
+    )
+    if (rejectedReaction && client.user) {
+      await rejectedReaction.users.remove(client.user.id).catch(() => undefined)
+    }
+    await message.react('✅').catch(() => undefined)
+  }
+
   async function hasValidServerNickname(message) {
     if (!config.requireValidNickname) return true
     const member =
@@ -322,8 +352,10 @@ export function installScrimAutomation(client, config, botConfig) {
 
   async function handleRegistration(message) {
     if (isRegistrationOpener(message, config)) {
+      trustOpenerAuthor(message, config)
       openRegistration(message, { createBoard: true })
       await syncBoard()
+      await markOpeningMessage(message)
       return
     }
 
