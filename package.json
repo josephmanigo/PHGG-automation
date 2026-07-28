@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Configurable Discord automation bot for PHGG.",
   "engines": {
-    "node": ">=24.14.1 <25"
+    "node": ">=24.14.1 <26"
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env.local --env-file-if-exists=.env src/index.js",
