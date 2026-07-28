@@ -261,6 +261,9 @@ export function installScrimAutomation(client, config, botConfig) {
         const registration = validateRegistrationContent(message.content)
         if (registration.valid) {
           board.registerMany(registration.teams, message.id)
+          await setRegistrationReaction(message, true)
+        } else {
+          await setRegistrationReaction(message, false)
         }
         continue
       }
@@ -313,6 +316,18 @@ export function installScrimAutomation(client, config, botConfig) {
     }
   }
 
+  async function setRegistrationReaction(message, accepted) {
+    const wanted = accepted ? '✅' : '❌'
+    const unwanted = accepted ? '❌' : '✅'
+    const oldReaction = message.reactions.cache.find(
+      (reaction) => reaction.emoji.name === unwanted,
+    )
+    if (oldReaction && client.user) {
+      await oldReaction.users.remove(client.user.id).catch(() => undefined)
+    }
+    await message.react(wanted).catch(() => undefined)
+  }
+
   async function handleRegistration(message) {
     if (isRegistrationOpener(message, config)) {
       openRegistration(message, { createBoard: true })
@@ -326,19 +341,19 @@ export function installScrimAutomation(client, config, botConfig) {
       console.warn(
         `${config.label} registration rejected for ${message.author.tag}: the official opening GIF was not detected.`,
       )
-      await clearBotRegistrationReactions(message)
+      await setRegistrationReaction(message, false)
       return
     }
     if (!registration.valid) {
       console.warn(
         `${config.label} registration rejected for ${message.author.tag}: use "CLAN TAG - TEAM NAME | 🇵🇭".`,
       )
-      await clearBotRegistrationReactions(message)
+      await setRegistrationReaction(message, false)
       return
     }
     board.registerMany(registration.teams, message.id)
     await syncBoard()
-    await clearBotRegistrationReactions(message)
+    await setRegistrationReaction(message, true)
   }
 
   async function handleCancellation(message) {
