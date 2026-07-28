@@ -256,6 +256,10 @@ test('a MINE reply takes the canceled slot and restores the promoted team', () =
 test('parses cancellation commands and slot labels', () => {
   assert.equal(parseCancelContent('CANCEL - Alpha Team'), 'Alpha Team')
   assert.equal(parseMineContent('mine: ABC Alpha Team'), 'ABC Alpha Team')
+  assert.equal(parseCancelContent('CANCEL Alpha Team'), null)
+  assert.equal(parseMineContent('MINE ABC Alpha Team'), null)
+  assert.equal(parseCancelContent('CANCEL -'), null)
+  assert.equal(parseMineContent('MINE -'), null)
   assert.equal(slotCode(0), '01A')
   assert.equal(slotCode(24), '25Y')
 })
