@@ -134,6 +134,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     'MOBILE_SCRIM_MAX_SLOTS',
     'MOBILE_SCRIM_EMPTY_WAITLIST_ROWS',
     'MOBILE_SCRIM_TITLE',
+    'MOBILE_SCRIM_TITLE_EMOJI_ID',
     'MOBILE_SCRIM_TIME_LABEL',
     'MOBILE_SCRIM_ROUNDS_LABEL',
     'SCRIM_REGISTRATION_CHANNEL_ID',
@@ -181,6 +182,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       mobile.title,
       'PH GAMING GUILD BS OPERATION: DOMINATION',
     )
+    assert.equal(mobile.titleEmojiId, '1337103312989716592')
     assert.equal(mobile.timeLabel, '8:00PM PH Time')
     assert.equal(mobile.roundsLabel, '4 Rounds | 2SB-1DV-1SI')
 

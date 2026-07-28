@@ -62,6 +62,12 @@ function displayTeam(team) {
   return team ? `${team.tag} - ${team.name} | PH` : ''
 }
 
+function boardTitle(config) {
+  if (!config.titleEmojiId) return config.title
+  const emoji = `<:phgg:${config.titleEmojiId}>`
+  return `${emoji} ${config.title} ${emoji}`
+}
+
 export function buildEmbeds(
   board,
   state,
@@ -91,7 +97,7 @@ export function buildEmbeds(
   const templateMain = templateMessage?.embeds?.[0]
   const main = new EmbedBuilder()
     .setColor(templateMain?.color ?? botConfig.color)
-    .setTitle(templateMain?.title ?? `🎟️ ${config.title} 🎟️`)
+    .setTitle(boardTitle(config))
     .setDescription(
       [
         `📅 **DATE:** ${date}`,

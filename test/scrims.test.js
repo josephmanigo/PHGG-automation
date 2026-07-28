@@ -155,6 +155,7 @@ test('renders the exact 20-slot PHGG board layout', () => {
     {
       label: 'MOBILE',
       title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
+      titleEmojiId: '1337103312989716592',
       timeLabel: '8:00PM PH Time',
       roundsLabel: '4 Rounds | 2SB-1DV-1SI',
       emptyWaitlistRows: 4,
@@ -167,6 +168,10 @@ test('renders the exact 20-slot PHGG board layout', () => {
     },
   )
   const rendered = embed.toJSON()
+  assert.equal(
+    rendered.title,
+    '<:phgg:1337103312989716592> PH GAMING GUILD BS OPERATION: DOMINATION <:phgg:1337103312989716592>',
+  )
   assert.match(rendered.description, /\*\*TIME:\*\* 8:00PM PH Time/)
   assert.match(rendered.description, /\*\*ROUNDS:\*\* 4 Rounds \| 2SB-1DV-1SI/)
   assert.ok(rendered.description.includes('01A  :  AMT - THE UNCLAIMED | PH'))

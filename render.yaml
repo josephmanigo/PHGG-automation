@@ -52,6 +52,8 @@ services:
         value: "4"
       - key: MOBILE_SCRIM_TITLE
         value: "PH GAMING GUILD BS OPERATION: DOMINATION"
+      - key: MOBILE_SCRIM_TITLE_EMOJI_ID
+        value: "1337103312989716592"
       - key: MOBILE_SCRIM_TIME_LABEL
         value: 8:00PM PH Time
       - key: MOBILE_SCRIM_ROUNDS_LABEL

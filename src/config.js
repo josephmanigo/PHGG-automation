@@ -19,6 +19,7 @@ const DEFAULT_SCRIMS = {
     maxSlots: 20,
     emptyWaitlistRows: 4,
     title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
+    titleEmojiId: '1337103312989716592',
     timeLabel: '8:00PM PH Time',
     roundsLabel: '4 Rounds | 2SB-1DV-1SI',
   },
@@ -138,6 +139,7 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
       'TITLE',
       defaults.title ?? `${brandName.toUpperCase()} ${scope} SCRIMMAGE SLOT LIST`,
     ),
+    titleEmojiId: read('TITLE_EMOJI_ID', defaults.titleEmojiId),
     timeLabel: read('TIME_LABEL', defaults.timeLabel ?? '10:00 PM PH Time'),
     roundsLabel: read(
       'ROUNDS_LABEL',
