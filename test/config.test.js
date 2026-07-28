@@ -158,6 +158,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     DISCORD_BOT_TOKEN: 'test-token',
     DISCORD_GUILD_ID: 'test-guild',
     MOBILE_SCRIM_ALWAYS_OPEN: 'true',
+    MOBILE_SCRIM_TITLE: 'PH GAMING GUILD MOBILE SCRIMMAGE',
     PC_SCRIM_ALWAYS_OPEN: 'true',
   })
 

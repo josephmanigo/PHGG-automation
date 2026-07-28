@@ -135,10 +135,9 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
       defaults.emptyWaitlistRows ?? 4,
       { min: 1, max: 20 },
     ),
-    title: read(
-      'TITLE',
-      defaults.title ?? `${brandName.toUpperCase()} ${scope} SCRIMMAGE SLOT LIST`,
-    ),
+    title:
+      defaults.title ??
+      read('TITLE', `${brandName.toUpperCase()} ${scope} SCRIMMAGE SLOT LIST`),
     titleEmojiId: read('TITLE_EMOJI_ID', defaults.titleEmojiId),
     timeLabel: read('TIME_LABEL', defaults.timeLabel ?? '10:00 PM PH Time'),
     roundsLabel: read(
