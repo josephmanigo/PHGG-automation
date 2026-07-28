@@ -16,6 +16,11 @@ const DEFAULT_SCRIMS = {
     boardHeaderMessageId: '1531588588372885615',
     boardTemplateMessageId: '1529059937068777620',
     alwaysOpen: false,
+    maxSlots: 20,
+    emptyWaitlistRows: 4,
+    title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
+    timeLabel: '8:00PM PH Time',
+    roundsLabel: '4 Rounds | 2SB-1DV-1SI',
   },
   PC: {
     channels: {
@@ -114,19 +119,30 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
       variable('REQUIRE_VALID_NICKNAME'),
       read('REQUIRE_VALID_NICKNAME'),
     ),
-    maxSlots: parseInteger(variable('MAX_SLOTS'), read('MAX_SLOTS'), 25, {
+    maxSlots: parseInteger(
+      variable('MAX_SLOTS'),
+      read('MAX_SLOTS'),
+      defaults.maxSlots ?? 25,
+      {
       min: 1,
       max: 26,
-    }),
+      },
+    ),
     emptyWaitlistRows: parseInteger(
       variable('EMPTY_WAITLIST_ROWS'),
       read('EMPTY_WAITLIST_ROWS'),
-      4,
+      defaults.emptyWaitlistRows ?? 4,
       { min: 1, max: 20 },
     ),
-    title: read('TITLE', `${brandName.toUpperCase()} ${scope} SCRIMMAGE SLOT LIST`),
-    timeLabel: read('TIME_LABEL', '10:00 PM PH Time'),
-    roundsLabel: read('ROUNDS_LABEL', '4 Rounds | 1SB-1DV-2SI'),
+    title: read(
+      'TITLE',
+      defaults.title ?? `${brandName.toUpperCase()} ${scope} SCRIMMAGE SLOT LIST`,
+    ),
+    timeLabel: read('TIME_LABEL', defaults.timeLabel ?? '10:00 PM PH Time'),
+    roundsLabel: read(
+      'ROUNDS_LABEL',
+      defaults.roundsLabel ?? '4 Rounds | 1SB-1DV-2SI',
+    ),
   }
 }
 

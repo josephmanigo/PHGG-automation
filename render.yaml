@@ -47,13 +47,13 @@ services:
       - key: MOBILE_SCRIM_REQUIRE_VALID_NICKNAME
         value: "false"
       - key: MOBILE_SCRIM_MAX_SLOTS
-        value: "25"
+        value: "20"
       - key: MOBILE_SCRIM_EMPTY_WAITLIST_ROWS
         value: "4"
       - key: MOBILE_SCRIM_TITLE
-        value: PH GAMING GUILD MOBILE SCRIMMAGE
+        value: "PH GAMING GUILD BS OPERATION: DOMINATION"
       - key: MOBILE_SCRIM_TIME_LABEL
-        value: 08:00 PM PH Time
+        value: 8:00PM PH Time
       - key: MOBILE_SCRIM_ROUNDS_LABEL
         value: 4 Rounds | 2SB-1DV-1SI
       - key: PC_SCRIM_REGISTRATION_CHANNEL_ID

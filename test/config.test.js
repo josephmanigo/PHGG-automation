@@ -133,6 +133,9 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     'MOBILE_SCRIM_ALWAYS_OPEN',
     'MOBILE_SCRIM_MAX_SLOTS',
     'MOBILE_SCRIM_EMPTY_WAITLIST_ROWS',
+    'MOBILE_SCRIM_TITLE',
+    'MOBILE_SCRIM_TIME_LABEL',
+    'MOBILE_SCRIM_ROUNDS_LABEL',
     'SCRIM_REGISTRATION_CHANNEL_ID',
     'SCRIM_BOARD_CHANNEL_ID',
     'SCRIM_CANCEL_CHANNEL_ID',
@@ -172,8 +175,14 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     assert.equal(mobile.boardHeaderMessageId, '1531588588372885615')
     assert.equal(mobile.boardTemplateMessageId, '1529059937068777620')
     assert.equal(mobile.alwaysOpen, false)
-    assert.equal(mobile.maxSlots, 25)
+    assert.equal(mobile.maxSlots, 20)
     assert.equal(mobile.emptyWaitlistRows, 4)
+    assert.equal(
+      mobile.title,
+      'PH GAMING GUILD BS OPERATION: DOMINATION',
+    )
+    assert.equal(mobile.timeLabel, '8:00PM PH Time')
+    assert.equal(mobile.roundsLabel, '4 Rounds | 2SB-1DV-1SI')
 
     const pc = loadConfig().scrims.find(({ label }) => label === 'PC')
     assert.deepEqual(pc.channels, {

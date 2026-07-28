@@ -8,7 +8,10 @@ import {
   slotCode,
   validateRegistrationContent,
 } from '../src/scrims/core.js'
-import { isRegistrationOpener } from '../src/scrims/automation.js'
+import {
+  buildEmbeds,
+  isRegistrationOpener,
+} from '../src/scrims/automation.js'
 
 test('parses PHGG flag-last registration lines atomically', () => {
   const result = validateRegistrationContent(
@@ -137,6 +140,40 @@ test('keeps a duplicate registration on the board only once', () => {
   assert.equal(board.register(team).status, 'duplicate')
   assert.equal(board.slots.filter(Boolean).length, 1)
   assert.equal(board.waitlist.length, 0)
+})
+
+test('renders the exact 20-slot PHGG board layout', () => {
+  const board = new ScrimBoard(20)
+  board.register(makeTeam('AMT', 'THE UNCLAIMED'))
+  const state = {
+    cycleStartMessageId: 'starter-message',
+    lastRenderedDate: '',
+  }
+  const [embed] = buildEmbeds(
+    board,
+    state,
+    {
+      label: 'MOBILE',
+      title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
+      timeLabel: '8:00PM PH Time',
+      roundsLabel: '4 Rounds | 2SB-1DV-1SI',
+      emptyWaitlistRows: 4,
+      bannerUrl: '',
+    },
+    {
+      brandName: 'PHGG',
+      color: 0xed1c24,
+      timezone: 'Asia/Manila',
+    },
+  )
+  const rendered = embed.toJSON()
+  assert.match(rendered.description, /\*\*TIME:\*\* 8:00PM PH Time/)
+  assert.match(rendered.description, /\*\*ROUNDS:\*\* 4 Rounds \| 2SB-1DV-1SI/)
+  assert.ok(rendered.description.includes('01A  :  AMT - THE UNCLAIMED | PH'))
+  assert.ok(rendered.description.includes('20T  :'))
+  assert.ok(rendered.description.includes('## WAIT LIST'))
+  assert.ok(rendered.description.includes('01   :'))
+  assert.equal(rendered.footer, undefined)
 })
 
 test('cancellation promotes the first waiting team into the exact slot', () => {

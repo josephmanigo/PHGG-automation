@@ -55,18 +55,24 @@ function dateLabel(timezone) {
     weekday: 'long',
   }).formatToParts(new Date())
   const part = (type) => parts.find((entry) => entry.type === type)?.value ?? ''
-  return `${part('month')} ${part('day')}, ${part('year')} (${part('weekday').toUpperCase()})`
+  return `${part('month')} ${part('day')}, ${part('year')} (${part('weekday')})`
 }
 
 function displayTeam(team) {
-  return team ? `${team.tag.padEnd(5)} - ${team.name}` : ''
+  return team ? `${team.tag} - ${team.name} | PH` : ''
 }
 
-function buildEmbeds(board, state, config, botConfig, templateMessage = null) {
+export function buildEmbeds(
+  board,
+  state,
+  config,
+  botConfig,
+  templateMessage = null,
+) {
   const date = dateLabel(botConfig.timezone)
   state.lastRenderedDate = date
-  const slotLines = board.slots.map(
-    (team, index) => `${slotCode(index)} : ${displayTeam(team)}`.trimEnd(),
+  const slotLines = board.slots.map((team, index) =>
+    `${slotCode(index).padEnd(5)}:  ${displayTeam(team)}`.trimEnd(),
   )
   const waitRows = Math.max(
     config.emptyWaitlistRows,
@@ -74,14 +80,14 @@ function buildEmbeds(board, state, config, botConfig, templateMessage = null) {
   )
   const waitLines = Array.from({ length: waitRows }, (_value, index) => {
     const number = String(index + 1).padStart(2, '0')
-    return `W${number} : ${displayTeam(board.waitlist[index])}`.trimEnd()
+    return `${number.padEnd(5)}:  ${displayTeam(board.waitlist[index])}`.trimEnd()
   })
   if (board.waitlist.length > MAX_WAITLIST_DISPLAY) {
-    waitLines.push(`... : +${board.waitlist.length - MAX_WAITLIST_DISPLAY} MORE TEAMS`)
+    waitLines.push(
+      `...  :  +${board.waitlist.length - MAX_WAITLIST_DISPLAY} MORE TEAMS`,
+    )
   }
 
-  const marker =
-    `${botConfig.brandName.toUpperCase()} ${config.label} SCRIM BOARD • LIVE`
   const templateMain = templateMessage?.embeds?.[0]
   const main = new EmbedBuilder()
     .setColor(templateMain?.color ?? botConfig.color)
@@ -92,9 +98,15 @@ function buildEmbeds(board, state, config, botConfig, templateMessage = null) {
         `⏰ **TIME:** ${config.timeLabel}`,
         `📌 **ROUNDS:** ${config.roundsLabel}`,
         '',
-        '**SLOT LIST**',
+        '## SLOT LIST',
         '```',
         ...slotLines,
+        '```',
+        '',
+        '\u200b',
+        '## WAIT LIST',
+        '```',
+        ...waitLines,
         '```',
       ].join('\n'),
     )
@@ -103,18 +115,7 @@ function buildEmbeds(board, state, config, botConfig, templateMessage = null) {
     main.setImage(config.bannerUrl || templateImage)
   }
 
-  const templateWaiting = templateMessage?.embeds?.[1]
-  const waiting = new EmbedBuilder()
-    .setColor(templateWaiting?.color ?? templateMain?.color ?? botConfig.color)
-    .setTitle(templateWaiting?.title ?? 'WAIT LIST')
-    .setDescription(['```', ...waitLines, '```'].join('\n'))
-    .setFooter({
-      text: state.cycleStartMessageId
-        ? `${marker} • CYCLE ${state.cycleStartMessageId}`
-        : marker,
-    })
-    .setTimestamp()
-  return [main, waiting]
+  return [main]
 }
 
 function boardCycleId(message) {
@@ -125,12 +126,13 @@ function boardCycleId(message) {
   return null
 }
 
-function isLiveBoard(message, botUserId, brandName, label) {
+function isLiveBoard(message, botUserId, brandName, label, title) {
   if (message.author.id !== botUserId) return false
   const marker = `${brandName.toUpperCase()} ${label} SCRIM BOARD • LIVE`
   return message.embeds.some(
     (embed) =>
-      embed.footer?.text?.startsWith(marker),
+      embed.footer?.text?.startsWith(marker) ||
+      (title && embed.title?.includes(title)),
   )
 }
 
@@ -142,18 +144,22 @@ async function readableChannel(client, channelId) {
   return channel
 }
 
-async function findLiveBoard(channel, botUserId, brandName, label) {
+async function findLiveBoard(channel, botUserId, brandName, label, title) {
   const pins = await channel.messages.fetchPins({ limit: 50 })
   const pinned = pins.items
     .map((item) => item.message)
-    .filter((message) => isLiveBoard(message, botUserId, brandName, label))
+    .filter((message) =>
+      isLiveBoard(message, botUserId, brandName, label, title),
+    )
     .sort((left, right) => right.createdTimestamp - left.createdTimestamp)[0]
   if (pinned) return pinned
 
   const recent = await channel.messages.fetch({ limit: 100 })
   return (
     [...recent.values()]
-      .filter((message) => isLiveBoard(message, botUserId, brandName, label))
+      .filter((message) =>
+        isLiveBoard(message, botUserId, brandName, label, title),
+      )
       .sort((left, right) => right.createdTimestamp - left.createdTimestamp)[0] ?? null
   )
 }
@@ -359,12 +365,17 @@ export function installScrimAutomation(client, config, botConfig) {
       readyClient.user.id,
       botConfig.brandName,
       config.label,
+      config.title,
     )
     await loadCycle()
+    const recordedCycleId = existing ? boardCycleId(existing) : null
     state.boardMessageId =
       existing &&
       (state.cycleStartMessageId === ALWAYS_OPEN_CYCLE_ID ||
-        boardCycleId(existing) === state.cycleStartMessageId)
+        recordedCycleId === state.cycleStartMessageId ||
+        (!recordedCycleId &&
+          state.cycleStartedAt !== null &&
+          existing.createdTimestamp >= state.cycleStartedAt))
         ? existing.id
         : null
     await syncBoard()
