@@ -98,8 +98,10 @@ function dateLabel(timezone) {
   return `${part('month')} ${part('day')}, ${part('year')} (${part('weekday')})`
 }
 
-function displayTeam(team) {
-  return team ? `${team.tag} - ${team.name} | PH` : ''
+function displayTeam(team, config) {
+  if (!team) return ''
+  const tag = config.padTeamTags ? team.tag.padEnd(5) : team.tag
+  return `${tag} - ${team.name} | PH`
 }
 
 function boardTitle(config) {
@@ -118,15 +120,15 @@ export function buildEmbeds(
   const date = dateLabel(botConfig.timezone)
   state.lastRenderedDate = date
   const slotLines = board.slots.map((team, index) =>
-    `${slotCode(index).padEnd(5)}:  ${displayTeam(team)}`.trimEnd(),
+    `${slotCode(index).padEnd(5)}:  ${displayTeam(team, config)}`.trimEnd(),
   )
   const waitRows = Math.max(
     config.emptyWaitlistRows,
     Math.min(board.waitlist.length, MAX_WAITLIST_DISPLAY),
   )
   const waitLines = Array.from({ length: waitRows }, (_value, index) => {
-    const number = String(index + 1).padStart(2, '0')
-    return `${number.padEnd(5)}:  ${displayTeam(board.waitlist[index])}`.trimEnd()
+    const number = String(index + (config.waitlistStartAtZero ? 0 : 1)).padStart(2, '0')
+    return `${number.padEnd(5)}:  ${displayTeam(board.waitlist[index], config)}`.trimEnd()
   })
   if (board.waitlist.length > MAX_WAITLIST_DISPLAY) {
     waitLines.push(

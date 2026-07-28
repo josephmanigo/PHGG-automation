@@ -209,6 +209,42 @@ test('renders the exact 20-slot PHGG board layout', () => {
   assert.equal(rendered.footer, undefined)
 })
 
+test('renders the exact 25-slot PC board layout', () => {
+  const board = new ScrimBoard(25)
+  board.register(makeTeam('NR', 'NIGHTRAID ESPORTS'))
+  const state = {
+    cycleStartMessageId: 'pc-starter-message',
+    lastRenderedDate: '',
+  }
+  const [embed] = buildEmbeds(
+    board,
+    state,
+    {
+      label: 'PC',
+      title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
+      titleEmojiId: '1337103312989716592',
+      timeLabel: '10:00PM PH Time',
+      roundsLabel: '4 Rounds | 2SB-1DV-1SI',
+      emptyWaitlistRows: 11,
+      waitlistStartAtZero: true,
+      padTeamTags: true,
+      bannerUrl: '',
+    },
+    {
+      brandName: 'PHGG',
+      color: 0xed1c24,
+      timezone: 'Asia/Manila',
+    },
+  )
+  const rendered = embed.toJSON()
+  assert.match(rendered.description, /\*\*TIME:\*\* 10:00PM PH Time/)
+  assert.ok(rendered.description.includes('01A  :  NR    - NIGHTRAID ESPORTS | PH'))
+  assert.ok(rendered.description.includes('25Y  :'))
+  assert.ok(rendered.description.includes('00   :'))
+  assert.ok(rendered.description.includes('10   :'))
+  assert.ok(!rendered.description.includes('11   :'))
+})
+
 test('rebuild uses only an edited registration message’s latest content', () => {
   const board = new ScrimBoard(20)
   const originalMessage = {

@@ -32,11 +32,13 @@ const DEFAULT_SCRIMS = {
     bannerAssetId: '1531386417434071191',
     bannerSignalIds: ['1531386417123426384'],
     alwaysOpen: false,
-    maxSlots: 20,
-    emptyWaitlistRows: 4,
+    maxSlots: 25,
+    emptyWaitlistRows: 11,
+    waitlistStartAtZero: true,
+    padTeamTags: true,
     title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
     titleEmojiId: '1337103312989716592',
-    timeLabel: '08:00 PM (PC) PH Time',
+    timeLabel: '10:00PM PH Time',
     roundsLabel: '4 Rounds | 2SB-1DV-1SI',
   },
 }
@@ -141,6 +143,16 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
       read('EMPTY_WAITLIST_ROWS'),
       defaults.emptyWaitlistRows ?? 4,
       { min: 1, max: 20 },
+    ),
+    waitlistStartAtZero: parseBoolean(
+      variable('WAITLIST_START_AT_ZERO'),
+      read('WAITLIST_START_AT_ZERO'),
+      defaults.waitlistStartAtZero ?? false,
+    ),
+    padTeamTags: parseBoolean(
+      variable('PAD_TEAM_TAGS'),
+      read('PAD_TEAM_TAGS'),
+      defaults.padTeamTags ?? false,
     ),
     title:
       defaults.title ??

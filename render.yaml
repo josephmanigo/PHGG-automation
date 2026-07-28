@@ -73,15 +73,19 @@ services:
       - key: PC_SCRIM_REQUIRE_VALID_NICKNAME
         value: "false"
       - key: PC_SCRIM_MAX_SLOTS
-        value: "20"
+        value: "25"
       - key: PC_SCRIM_EMPTY_WAITLIST_ROWS
-        value: "4"
+        value: "11"
+      - key: PC_SCRIM_WAITLIST_START_AT_ZERO
+        value: "true"
+      - key: PC_SCRIM_PAD_TEAM_TAGS
+        value: "true"
       - key: PC_SCRIM_TITLE
         value: "PH GAMING GUILD BS OPERATION: DOMINATION"
       - key: PC_SCRIM_TITLE_EMOJI_ID
         value: "1337103312989716592"
       - key: PC_SCRIM_TIME_LABEL
-        value: 08:00 PM (PC) PH Time
+        value: 10:00PM PH Time
       - key: PC_SCRIM_ROUNDS_LABEL
         value: 4 Rounds | 2SB-1DV-1SI
       - key: ANNOUNCEMENT_TIMEZONE

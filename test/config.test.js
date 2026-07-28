@@ -152,6 +152,8 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     'PC_SCRIM_ALWAYS_OPEN',
     'PC_SCRIM_MAX_SLOTS',
     'PC_SCRIM_EMPTY_WAITLIST_ROWS',
+    'PC_SCRIM_WAITLIST_START_AT_ZERO',
+    'PC_SCRIM_PAD_TEAM_TAGS',
     'PC_SCRIM_TITLE',
     'PC_SCRIM_TITLE_EMOJI_ID',
     'PC_SCRIM_TIME_LABEL',
@@ -204,14 +206,16 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       ['1531386417123426384'],
     )
     assert.equal(pc.alwaysOpen, false)
-    assert.equal(pc.maxSlots, 20)
-    assert.equal(pc.emptyWaitlistRows, 4)
+    assert.equal(pc.maxSlots, 25)
+    assert.equal(pc.emptyWaitlistRows, 11)
+    assert.equal(pc.waitlistStartAtZero, true)
+    assert.equal(pc.padTeamTags, true)
     assert.equal(
       pc.title,
       'PH GAMING GUILD BS OPERATION: DOMINATION',
     )
     assert.equal(pc.titleEmojiId, '1337103312989716592')
-    assert.equal(pc.timeLabel, '08:00 PM (PC) PH Time')
+    assert.equal(pc.timeLabel, '10:00PM PH Time')
     assert.equal(pc.roundsLabel, '4 Rounds | 2SB-1DV-1SI')
   } finally {
     for (const [key, oldValue] of previous) {
