@@ -148,9 +148,14 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     'PC_SCRIM_BOARD_CHANNEL_ID',
     'PC_SCRIM_CANCEL_CHANNEL_ID',
     'PC_SCRIM_BANNER_ASSET_ID',
+    'PC_SCRIM_BANNER_SIGNAL_IDS',
     'PC_SCRIM_ALWAYS_OPEN',
     'PC_SCRIM_MAX_SLOTS',
     'PC_SCRIM_EMPTY_WAITLIST_ROWS',
+    'PC_SCRIM_TITLE',
+    'PC_SCRIM_TITLE_EMOJI_ID',
+    'PC_SCRIM_TIME_LABEL',
+    'PC_SCRIM_ROUNDS_LABEL',
   ]
   const previous = new Map(keys.map((key) => [key, process.env[key]]))
   for (const key of keys) delete process.env[key]
@@ -193,10 +198,21 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       board: '1340963180809031721',
       cancel: '1340963218582929430',
     })
-    assert.equal(pc.bannerAssetId, '1531385928105594940')
+    assert.equal(pc.bannerAssetId, '1531386417434071191')
+    assert.deepEqual(
+      [...pc.bannerSignalIds],
+      ['1531386417123426384'],
+    )
     assert.equal(pc.alwaysOpen, false)
-    assert.equal(pc.maxSlots, 25)
+    assert.equal(pc.maxSlots, 20)
     assert.equal(pc.emptyWaitlistRows, 4)
+    assert.equal(
+      pc.title,
+      'PH GAMING GUILD BS OPERATION: DOMINATION',
+    )
+    assert.equal(pc.titleEmojiId, '1337103312989716592')
+    assert.equal(pc.timeLabel, '08:00 PM (PC) PH Time')
+    assert.equal(pc.roundsLabel, '4 Rounds | 2SB-1DV-1SI')
   } finally {
     for (const [key, oldValue] of previous) {
       if (oldValue === undefined) delete process.env[key]

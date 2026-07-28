@@ -29,8 +29,15 @@ const DEFAULT_SCRIMS = {
       board: '1340963180809031721',
       cancel: '1340963218582929430',
     },
-    bannerAssetId: '1531385928105594940',
+    bannerAssetId: '1531386417434071191',
+    bannerSignalIds: ['1531386417123426384'],
     alwaysOpen: false,
+    maxSlots: 20,
+    emptyWaitlistRows: 4,
+    title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
+    titleEmojiId: '1337103312989716592',
+    timeLabel: '08:00 PM (PC) PH Time',
+    roundsLabel: '4 Rounds | 2SB-1DV-1SI',
   },
 }
 

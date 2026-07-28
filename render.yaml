@@ -65,17 +65,21 @@ services:
       - key: PC_SCRIM_CANCEL_CHANNEL_ID
         value: "1340963218582929430"
       - key: PC_SCRIM_BANNER_ASSET_ID
-        value: "1531385928105594940"
+        value: "1531386417434071191"
+      - key: PC_SCRIM_BANNER_SIGNAL_IDS
+        value: "1531386417123426384"
       - key: PC_SCRIM_ALWAYS_OPEN
         value: "false"
       - key: PC_SCRIM_REQUIRE_VALID_NICKNAME
         value: "false"
       - key: PC_SCRIM_MAX_SLOTS
-        value: "25"
+        value: "20"
       - key: PC_SCRIM_EMPTY_WAITLIST_ROWS
         value: "4"
       - key: PC_SCRIM_TITLE
         value: "PH GAMING GUILD BS OPERATION: DOMINATION"
+      - key: PC_SCRIM_TITLE_EMOJI_ID
+        value: "1337103312989716592"
       - key: PC_SCRIM_TIME_LABEL
         value: 08:00 PM (PC) PH Time
       - key: PC_SCRIM_ROUNDS_LABEL

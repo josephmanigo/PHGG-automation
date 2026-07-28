@@ -497,16 +497,12 @@ export function installScrimAutomation(client, config, botConfig) {
     const mine = parseMineContent(message.content)
     const referenceId = message.reference?.messageId
     if (!cancel && (!mine || !referenceId)) {
-      if (config.label === 'MOBILE') {
-        const expectedCommand =
-          /^\s*MINE\b/i.test(message.content) || referenceId ? 'MINE' : 'CANCEL'
-        await rejectCancellationFormat(message, expectedCommand)
-      }
+      const expectedCommand =
+        /^\s*MINE\b/i.test(message.content) || referenceId ? 'MINE' : 'CANCEL'
+      await rejectCancellationFormat(message, expectedCommand)
       return
     }
-    if (config.label === 'MOBILE') {
-      await setCancellationFormatReaction(message, true)
-    }
+    await setCancellationFormatReaction(message, true)
     if (!state.registrationOpen) return
 
     if (cancel) {
@@ -534,9 +530,7 @@ export function installScrimAutomation(client, config, botConfig) {
       .fetch(referenceId)
       .catch(() => null)
     if (!referencedMessage || !parseCancelContent(referencedMessage.content)) {
-      if (config.label === 'MOBILE') {
-        await rejectCancellationFormat(message, 'MINE')
-      }
+      await rejectCancellationFormat(message, 'MINE')
       return
     }
     const result = board.claim(mine, referenceId, message.id)
@@ -551,7 +545,7 @@ export function installScrimAutomation(client, config, botConfig) {
         message,
         `⚠️ **${result.team.name}** is already in slot **${slotCode(result.slotIndex)}**.`,
       )
-    } else if (result.status === 'invalid_team' && config.label === 'MOBILE') {
+    } else if (result.status === 'invalid_team') {
       await rejectCancellationFormat(message, 'MINE')
     } else {
       await reply(message, '❌ That canceled slot is no longer available.')

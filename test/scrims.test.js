@@ -94,6 +94,33 @@ test('recognizes the configured starter by Discord message ID', () => {
   )
 })
 
+test('recognizes the PC starter GIF attachment signal', () => {
+  const message = {
+    id: 'pc-starter-message',
+    content: '',
+    author: { id: 'unlisted-user' },
+    attachments: new Map([
+      [
+        '1531386417123426384',
+        {
+          id: '1531386417123426384',
+          name: 'PC_reg.gif',
+          url: 'https://media.discordapp.net/attachments/1340963116954947635/1531386417123426384/PC_reg.gif',
+        },
+      ],
+    ]),
+    embeds: [],
+  }
+  assert.equal(
+    isRegistrationOpener(message, {
+      bannerAssetId: '1531386417434071191',
+      bannerSignalIds: new Set(['1531386417123426384']),
+      openerIds: new Set(),
+    }),
+    true,
+  )
+})
+
 test('rejects a different GIF even when posted by an administrator', () => {
   assert.equal(
     isRegistrationOpener(
