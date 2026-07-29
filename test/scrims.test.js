@@ -38,7 +38,7 @@ test('parses PHGG flag-last registration lines atomically', () => {
 
 test('uses the configured PHGG custom registration reactions', () => {
   assert.equal(SCRIM_CHECK_REACTION_ID, '1472902880120934431')
-  assert.equal(SCRIM_CROSS_REACTION_ID, '1470736595673157754')
+  assert.equal(SCRIM_CROSS_REACTION_ID, '1531747414380253335')
 })
 
 test('accepts the exact displayed AMT registration format', () => {

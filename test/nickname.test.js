@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { formatNickname, parseRenameTargets } from '../src/nickname.js'
+import {
+  formatNickname,
+  NICKNAME_CHECK_REACTION_ID,
+  NICKNAME_CROSS_REACTION_ID,
+  parseRenameTargets,
+} from '../src/nickname.js'
+
+test('uses the bot-wide custom nickname reactions', () => {
+  assert.equal(NICKNAME_CHECK_REACTION_ID, '1472902880120934431')
+  assert.equal(NICKNAME_CROSS_REACTION_ID, '1531747414380253335')
+})
 
 test('formats a player nickname', () => {
   assert.deepEqual(formatNickname('6night | TiSAYwho - player'), {

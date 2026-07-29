@@ -6,12 +6,18 @@ import {
   slotCode,
   validateRegistrationContent,
 } from './core.js'
+import {
+  BOT_CHECK_REACTION_ID,
+  BOT_CROSS_REACTION_ID,
+  findReaction,
+  LEGACY_BOT_REACTION_EMOJIS,
+  resolveReactionEmoji,
+} from '../reactions.js'
 
 const MAX_WAITLIST_DISPLAY = 40
 const ALWAYS_OPEN_CYCLE_ID = 'ALWAYS_OPEN'
-export const SCRIM_CHECK_REACTION_ID = '1472902880120934431'
-export const SCRIM_CROSS_REACTION_ID = '1470736595673157754'
-const LEGACY_REACTION_EMOJIS = ['✅', '❌']
+export const SCRIM_CHECK_REACTION_ID = BOT_CHECK_REACTION_ID
+export const SCRIM_CROSS_REACTION_ID = BOT_CROSS_REACTION_ID
 const CANCEL_SLOT_FORMAT_MESSAGE = [
   '❌ **WRONG FORMAT**',
   'Follow this format:',
@@ -39,12 +45,6 @@ function messageSignals(message) {
       embed.video?.url,
     ]),
   ].filter(Boolean)
-}
-
-function findReaction(message, emoji) {
-  return message.reactions.cache.find(
-    (reaction) => reaction.emoji.id === emoji || reaction.emoji.name === emoji,
-  )
 }
 
 function starterSignalIds(config) {
@@ -448,7 +448,7 @@ export function installScrimAutomation(client, config, botConfig) {
     for (const emoji of [
       SCRIM_CROSS_REACTION_ID,
       SCRIM_CHECK_REACTION_ID,
-      ...LEGACY_REACTION_EMOJIS,
+      ...LEGACY_BOT_REACTION_EMOJIS,
     ]) {
       const reaction = findReaction(message, emoji)
       if (reaction?.me && client.user) {
@@ -464,7 +464,7 @@ export function installScrimAutomation(client, config, botConfig) {
     const unwanted = accepted
       ? SCRIM_CROSS_REACTION_ID
       : SCRIM_CHECK_REACTION_ID
-    for (const emoji of [unwanted, ...LEGACY_REACTION_EMOJIS]) {
+    for (const emoji of [unwanted, ...LEGACY_BOT_REACTION_EMOJIS]) {
       const oldReaction = findReaction(message, emoji)
       if (oldReaction?.me && client.user) {
         await oldReaction.users.remove(client.user.id).catch(() => undefined)
@@ -473,35 +473,27 @@ export function installScrimAutomation(client, config, botConfig) {
     const currentReaction = findReaction(message, wanted)
     if (currentReaction?.me) return
     await message
-      .react(client.emojis.cache.get(wanted) ?? wanted)
+      .react(resolveReactionEmoji(client, wanted))
       .catch(() => undefined)
   }
 
   async function setCancellationFormatReaction(message, valid) {
     const crossReaction = findReaction(message, SCRIM_CROSS_REACTION_ID)
-    const legacyCrossReaction = findReaction(message, '❌')
     if (valid) {
       if (crossReaction?.me && client.user) {
         await crossReaction.users.remove(client.user.id).catch(() => undefined)
       }
-      if (legacyCrossReaction?.me && client.user) {
-        await legacyCrossReaction.users
-          .remove(client.user.id)
-          .catch(() => undefined)
+    }
+    for (const emoji of LEGACY_BOT_REACTION_EMOJIS) {
+      const legacyReaction = findReaction(message, emoji)
+      if (legacyReaction?.me && client.user) {
+        await legacyReaction.users.remove(client.user.id).catch(() => undefined)
       }
-      return
     }
-    if (legacyCrossReaction?.me && client.user) {
-      await legacyCrossReaction.users
-        .remove(client.user.id)
-        .catch(() => undefined)
-    }
+    if (valid) return
     if (crossReaction?.me) return
     await message
-      .react(
-        client.emojis.cache.get(SCRIM_CROSS_REACTION_ID) ??
-          SCRIM_CROSS_REACTION_ID,
-      )
+      .react(resolveReactionEmoji(client, SCRIM_CROSS_REACTION_ID))
       .catch(() => undefined)
   }
 

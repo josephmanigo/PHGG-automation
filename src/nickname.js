@@ -1,6 +1,13 @@
 import { Events } from 'discord.js'
+import {
+  BOT_CHECK_REACTION_ID,
+  BOT_CROSS_REACTION_ID,
+  resolveReactionEmoji,
+} from './reactions.js'
 
 export const NICKNAME_MAX_LENGTH = 32
+export const NICKNAME_CHECK_REACTION_ID = BOT_CHECK_REACTION_ID
+export const NICKNAME_CROSS_REACTION_ID = BOT_CROSS_REACTION_ID
 
 const TAG_PATTERN = /^[A-Z0-9]{1,10}$/
 const NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} '._-]*$/u
@@ -84,8 +91,8 @@ async function applyNickname(member, nickname) {
   return true
 }
 
-async function react(message, emoji) {
-  await message.react(emoji).catch((reason) => {
+async function react(client, message, emojiId) {
+  await message.react(resolveReactionEmoji(client, emojiId)).catch((reason) => {
     console.error('Could not add a nickname reaction:', reason instanceof Error ? reason.message : reason)
   })
 }
@@ -107,7 +114,7 @@ export function installNicknameAutomation(client, config) {
           formatNickname(name),
         ])
         if (!allNamed || checked.some(([, result]) => !result.ok)) {
-          await react(message, '❌')
+          await react(client, message, NICKNAME_CROSS_REACTION_ID)
           return
         }
 
@@ -117,7 +124,13 @@ export function installNicknameAutomation(client, config) {
             return applyNickname(member, result.nickname)
           }),
         )
-        await react(message, results.every(Boolean) ? '✅' : '⚠️')
+        await react(
+          client,
+          message,
+          results.every(Boolean)
+            ? NICKNAME_CHECK_REACTION_ID
+            : NICKNAME_CROSS_REACTION_ID,
+        )
         return
       }
 
@@ -126,14 +139,20 @@ export function installNicknameAutomation(client, config) {
       const result = formatNickname(requested)
       if (!result.ok) {
         console.warn(`Nickname rejected for ${message.author.tag}: ${result.reason}.`)
-        await react(message, '❌')
+        await react(client, message, NICKNAME_CROSS_REACTION_ID)
         return
       }
       const member = message.member ?? (await message.guild.members.fetch(message.author.id))
-      await react(message, (await applyNickname(member, result.nickname)) ? '✅' : '⚠️')
+      await react(
+        client,
+        message,
+        (await applyNickname(member, result.nickname))
+          ? NICKNAME_CHECK_REACTION_ID
+          : NICKNAME_CROSS_REACTION_ID,
+      )
     } catch (reason) {
       console.error('Nickname automation failed:', reason instanceof Error ? reason.message : reason)
-      await react(message, '⚠️')
+      await react(client, message, NICKNAME_CROSS_REACTION_ID)
     }
   })
 }
