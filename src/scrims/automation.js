@@ -1,4 +1,4 @@
-import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
+import { Events, PermissionFlagsBits } from 'discord.js'
 import {
   isAdminNoteContent,
   isAvailableSlotsCommand,
@@ -268,12 +268,11 @@ function animatedEmoji(name, id) {
   return `<a:${name}:${id}>`
 }
 
-export function buildEmbeds(
+export function buildBoardContent(
   board,
   state,
   config,
   botConfig,
-  templateMessage = null,
 ) {
   const date = dateLabel(botConfig.timezone)
   state.lastRenderedDate = date
@@ -294,34 +293,22 @@ export function buildEmbeds(
     )
   }
 
-  const templateMain = templateMessage?.embeds?.[0]
-  const main = new EmbedBuilder()
-    .setColor(templateMain?.color ?? botConfig.color)
-    .setTitle(boardTitle(config))
-    .setDescription(
-      [
-        `${animatedEmoji('calendar', BOARD_CALENDAR_EMOJI_ID)} **DATE:** ${date}`,
-        `${animatedEmoji('alarm_clock', BOARD_ALARM_CLOCK_EMOJI_ID)} **TIME:** ${config.timeLabel}`,
-        `${animatedEmoji('pushpin', BOARD_PUSHPIN_EMOJI_ID)} **ROUNDS:** ${config.roundsLabel}`,
-        '',
-        '## SLOT LIST',
-        '```',
-        ...slotLines,
-        '```',
-        '',
-        '\u200b',
-        '## WAIT LIST',
-        '```',
-        ...waitLines,
-        '```',
-      ].join('\n'),
-    )
-  const templateImage = templateMain?.image?.url
-  if (config.bannerUrl || templateImage) {
-    main.setImage(config.bannerUrl || templateImage)
-  }
-
-  return [main]
+  return [
+    `# ${boardTitle(config)}`,
+    `${animatedEmoji('calendar', BOARD_CALENDAR_EMOJI_ID)} **DATE:** ${date}`,
+    `${animatedEmoji('alarm_clock', BOARD_ALARM_CLOCK_EMOJI_ID)} **TIME:** ${config.timeLabel}`,
+    `${animatedEmoji('pushpin', BOARD_PUSHPIN_EMOJI_ID)} **ROUNDS:** ${config.roundsLabel}`,
+    '',
+    '## SLOT LIST',
+    '```',
+    ...slotLines,
+    '```',
+    '',
+    '## WAIT LIST',
+    '```',
+    ...waitLines,
+    '```',
+  ].join('\n')
 }
 
 function boardCycleId(message) {
@@ -335,10 +322,13 @@ function boardCycleId(message) {
 function isLiveBoard(message, botUserId, brandName, label, title) {
   if (message.author.id !== botUserId) return false
   const marker = `${brandName.toUpperCase()} ${label} SCRIM BOARD • LIVE`
-  return message.embeds.some(
-    (embed) =>
-      embed.footer?.text?.startsWith(marker) ||
-      (title && embed.title?.includes(title)),
+  return (
+    (title && message.content?.includes(title)) ||
+    message.embeds.some(
+      (embed) =>
+        embed.footer?.text?.startsWith(marker) ||
+        (title && embed.title?.includes(title)),
+    )
   )
 }
 
@@ -352,17 +342,20 @@ async function readableChannel(client, channelId) {
 
 async function findLiveBoard(channel, botUserId, brandName, label, title) {
   const pins = await channel.messages.fetchPins({ limit: 50 })
-  const pinned = pins.items
+  const pinnedBoards = pins.items
     .map((item) => item.message)
     .filter((message) =>
       isLiveBoard(message, botUserId, brandName, label, title),
     )
-    .sort((left, right) => right.createdTimestamp - left.createdTimestamp)[0]
-  if (pinned) return pinned
+  for (const message of pinnedBoards) {
+    await message
+      .unpin('PHGG scrim boards are no longer pinned automatically.')
+      .catch(() => undefined)
+  }
 
   const recent = await channel.messages.fetch({ limit: 100 })
   return (
-    [...recent.values()]
+    [...pinnedBoards, ...recent.values()]
       .filter((message) =>
         isLiveBoard(message, botUserId, brandName, label, title),
       )
@@ -387,8 +380,6 @@ export function installScrimAutomation(client, config, botConfig) {
   let initialized = Promise.resolve()
   let queueValue = Promise.resolve()
   const processedMessages = new Set()
-  let boardTemplate = null
-  let boardTemplateLoaded = false
 
   function openRegistration(message, { createBoard = false } = {}) {
     board.reset()
@@ -403,22 +394,6 @@ export function installScrimAutomation(client, config, botConfig) {
     state.registrationOpen = false
     state.cycleStartedAt = null
     state.cycleStartMessageId = null
-  }
-
-  async function loadBoardTemplate(channel) {
-    if (boardTemplateLoaded) return boardTemplate
-    boardTemplateLoaded = true
-    if (!config.boardTemplateMessageId) return null
-    boardTemplate = await channel.messages
-      .fetch(config.boardTemplateMessageId)
-      .catch((reason) => {
-        console.warn(
-          `${config.label} board template ${config.boardTemplateMessageId} could not be fetched:`,
-          reason instanceof Error ? reason.message : reason,
-        )
-        return null
-      })
-    return boardTemplate
   }
 
   async function copyBoardHeader(channel) {
@@ -465,15 +440,20 @@ export function installScrimAutomation(client, config, botConfig) {
   async function syncBoard() {
     if (!state.registrationOpen) return null
     const channel = await readableChannel(client, config.channels.board)
-    const template = await loadBoardTemplate(channel)
     const payload = {
-      embeds: buildEmbeds(board, state, config, botConfig, template),
+      content: buildBoardContent(board, state, config, botConfig),
+      embeds: [],
       allowedMentions: { parse: [] },
     }
     if (state.boardMessageId) {
       try {
         const message = await channel.messages.fetch(state.boardMessageId)
         await message.edit(payload)
+        if (message.pinned) {
+          await message
+            .unpin('PHGG scrim boards are no longer pinned automatically.')
+            .catch(() => undefined)
+        }
         return message
       } catch {
         state.boardMessageId = null
@@ -483,11 +463,6 @@ export function installScrimAutomation(client, config, botConfig) {
     await copyBoardHeader(channel)
     const message = await channel.send(payload)
     state.boardMessageId = message.id
-    await message
-      .pin(
-        `Keep the live ${botConfig.brandName} ${config.label} scrim board available after restarts.`,
-      )
-      .catch(() => undefined)
     return message
   }
 

@@ -15,7 +15,7 @@ import {
   BOARD_ALARM_CLOCK_EMOJI_ID,
   BOARD_CALENDAR_EMOJI_ID,
   BOARD_PUSHPIN_EMOJI_ID,
-  buildEmbeds,
+  buildBoardContent,
   isCancelChannelAdminNotice,
   isAdminRegistrationOpener,
   isAutomatedRegistrationOpener,
@@ -482,7 +482,7 @@ test('renders the exact 20-slot PHGG board layout', () => {
     cycleStartMessageId: 'starter-message',
     lastRenderedDate: '',
   }
-  const [embed] = buildEmbeds(
+  const rendered = buildBoardContent(
     board,
     state,
     {
@@ -500,30 +500,29 @@ test('renders the exact 20-slot PHGG board layout', () => {
       timezone: 'Asia/Manila',
     },
   )
-  const rendered = embed.toJSON()
-  assert.equal(
-    rendered.title,
-    '<:phgg:1337103312989716592> PH GAMING GUILD BS OPERATION: DOMINATION <:phgg:1337103312989716592>',
+  assert.match(
+    rendered,
+    /^# <:phgg:1337103312989716592> PH GAMING GUILD BS OPERATION: DOMINATION <:phgg:1337103312989716592>/,
   )
   assert.match(
-    rendered.description,
-    /^<a:calendar:1436064495939354634> \*\*DATE:\*\*/,
+    rendered,
+    /\n<a:calendar:1436064495939354634> \*\*DATE:\*\*/,
   )
   assert.match(
-    rendered.description,
+    rendered,
     /<a:alarm_clock:1259806144080248894> \*\*TIME:\*\*/,
   )
   assert.match(
-    rendered.description,
+    rendered,
     /<a:pushpin:1240329558033436722> \*\*ROUNDS:\*\*/,
   )
-  assert.match(rendered.description, /\*\*TIME:\*\* 8:00PM PH Time/)
-  assert.match(rendered.description, /\*\*ROUNDS:\*\* 4 Rounds \| 2SB-1DV-1SI/)
-  assert.ok(rendered.description.includes('01A  :  AMT - THE UNCLAIMED | PH'))
-  assert.ok(rendered.description.includes('20T  :'))
-  assert.ok(rendered.description.includes('## WAIT LIST'))
-  assert.ok(rendered.description.includes('01   :'))
-  assert.equal(rendered.footer, undefined)
+  assert.match(rendered, /\*\*TIME:\*\* 8:00PM PH Time/)
+  assert.match(rendered, /\*\*ROUNDS:\*\* 4 Rounds \| 2SB-1DV-1SI/)
+  assert.ok(rendered.includes('01A  :  AMT - THE UNCLAIMED | PH'))
+  assert.ok(rendered.includes('20T  :'))
+  assert.ok(rendered.includes('## WAIT LIST'))
+  assert.ok(rendered.includes('01   :'))
+  assert.ok(!rendered.includes('\u200b'))
 })
 
 test('renders the exact 25-slot PC board layout', () => {
@@ -544,7 +543,7 @@ test('renders the exact 25-slot PC board layout', () => {
     cycleStartMessageId: 'pc-starter-message',
     lastRenderedDate: '',
   }
-  const [embed] = buildEmbeds(
+  const rendered = buildBoardContent(
     board,
     state,
     {
@@ -564,16 +563,15 @@ test('renders the exact 25-slot PC board layout', () => {
       timezone: 'Asia/Manila',
     },
   )
-  const rendered = embed.toJSON()
-  assert.match(rendered.description, /\*\*TIME:\*\* 10:00PM PH Time/)
-  assert.match(rendered.description, /\*\*ROUNDS:\*\* 4 Rounds \| 1SB-1DV-2SI/)
-  assert.ok(rendered.description.includes('01A  :  SS    - RAMPAGE SENTINELS | 🇵🇭'))
-  assert.ok(rendered.description.includes('02B  :  APXS  - SYNDICATE | 🇵🇭'))
-  assert.ok(rendered.description.includes('03C  :  NR    - NIGHTRAID ESPORTS | PH'))
-  assert.ok(rendered.description.includes('25Y  :'))
-  assert.ok(rendered.description.includes('00   :'))
-  assert.ok(rendered.description.includes('10   :'))
-  assert.ok(!rendered.description.includes('11   :'))
+  assert.match(rendered, /\*\*TIME:\*\* 10:00PM PH Time/)
+  assert.match(rendered, /\*\*ROUNDS:\*\* 4 Rounds \| 1SB-1DV-2SI/)
+  assert.ok(rendered.includes('01A  :  SS    - RAMPAGE SENTINELS | 🇵🇭'))
+  assert.ok(rendered.includes('02B  :  APXS  - SYNDICATE | 🇵🇭'))
+  assert.ok(rendered.includes('03C  :  NR    - NIGHTRAID ESPORTS | PH'))
+  assert.ok(rendered.includes('25Y  :'))
+  assert.ok(rendered.includes('00   :'))
+  assert.ok(rendered.includes('10   :'))
+  assert.ok(!rendered.includes('11   :'))
 })
 
 test('rebuild uses only an edited registration message’s latest content', () => {
