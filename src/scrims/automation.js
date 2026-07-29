@@ -16,6 +16,7 @@ import {
   LEGACY_BOT_REACTION_EMOJIS,
   resolveReactionEmoji,
 } from '../reactions.js'
+import { sendDiscordAttachments } from '../discord-upload.js'
 
 const MAX_WAITLIST_DISPLAY = 40
 const ALWAYS_OPEN_CYCLE_ID = 'ALWAYS_OPEN'
@@ -433,23 +434,26 @@ export function installScrimAutomation(client, config, botConfig) {
       })
     if (!source) return null
 
-    const attachmentEmbeds = [...source.attachments.values()]
-      .slice(0, Math.max(0, 10 - source.embeds.length))
-      .map((attachment) => new EmbedBuilder().setImage(attachment.url))
     const payload = {
       content: source.content || undefined,
-      embeds: [
-        ...source.embeds
-          .filter((embed) => embed.type === 'rich')
-          .map((embed) => embed.toJSON()),
-        ...attachmentEmbeds,
-      ],
+      embeds: source.embeds
+        .filter((embed) => embed.type === 'rich')
+        .map((embed) => embed.toJSON()),
       allowedMentions: { parse: [] },
     }
-    if (!payload.content && payload.embeds.length === 0) {
+    const attachments = [...source.attachments.values()]
+    if (
+      !payload.content &&
+      payload.embeds.length === 0 &&
+      attachments.length === 0
+    ) {
       return null
     }
-    return channel.send(payload).catch((reason) => {
+    const send =
+      attachments.length > 0
+        ? sendDiscordAttachments(source.client, channel, attachments, payload)
+        : channel.send(payload)
+    return send.catch((reason) => {
       console.warn(
         `${config.label} board header could not be copied:`,
         reason instanceof Error ? reason.message : reason,

@@ -1,12 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  ANNOUNCEMENT_DATE_EMOJI_ID,
-  ANNOUNCEMENT_ROUNDS_EMOJI_ID,
-  ANNOUNCEMENT_TIME_EMOJI_ID,
   announcementDateLabel,
   announcementMessageSignature,
-  attachmentImageEmbeds,
   nextScheduledRunKey,
   replaceAnnouncementDate,
   replaceAnnouncementDetailEmojis,
@@ -52,46 +48,26 @@ test('updates the labeled mobile announcement date', () => {
   )
 })
 
-test('uses the configured animated announcement detail emojis', () => {
-  assert.equal(ANNOUNCEMENT_DATE_EMOJI_ID, '1258450242601484338')
-  assert.equal(ANNOUNCEMENT_TIME_EMOJI_ID, '1259806144080248894')
-  assert.equal(ANNOUNCEMENT_ROUNDS_EMOJI_ID, '1237358846922719323')
+test('uses normal announcement detail emojis', () => {
   assert.equal(
     replaceAnnouncementDetailEmojis(
       [
-        '📅 **DATE:** August 4, 2026 (Tuesday)',
-        '⏰ **TIME:** 8:00PM PH Time',
-        '📌 **ROUNDS:** 4 Rounds | 2SB-1DV-1SI',
+        ':emoji_150: **DATE:** August 4, 2026 (Tuesday)',
+        ':emoji_157: **TIME:** 8:00PM PH Time',
+        ':PIN: **ROUNDS:** 4 Rounds | 2SB-1DV-1SI',
+        ':pinned: Important: Registrations must be updated.',
       ].join('\n'),
     ),
     [
-      '<a:calendar:1258450242601484338> **DATE:** August 4, 2026 (Tuesday)',
-      '<a:alarm_clock:1259806144080248894> **TIME:** 8:00PM PH Time',
-      '<a:rounds:1237358846922719323> **ROUNDS:** 4 Rounds | 2SB-1DV-1SI',
+      '📅 **DATE:** August 4, 2026 (Tuesday)',
+      '⏰ **TIME:** 8:00PM PH Time',
+      '📌 **ROUNDS:** 4 Rounds | 2SB-1DV-1SI',
+      '📌 Important: Registrations must be updated.',
     ].join('\n'),
   )
 })
 
-test('reposts attachment GIFs as normal memory-safe image embeds', () => {
-  const embeds = attachmentImageEmbeds({
-    attachments: new Map([
-      [
-        'gif',
-        {
-          name: 'Announcement.gif',
-          url: 'https://cdn.discordapp.com/attachments/banner.gif',
-        },
-      ],
-    ]),
-  })
-  assert.equal(
-    embeds[0].toJSON().image.url,
-    'https://cdn.discordapp.com/attachments/banner.gif',
-  )
-  assert.deepEqual(attachmentImageEmbeds({ attachments: new Map() }), [])
-})
-
-test('deduplicates a source GIF attachment against its normal image embed', () => {
+test('normalizes refreshed Discord attachment URLs for deduplication', () => {
   const source = {
     content: '',
     attachments: new Map([
@@ -106,20 +82,15 @@ test('deduplicates a source GIF attachment against its normal image embed', () =
   }
   const posted = {
     content: '',
-    attachments: new Map(),
-    embeds: [
-      {
-        title: null,
-        description: null,
-        url: null,
-        image: {
+    attachments: new Map([
+      [
+        'copied-gif',
+        {
           url: 'https://media.discordapp.net/attachments/123/456/banner.gif?ex=old-signature',
         },
-        thumbnail: null,
-        video: null,
-        fields: [],
-      },
-    ],
+      ],
+    ]),
+    embeds: [],
   }
 
   assert.equal(

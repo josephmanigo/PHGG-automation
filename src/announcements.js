@@ -1,9 +1,7 @@
 import { EmbedBuilder, Events, MessageFlags } from 'discord.js'
+import { sendDiscordAttachments } from './discord-upload.js'
 
 const TEST_COMMAND_NAME = 'test'
-export const ANNOUNCEMENT_DATE_EMOJI_ID = '1258450242601484338'
-export const ANNOUNCEMENT_TIME_EMOJI_ID = '1259806144080248894'
-export const ANNOUNCEMENT_ROUNDS_EMOJI_ID = '1237358846922719323'
 const WEEKDAY_NAMES = [
   'Monday',
   'Tuesday',
@@ -108,31 +106,19 @@ export function replaceAnnouncementDate(value, dateLabel) {
   )
 }
 
-function animatedEmoji(name, id) {
-  return `<a:${name}:${id}>`
-}
-
 export function replaceAnnouncementDetailEmojis(value) {
   if (!value) return value
   const details = [
-    [
-      'DATE',
-      animatedEmoji('calendar', ANNOUNCEMENT_DATE_EMOJI_ID),
-    ],
-    [
-      'TIME',
-      animatedEmoji('alarm_clock', ANNOUNCEMENT_TIME_EMOJI_ID),
-    ],
-    [
-      'ROUNDS',
-      animatedEmoji('rounds', ANNOUNCEMENT_ROUNDS_EMOJI_ID),
-    ],
+    ['DATE', '📅'],
+    ['TIME', '⏰'],
+    ['ROUNDS', '📌'],
+    ['IMPORTANT', '📌'],
   ]
   return details.reduce(
     (result, [label, emoji]) =>
       result.replace(
         new RegExp(
-          `^[\\t ]*(?:(?:<a?:[^>]+>|\\p{Extended_Pictographic}\\uFE0F?)[\\t ]*)?(?=\\*{0,2}${label}\\b)`,
+          `^[\\t ]*(?:(?:<a?:[^>]+>|:[A-Z0-9_]+:|\\p{Extended_Pictographic}\\uFE0F?)[\\t ]*)?(?=\\*{0,2}${label}\\b)`,
           'gimu',
         ),
         `${emoji} `,
@@ -237,12 +223,6 @@ export function announcementMessageSignature(message, normalizeDate = false) {
   })
 }
 
-export function attachmentImageEmbeds(message) {
-  return [...(message.attachments?.values?.() ?? [])].map((attachment) =>
-    new EmbedBuilder().setImage(attachment.url),
-  )
-}
-
 function clonePayload(message, allowMentions, dateLabel = null) {
   const payload = {
     allowedMentions: allowMentions
@@ -255,22 +235,25 @@ function clonePayload(message, allowMentions, dateLabel = null) {
   const embeds = message.embeds
     .slice(0, 10)
     .map((embed) => cloneEmbed(embed, dateLabel))
-  const attachmentEmbeds = attachmentImageEmbeds(message).slice(
-    0,
-    10 - embeds.length,
-  )
-  if (embeds.length + attachmentEmbeds.length > 0) {
-    payload.embeds = [...embeds, ...attachmentEmbeds]
-  }
+  if (embeds.length > 0) payload.embeds = embeds
   if (message.stickers.size > 0) payload.stickers = [...message.stickers.keys()].slice(0, 3)
-  if (!payload.content && !payload.embeds && !payload.stickers) {
+  if (
+    !payload.content &&
+    !payload.embeds &&
+    !payload.stickers &&
+    message.attachments.size === 0
+  ) {
     throw new Error(`Source message ${message.id} has no content that can be reposted.`)
   }
   return payload
 }
 
 async function publishMessage(channel, source, allowMentions, dateLabel = null) {
-  return channel.send(clonePayload(source, allowMentions, dateLabel))
+  const payload = clonePayload(source, allowMentions, dateLabel)
+  const attachments = [...source.attachments.values()]
+  return attachments.length > 0
+    ? sendDiscordAttachments(source.client, channel, attachments, payload)
+    : channel.send(payload)
 }
 
 async function textChannel(client, channelId) {
