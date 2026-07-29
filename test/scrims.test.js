@@ -9,6 +9,9 @@ import {
   validateRegistrationContent,
 } from '../src/scrims/core.js'
 import {
+  BOARD_ALARM_CLOCK_EMOJI_ID,
+  BOARD_CALENDAR_EMOJI_ID,
+  BOARD_PUSHPIN_EMOJI_ID,
   buildEmbeds,
   isAdminRegistrationOpener,
   isAutomatedRegistrationOpener,
@@ -40,6 +43,12 @@ test('parses PHGG flag-last registration lines atomically', () => {
 test('uses the configured PHGG custom registration reactions', () => {
   assert.equal(SCRIM_CHECK_REACTION_ID, '1472902880120934431')
   assert.equal(SCRIM_CROSS_REACTION_ID, '1531747414380253335')
+})
+
+test('uses the configured animated board detail emojis', () => {
+  assert.equal(BOARD_CALENDAR_EMOJI_ID, '1436064495939354634')
+  assert.equal(BOARD_ALARM_CLOCK_EMOJI_ID, '1259806144080248894')
+  assert.equal(BOARD_PUSHPIN_EMOJI_ID, '1240329558033436722')
 })
 
 test('accepts the exact displayed AMT registration format', () => {
@@ -394,6 +403,18 @@ test('renders the exact 20-slot PHGG board layout', () => {
   assert.equal(
     rendered.title,
     '<:phgg:1337103312989716592> PH GAMING GUILD BS OPERATION: DOMINATION <:phgg:1337103312989716592>',
+  )
+  assert.match(
+    rendered.description,
+    /^<a:calendar:1436064495939354634> \*\*DATE:\*\*/,
+  )
+  assert.match(
+    rendered.description,
+    /<a:alarm_clock:1259806144080248894> \*\*TIME:\*\*/,
+  )
+  assert.match(
+    rendered.description,
+    /<a:pushpin:1240329558033436722> \*\*ROUNDS:\*\*/,
   )
   assert.match(rendered.description, /\*\*TIME:\*\* 8:00PM PH Time/)
   assert.match(rendered.description, /\*\*ROUNDS:\*\* 4 Rounds \| 2SB-1DV-1SI/)

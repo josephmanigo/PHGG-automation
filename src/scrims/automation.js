@@ -18,6 +18,9 @@ const MAX_WAITLIST_DISPLAY = 40
 const ALWAYS_OPEN_CYCLE_ID = 'ALWAYS_OPEN'
 export const SCRIM_CHECK_REACTION_ID = BOT_CHECK_REACTION_ID
 export const SCRIM_CROSS_REACTION_ID = BOT_CROSS_REACTION_ID
+export const BOARD_CALENDAR_EMOJI_ID = '1436064495939354634'
+export const BOARD_ALARM_CLOCK_EMOJI_ID = '1259806144080248894'
+export const BOARD_PUSHPIN_EMOJI_ID = '1240329558033436722'
 const CANCEL_SLOT_FORMAT_MESSAGE = [
   '❌ **WRONG FORMAT**',
   'Follow this format:',
@@ -225,6 +228,10 @@ function boardTitle(config) {
   return `${emoji} ${config.title} ${emoji}`
 }
 
+function animatedEmoji(name, id) {
+  return `<a:${name}:${id}>`
+}
+
 export function buildEmbeds(
   board,
   state,
@@ -257,9 +264,9 @@ export function buildEmbeds(
     .setTitle(boardTitle(config))
     .setDescription(
       [
-        `📅 **DATE:** ${date}`,
-        `⏰ **TIME:** ${config.timeLabel}`,
-        `📌 **ROUNDS:** ${config.roundsLabel}`,
+        `${animatedEmoji('calendar', BOARD_CALENDAR_EMOJI_ID)} **DATE:** ${date}`,
+        `${animatedEmoji('alarm_clock', BOARD_ALARM_CLOCK_EMOJI_ID)} **TIME:** ${config.timeLabel}`,
+        `${animatedEmoji('pushpin', BOARD_PUSHPIN_EMOJI_ID)} **ROUNDS:** ${config.roundsLabel}`,
         '',
         '## SLOT LIST',
         '```',
