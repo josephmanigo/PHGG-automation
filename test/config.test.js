@@ -183,6 +183,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     MOBILE_SCRIM_TITLE: 'PH GAMING GUILD MOBILE SCRIMMAGE',
     PC_SCRIM_ALWAYS_OPEN: 'true',
     PC_SCRIM_TIME_LABEL: '08:00 PM (PC) PH Time',
+    PC_SCRIM_ROUNDS_LABEL: 'STALE RENDER VALUE',
   })
 
   try {
@@ -233,7 +234,19 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     )
     assert.equal(pc.titleEmojiId, '1337103312989716592')
     assert.equal(pc.timeLabel, '10:00PM PH Time')
-    assert.equal(pc.roundsLabel, '4 Rounds | 2SB-1DV-1SI')
+    assert.equal(pc.roundsLabel, '4 Rounds | 1SB-1DV-2SI')
+    assert.deepEqual(pc.fixedTeams, [
+      {
+        tag: 'SS',
+        name: 'RAMPAGE SENTINELS',
+        countryLabel: '🇵🇭',
+      },
+      {
+        tag: 'APXS',
+        name: 'SYNDICATE',
+        countryLabel: '🇵🇭',
+      },
+    ])
   } finally {
     for (const [key, oldValue] of previous) {
       if (oldValue === undefined) delete process.env[key]

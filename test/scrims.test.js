@@ -374,6 +374,31 @@ test('keeps a duplicate registration on the board only once', () => {
   assert.equal(board.waitlist.length, 0)
 })
 
+test('keeps the two PC teams permanently reserved in the first slots', () => {
+  const fixedTeams = [
+    {
+      tag: 'SS',
+      name: 'RAMPAGE SENTINELS',
+      countryLabel: '🇵🇭',
+    },
+    {
+      tag: 'APXS',
+      name: 'SYNDICATE',
+      countryLabel: '🇵🇭',
+    },
+  ]
+  const board = new ScrimBoard(25, fixedTeams)
+  assert.equal(board.slots[0].name, 'RAMPAGE SENTINELS')
+  assert.equal(board.slots[1].name, 'SYNDICATE')
+  assert.equal(board.register(makeTeam('NR', 'NIGHTRAID ESPORTS')).slotIndex, 2)
+  assert.equal(board.register(makeTeam('SS', 'RAMPAGE SENTINELS')).status, 'duplicate')
+  assert.equal(board.cancel('RAMPAGE SENTINELS', 'cancel-fixed').status, 'fixed')
+
+  board.reset()
+  assert.equal(board.slots[0].name, 'RAMPAGE SENTINELS')
+  assert.equal(board.slots[1].name, 'SYNDICATE')
+})
+
 test('renders the exact 20-slot PHGG board layout', () => {
   const board = new ScrimBoard(20)
   board.register(makeTeam('AMT', 'THE UNCLAIMED'))
@@ -426,7 +451,18 @@ test('renders the exact 20-slot PHGG board layout', () => {
 })
 
 test('renders the exact 25-slot PC board layout', () => {
-  const board = new ScrimBoard(25)
+  const board = new ScrimBoard(25, [
+    {
+      tag: 'SS',
+      name: 'RAMPAGE SENTINELS',
+      countryLabel: '🇵🇭',
+    },
+    {
+      tag: 'APXS',
+      name: 'SYNDICATE',
+      countryLabel: '🇵🇭',
+    },
+  ])
   board.register(makeTeam('NR', 'NIGHTRAID ESPORTS'))
   const state = {
     cycleStartMessageId: 'pc-starter-message',
@@ -440,7 +476,7 @@ test('renders the exact 25-slot PC board layout', () => {
       title: 'PH GAMING GUILD BS OPERATION: DOMINATION',
       titleEmojiId: '1337103312989716592',
       timeLabel: '10:00PM PH Time',
-      roundsLabel: '4 Rounds | 2SB-1DV-1SI',
+      roundsLabel: '4 Rounds | 1SB-1DV-2SI',
       emptyWaitlistRows: 11,
       waitlistStartAtZero: true,
       padTeamTags: true,
@@ -454,7 +490,10 @@ test('renders the exact 25-slot PC board layout', () => {
   )
   const rendered = embed.toJSON()
   assert.match(rendered.description, /\*\*TIME:\*\* 10:00PM PH Time/)
-  assert.ok(rendered.description.includes('01A  :  NR    - NIGHTRAID ESPORTS | PH'))
+  assert.match(rendered.description, /\*\*ROUNDS:\*\* 4 Rounds \| 1SB-1DV-2SI/)
+  assert.ok(rendered.description.includes('01A  :  SS    - RAMPAGE SENTINELS | 🇵🇭'))
+  assert.ok(rendered.description.includes('02B  :  APXS  - SYNDICATE | 🇵🇭'))
+  assert.ok(rendered.description.includes('03C  :  NR    - NIGHTRAID ESPORTS | PH'))
   assert.ok(rendered.description.includes('25Y  :'))
   assert.ok(rendered.description.includes('00   :'))
   assert.ok(rendered.description.includes('10   :'))

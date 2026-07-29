@@ -62,7 +62,20 @@ const DEFAULT_SCRIMS = {
     titleEmojiId: '1337103312989716592',
     timeLabel: '10:00PM PH Time',
     fixedTimeLabel: true,
-    roundsLabel: '4 Rounds | 2SB-1DV-1SI',
+    roundsLabel: '4 Rounds | 1SB-1DV-2SI',
+    fixedRoundsLabel: true,
+    fixedTeams: [
+      {
+        tag: 'SS',
+        name: 'RAMPAGE SENTINELS',
+        countryLabel: '🇵🇭',
+      },
+      {
+        tag: 'APXS',
+        name: 'SYNDICATE',
+        countryLabel: '🇵🇭',
+      },
+    ],
   },
 }
 
@@ -180,6 +193,7 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
       read('PAD_TEAM_TAGS'),
       defaults.padTeamTags ?? false,
     ),
+    fixedTeams: (defaults.fixedTeams ?? []).map((team) => ({ ...team })),
     title:
       defaults.title ??
       read('TITLE', `${brandName.toUpperCase()} ${scope} SCRIMMAGE SLOT LIST`),
@@ -187,10 +201,12 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     timeLabel: defaults.fixedTimeLabel
       ? defaults.timeLabel
       : read('TIME_LABEL', defaults.timeLabel ?? '10:00 PM PH Time'),
-    roundsLabel: read(
-      'ROUNDS_LABEL',
-      defaults.roundsLabel ?? '4 Rounds | 1SB-1DV-2SI',
-    ),
+    roundsLabel: defaults.fixedRoundsLabel
+      ? defaults.roundsLabel
+      : read(
+          'ROUNDS_LABEL',
+          defaults.roundsLabel ?? '4 Rounds | 1SB-1DV-2SI',
+        ),
   }
 }
 

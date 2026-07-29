@@ -219,7 +219,7 @@ function dateLabel(timezone) {
 function displayTeam(team, config) {
   if (!team) return ''
   const tag = config.padTeamTags ? team.tag.padEnd(5) : team.tag
-  return `${tag} - ${team.name} | PH`
+  return `${tag} - ${team.name} | ${team.countryLabel ?? 'PH'}`
 }
 
 function boardTitle(config) {
@@ -340,7 +340,7 @@ export function installScrimAutomation(client, config, botConfig) {
     return
   }
 
-  const board = new ScrimBoard(config.maxSlots)
+  const board = new ScrimBoard(config.maxSlots, config.fixedTeams)
   const state = {
     registrationOpen: false,
     cycleStartedAt: null,
@@ -649,6 +649,13 @@ export function installScrimAutomation(client, config, botConfig) {
       const result = board.cancel(cancel, message.id)
       if (result.status === 'not_found') {
         await reply(message, `⚠️ I could not find **${cancel}** on the board.`)
+        return
+      }
+      if (result.status === 'fixed') {
+        await reply(
+          message,
+          `⚠️ **${result.team.name}** is permanently reserved in slot **${slotCode(result.slotIndex)}**.`,
+        )
         return
       }
       await syncBoard()

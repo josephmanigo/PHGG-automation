@@ -73,13 +73,30 @@ function teamMatches(team, query) {
 }
 
 export class ScrimBoard {
-  constructor(maxSlots = 25) {
+  constructor(maxSlots = 25, fixedTeams = []) {
     this.maxSlots = maxSlots
+    this.fixedTeams = fixedTeams
+      .map((team) => {
+        const normalized = makeTeam(team.tag, team.name)
+        return normalized
+          ? {
+              ...normalized,
+              countryLabel: team.countryLabel,
+              fixed: true,
+              sourceType: 'fixed',
+            }
+          : null
+      })
+      .filter(Boolean)
+      .slice(0, maxSlots)
     this.reset()
   }
 
   reset() {
     this.slots = Array(this.maxSlots).fill(null)
+    this.fixedTeams.forEach((team, index) => {
+      this.slots[index] = { ...team }
+    })
     this.waitlist = []
     this.pendingCancellations = new Map()
   }
@@ -121,6 +138,13 @@ export class ScrimBoard {
     if (found.location === 'waitlist') {
       this.waitlist.splice(found.index, 1)
       return { status: 'waitlist_removed', team: found.team, waitIndex: found.index }
+    }
+    if (found.team.fixed) {
+      return {
+        status: 'fixed',
+        slotIndex: found.index,
+        team: found.team,
+      }
     }
 
     const promotedTeam = this.waitlist.shift() ?? null
