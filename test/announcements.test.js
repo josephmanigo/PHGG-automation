@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  announcementAllowsMentions,
   announcementDateLabel,
   announcementMessageSignature,
   nextScheduledRunKey,
@@ -110,9 +111,17 @@ test('builds the exact canonical PC announcement format', () => {
       'Register here: <#1340963116954947635>',
       '',
       '\u{1F4CC} *Important: Registrations with outdated server nicknames will be voided.*',
+      '',
+      '||@everyone||',
     ].join('\n'),
   )
   assert.equal(content.includes('PRIZE'), false)
+})
+
+test('pings everyone for the scheduled PC post but not for /test', () => {
+  assert.equal(announcementAllowsMentions(false, 'PC', false), true)
+  assert.equal(announcementAllowsMentions(false, 'PC', true), false)
+  assert.equal(announcementAllowsMentions(false, 'MOBILE', false), false)
 })
 
 test('deduplicates the PC source and its canonical formatted post', () => {

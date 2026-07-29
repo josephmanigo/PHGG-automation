@@ -166,7 +166,17 @@ export function pcAnnouncementContent(dateLabel) {
     `Register here: <#${PC_REGISTRATION_CHANNEL_ID}>`,
     '',
     '\u{1F4CC} *Important: Registrations with outdated server nicknames will be voided.*',
+    '',
+    '||@everyone||',
   ].join('\n')
+}
+
+export function announcementAllowsMentions(
+  configured,
+  formatLabel,
+  force,
+) {
+  return Boolean(configured || (formatLabel === 'PC' && !force))
 }
 
 function isPcAnnouncement(value) {
@@ -449,7 +459,11 @@ async function publishGroup(
     await publishMessage(
       channel,
       source,
-      scheduler.allowMentions,
+      announcementAllowsMentions(
+        scheduler.allowMentions,
+        formatLabel,
+        force,
+      ),
       updatesDate ? dateLabel : null,
       formatLabel,
     )
