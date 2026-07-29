@@ -1,6 +1,7 @@
-import { EmbedBuilder, Events } from 'discord.js'
+import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
 
-const WEEKDAYS = new Set([
+const TEST_COMMAND_NAME = 'test'
+const WEEKDAY_NAMES = [
   'Monday',
   'Tuesday',
   'Wednesday',
@@ -8,7 +9,8 @@ const WEEKDAYS = new Set([
   'Friday',
   'Saturday',
   'Sunday',
-])
+]
+const WEEKDAYS = new Set(WEEKDAY_NAMES)
 
 function timeParts(time) {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time)
@@ -57,6 +59,25 @@ function localDateTime(date, timezone) {
     dateKey: `${part('year')}-${part('month')}-${part('day')}`,
     minutes: Number(part('hour')) * 60 + Number(part('minute')),
   }
+}
+
+export function nextScheduledRunKey(date, { timezone, weekday }) {
+  if (!WEEKDAYS.has(weekday)) {
+    throw new Error('ANNOUNCEMENT_WEEKDAY must be a full English weekday name.')
+  }
+  const local = localDateTime(date, timezone)
+  const localWeekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'long',
+  }).format(date)
+  const daysUntilRun =
+    (WEEKDAY_NAMES.indexOf(weekday) -
+      WEEKDAY_NAMES.indexOf(localWeekday) +
+      WEEKDAY_NAMES.length) %
+    WEEKDAY_NAMES.length
+  const [year, month, day] = local.dateKey.split('-').map(Number)
+  const runDate = new Date(Date.UTC(year, month - 1, day + daysUntilRun, 12))
+  return runDate.toISOString().slice(0, 10)
 }
 
 export function announcementDateLabel(runKey) {
@@ -221,6 +242,7 @@ async function publishAfterMessageOnce(
   action,
   scheduler,
   runKey,
+  force = false,
 ) {
   const channel = await textChannel(client, action.channelId)
   const sourceChannel =
@@ -228,31 +250,41 @@ async function publishAfterMessageOnce(
       ? await textChannel(client, action.sourceChannelId)
       : channel
   const source = await sourceChannel.messages.fetch(action.messageId)
-  const recent = await recentScheduledBotMessages(
-    channel,
-    client.user.id,
-    scheduler,
-    runKey,
-  )
-  const signature = messageSignature(source)
-  if (recent.some((message) => messageSignature(message) === signature)) {
-    return false
+  if (!force) {
+    const recent = await recentScheduledBotMessages(
+      channel,
+      client.user.id,
+      scheduler,
+      runKey,
+    )
+    const signature = messageSignature(source)
+    if (recent.some((message) => messageSignature(message) === signature)) {
+      return false
+    }
   }
   await channel.send(clonePayload(source, scheduler.allowMentions))
   return true
 }
 
-async function publishGroup(client, group, scheduler, runKey) {
+async function publishGroup(
+  client,
+  group,
+  scheduler,
+  runKey,
+  { force = false, log = true } = {},
+) {
   const channel = await textChannel(client, group.channelId)
   const sources = await Promise.all(
     group.messageIds.map((messageId) => channel.messages.fetch(messageId)),
   )
-  const recent = await recentScheduledBotMessages(
-    channel,
-    client.user.id,
-    scheduler,
-    runKey,
-  )
+  const recent = force
+    ? []
+    : await recentScheduledBotMessages(
+        channel,
+        client.user.id,
+        scheduler,
+        runKey,
+      )
   const remainingRecent = [...recent]
   const datedMessageIds = new Set(group.dateMessageIds ?? [])
   const dateLabel = announcementDateLabel(runKey)
@@ -279,16 +311,27 @@ async function publishGroup(client, group, scheduler, runKey) {
   }
   let afterPosted = 0
   for (const action of group.afterMessages ?? []) {
-    if (await publishAfterMessageOnce(client, action, scheduler, runKey)) {
+    if (
+      await publishAfterMessageOnce(
+        client,
+        action,
+        scheduler,
+        runKey,
+        force,
+      )
+    ) {
       afterPosted += 1
     }
   }
-  console.log(
-    `${group.label} weekly announcement ` +
-      `${posted > 0 ? `posted (${posted} messages)` : 'already posted'} ` +
-      `with ${afterPosted > 0 ? `${afterPosted} follow-up` : 'follow-up already posted'} ` +
-      `for ${runKey}.`,
-  )
+  if (log) {
+    console.log(
+      `${group.label} weekly announcement ` +
+        `${posted > 0 ? `posted (${posted} messages)` : 'already posted'} ` +
+        `with ${afterPosted > 0 ? `${afterPosted} follow-up` : 'follow-up already posted'} ` +
+        `for ${runKey}.`,
+    )
+  }
+  return { posted, afterPosted }
 }
 
 export function installAnnouncementAutomation(client, config) {
@@ -300,6 +343,7 @@ export function installAnnouncementAutomation(client, config) {
 
   const activeRuns = new Set()
   const completedRuns = new Set()
+  let testActive = false
 
   async function tick() {
     const runKey = scheduledRunKey(new Date(), config)
@@ -330,5 +374,104 @@ export function installAnnouncementAutomation(client, config) {
     void tick()
     const timer = setInterval(() => void tick(), 15_000)
     timer.unref()
+  })
+
+  client.once(Events.ClientReady, async (readyClient) => {
+    try {
+      const guild = await readyClient.guilds.fetch(config.guildId)
+      const commands = await guild.commands.fetch()
+      const definition = {
+        name: TEST_COMMAND_NAME,
+        description: 'Test the weekly Mobile and PC scrim announcement flow now.',
+        defaultMemberPermissions: PermissionFlagsBits.Administrator,
+      }
+      const existing = commands.find(
+        (command) => command.name === TEST_COMMAND_NAME,
+      )
+      if (existing) await existing.edit(definition)
+      else await guild.commands.create(definition)
+      console.log(`/${TEST_COMMAND_NAME} registered in ${guild.name}.`)
+    } catch (reason) {
+      console.error(
+        `Could not register /${TEST_COMMAND_NAME}:`,
+        reason instanceof Error ? reason.message : reason,
+      )
+    }
+  })
+
+  client.on(Events.InteractionCreate, async (interaction) => {
+    if (
+      !interaction.isChatInputCommand() ||
+      interaction.commandName !== TEST_COMMAND_NAME
+    ) {
+      return
+    }
+    if (
+      !interaction.inGuild() ||
+      !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
+    ) {
+      await interaction.reply({
+        content: '❌ Only server administrators can run this scheduler test.',
+        ephemeral: true,
+      })
+      return
+    }
+    if (testActive) {
+      await interaction.reply({
+        content: '⚠️ A scheduler test is already running. Please wait for it to finish.',
+        ephemeral: true,
+      })
+      return
+    }
+
+    testActive = true
+    try {
+      await interaction.deferReply({ ephemeral: true })
+      const runKey = nextScheduledRunKey(new Date(), config)
+      const results = []
+      for (const group of groups) {
+        try {
+          const outcome = await publishGroup(
+            client,
+            group,
+            config,
+            runKey,
+            { force: true, log: false },
+          )
+          results.push(
+            `✅ **${group.label}:** ${outcome.posted} announcement message(s) and ${outcome.afterPosted} follow-up message(s) posted.`,
+          )
+        } catch (reason) {
+          const message = reason instanceof Error ? reason.message : String(reason)
+          console.error(`/${TEST_COMMAND_NAME} ${group.label} failed:`, message)
+          results.push(`❌ **${group.label}:** ${message}`)
+        }
+      }
+      await interaction.editReply({
+        content: [
+          `**Scheduler test for ${announcementDateLabel(runKey)}**`,
+          ...results,
+          '',
+          `The automatic schedule remains ${config.weekday} at ${config.time} (${config.timezone}).`,
+        ].join('\n'),
+        allowedMentions: { parse: [] },
+      })
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason)
+      console.error(`/${TEST_COMMAND_NAME} failed:`, message)
+      const payload = {
+        content: `❌ Scheduler test failed: ${message}`,
+        allowedMentions: { parse: [] },
+      }
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload).catch(() => undefined)
+      } else {
+        await interaction
+          .reply({ ...payload, ephemeral: true })
+          .catch(() => undefined)
+      }
+    } finally {
+      testActive = false
+    }
   })
 }

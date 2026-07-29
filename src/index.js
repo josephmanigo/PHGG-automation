@@ -23,7 +23,10 @@ installRulesAutomation(client, config.rules, config)
 for (const scrimConfig of config.scrims) {
   installScrimAutomation(client, scrimConfig, config)
 }
-installAnnouncementAutomation(client, config.announcements)
+installAnnouncementAutomation(client, {
+  ...config.announcements,
+  guildId: config.guildId,
+})
 installServerInviteAutomation(client, config.serverInvite, config)
 
 client.once(Events.ClientReady, (readyClient) => {
