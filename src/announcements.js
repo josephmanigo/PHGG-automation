@@ -22,6 +22,9 @@ const ANNOUNCEMENT_DETAIL_EMOJIS = [
 ]
 const LEADING_DETAIL_EMOJI =
   /^([\t ]*(?:>\s*)?)(?:(?:<a?:[^>\r\n]+>|:[A-Z0-9_]+:|\p{Extended_Pictographic}\uFE0F?)[\t ]*)?/iu
+const PC_REGISTRATION_CHANNEL_ID = '1340963116954947635'
+const PHGG_LOGO_EMOJI =
+  '<:PHGAMINGGUILDNEWLOGO1:1337103312989716592>'
 
 function timeParts(time) {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time)
@@ -150,6 +153,30 @@ function announcementText(value, dateLabel = null) {
   return dateLabel ? replaceAnnouncementDate(result, dateLabel) : result
 }
 
+export function pcAnnouncementContent(dateLabel) {
+  return [
+    `# PH GAMING GUILD'S BS PC SCRIMMAGE OPERATION: DOMINATION ${PHGG_LOGO_EMOJI}`,
+    '',
+    `\u{1F4C5} 𝐃𝐀𝐓𝐄: ${dateLabel}`,
+    '\u{23F0} 𝐓𝐈𝐌𝐄: 10:00PM',
+    '\u{1F4CC} 𝐑𝐎𝐔𝐍𝐃𝐒: 4 Rounds | 1SB - 1DV - 2SI',
+    '',
+    '**Registration will start at 12:00 PM PH TIME for today’s scrimmage.**',
+    '',
+    `Register here: <#${PC_REGISTRATION_CHANNEL_ID}>`,
+    '',
+    '\u{1F4CC} *Important: Registrations with outdated server nicknames will be voided.*',
+  ].join('\n')
+}
+
+function isPcAnnouncement(value) {
+  const normalized = String(value ?? '').normalize('NFKC').toUpperCase()
+  return (
+    normalized.includes('PC SCRIMMAGE OPERATION') &&
+    normalized.includes('DATE:')
+  )
+}
+
 function cloneEmbed(embed, dateLabel = null) {
   const result = new EmbedBuilder()
   if (embed.title) {
@@ -188,12 +215,22 @@ function cloneEmbed(embed, dateLabel = null) {
   return result
 }
 
-export function announcementMessageSignature(message, normalizeDate = false) {
+export function announcementMessageSignature(
+  message,
+  normalizeDate = false,
+  formatLabel = null,
+) {
   const comparable =
     [...(message.messageSnapshots?.values?.() ?? [])][0] ?? message
   const text = (value) => announcementText(value, normalizeDate ? '<DATE>' : null)
   const linkedMedia = []
-  const content = text(comparable.content)
+  const comparableContent =
+    formatLabel === 'PC' &&
+    normalizeDate &&
+    isPcAnnouncement(comparable.content)
+      ? pcAnnouncementContent('<DATE>')
+      : text(comparable.content)
+  const content = comparableContent
     .replace(DISCORD_ATTACHMENT_URL, (url) => {
       linkedMedia.push(url)
       return ''
@@ -252,13 +289,20 @@ export function announcementMessageSignature(message, normalizeDate = false) {
   })
 }
 
-function clonePayload(message, allowMentions, dateLabel = null) {
+function clonePayload(
+  message,
+  allowMentions,
+  dateLabel = null,
+  formatLabel = null,
+) {
   const payload = {
     allowedMentions: allowMentions
       ? { parse: ['everyone', 'roles', 'users'], repliedUser: false }
       : { parse: [], repliedUser: false },
   }
-  if (message.content) {
+  if (formatLabel === 'PC' && dateLabel) {
+    payload.content = pcAnnouncementContent(dateLabel)
+  } else if (message.content) {
     payload.content = announcementText(message.content, dateLabel)
   }
   const embeds = message.embeds
@@ -277,8 +321,19 @@ function clonePayload(message, allowMentions, dateLabel = null) {
   return payload
 }
 
-async function publishMessage(channel, source, allowMentions, dateLabel = null) {
-  const payload = clonePayload(source, allowMentions, dateLabel)
+async function publishMessage(
+  channel,
+  source,
+  allowMentions,
+  dateLabel = null,
+  formatLabel = null,
+) {
+  const payload = clonePayload(
+    source,
+    allowMentions,
+    dateLabel,
+    formatLabel,
+  )
   const attachments = [...source.attachments.values()]
   return attachments.length > 0
     ? sendDiscordAttachments(source.client, channel, attachments, payload)
@@ -373,10 +428,19 @@ async function publishGroup(
   let posted = 0
   for (const source of sources) {
     const updatesDate = datedMessageIds.has(source.id)
-    const signature = announcementMessageSignature(source, updatesDate)
+    const formatLabel = updatesDate ? group.label : null
+    const signature = announcementMessageSignature(
+      source,
+      updatesDate,
+      formatLabel,
+    )
     const existingIndex = remainingRecent.findIndex(
       (message) =>
-        announcementMessageSignature(message, updatesDate) === signature,
+        announcementMessageSignature(
+          message,
+          updatesDate,
+          formatLabel,
+        ) === signature,
     )
     if (existingIndex >= 0) {
       remainingRecent.splice(existingIndex, 1)
@@ -387,6 +451,7 @@ async function publishGroup(
       source,
       scheduler.allowMentions,
       updatesDate ? dateLabel : null,
+      formatLabel,
     )
     posted += 1
   }

@@ -4,6 +4,7 @@ import {
   announcementDateLabel,
   announcementMessageSignature,
   nextScheduledRunKey,
+  pcAnnouncementContent,
   replaceAnnouncementDate,
   replaceAnnouncementDetailEmojis,
   scheduledRunKey,
@@ -90,6 +91,48 @@ test('normalizes the stylized Mobile and PC announcement labels', () => {
       'August 4, 2026 (Tuesday)',
     ),
     '<a:emoji_150:1258450242601484338> 𝐃𝐀𝐓𝐄: August 4, 2026 (Tuesday)',
+  )
+})
+
+test('builds the exact canonical PC announcement format', () => {
+  const content = pcAnnouncementContent('August 4, 2026 (Tuesday)')
+  assert.equal(
+    content,
+    [
+      "# PH GAMING GUILD'S BS PC SCRIMMAGE OPERATION: DOMINATION <:PHGAMINGGUILDNEWLOGO1:1337103312989716592>",
+      '',
+      '\u{1F4C5} 𝐃𝐀𝐓𝐄: August 4, 2026 (Tuesday)',
+      '\u{23F0} 𝐓𝐈𝐌𝐄: 10:00PM',
+      '\u{1F4CC} 𝐑𝐎𝐔𝐍𝐃𝐒: 4 Rounds | 1SB - 1DV - 2SI',
+      '',
+      '**Registration will start at 12:00 PM PH TIME for today’s scrimmage.**',
+      '',
+      'Register here: <#1340963116954947635>',
+      '',
+      '\u{1F4CC} *Important: Registrations with outdated server nicknames will be voided.*',
+    ].join('\n'),
+  )
+  assert.equal(content.includes('PRIZE'), false)
+})
+
+test('deduplicates the PC source and its canonical formatted post', () => {
+  const source = {
+    content: [
+      "𝗣𝗛 𝗚𝗔𝗠𝗜𝗡𝗚 𝗚𝗨𝗜𝗟𝗗'𝗦 𝗕𝗦 𝗣𝗖 𝗦𝗖𝗥𝗜𝗠𝗠𝗔𝗚𝗘 𝗢𝗣𝗘𝗥𝗔𝗧𝗜𝗢𝗡: 𝗗𝗢𝗠𝗜𝗡𝗔𝗧𝗜𝗢𝗡",
+      '<a:emoji_150:1258450242601484338> 𝐃𝐀𝐓𝐄: July 28, 2026 (Tuesday)',
+    ].join('\n'),
+    attachments: new Map(),
+    embeds: [],
+  }
+  const posted = {
+    content: pcAnnouncementContent('August 4, 2026 (Tuesday)'),
+    attachments: new Map(),
+    embeds: [],
+  }
+
+  assert.equal(
+    announcementMessageSignature(source, true, 'PC'),
+    announcementMessageSignature(posted, true, 'PC'),
   )
 })
 
