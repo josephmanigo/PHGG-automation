@@ -98,3 +98,29 @@ test('normalizes refreshed Discord attachment URLs for deduplication', () => {
     announcementMessageSignature(posted),
   )
 })
+
+test('recognizes an oversized attachment reposted as a direct GIF preview', () => {
+  const source = {
+    content: '',
+    attachments: new Map([
+      [
+        'gif',
+        {
+          url: 'https://cdn.discordapp.com/attachments/123/456/banner.gif?ex=source-signature',
+        },
+      ],
+    ]),
+    embeds: [],
+  }
+  const posted = {
+    content:
+      'https://cdn.discordapp.com/attachments/123/456/banner.gif?ex=posted-signature',
+    attachments: new Map(),
+    embeds: [],
+  }
+
+  assert.equal(
+    announcementMessageSignature(source),
+    announcementMessageSignature(posted),
+  )
+})

@@ -2,10 +2,45 @@ import { once } from 'node:events'
 import { request } from 'node:https'
 import { setTimeout as delay } from 'node:timers/promises'
 
+const MEBIBYTE = 1024 * 1024
+const UPLOAD_LIMITS_BY_PREMIUM_TIER = new Map([
+  [0, 10 * MEBIBYTE],
+  [1, 10 * MEBIBYTE],
+  [2, 50 * MEBIBYTE],
+  [3, 100 * MEBIBYTE],
+])
+
 function filename(value, index) {
   return String(value || `attachment-${index}`)
     .replace(/[\r\n"\\]/g, '_')
     .slice(0, 200)
+}
+
+export function discordUploadLimit(channel) {
+  const premiumTier = Number(channel.guild?.premiumTier ?? 0)
+  return UPLOAD_LIMITS_BY_PREMIUM_TIER.get(premiumTier) ?? 10 * MEBIBYTE
+}
+
+export function buildDirectMediaPayload(payload, attachments) {
+  const attachmentUrls = attachments.map((attachment) => attachment.url)
+  if (attachmentUrls.some((url) => !url)) {
+    throw new Error(
+      'An oversized Discord attachment has no direct media URL fallback.',
+    )
+  }
+  const mediaUrls = [...new Set(attachmentUrls)]
+  const content = [payload.content, ...mediaUrls]
+    .filter(Boolean)
+    .join('\n')
+  if (content.length > 2_000) {
+    throw new Error(
+      'The direct media fallback would exceed Discord’s message length limit.',
+    )
+  }
+  return {
+    ...payload,
+    content,
+  }
 }
 
 function apiPayload(payload, attachments) {
@@ -154,9 +189,11 @@ async function sendOnce(client, channel, attachments, payload) {
     }
   }
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(
+    const reason = new Error(
       `Discord attachment upload failed with HTTP ${response.statusCode}: ${data?.message || body || 'Unknown error'}`,
     )
+    reason.statusCode = response.statusCode
+    throw reason
   }
   return { data, retryAfter: null }
 }
@@ -177,8 +214,27 @@ export async function sendDiscordAttachments(
     }
   }
 
+  const uploadLimit = discordUploadLimit(channel)
+  if (attachments.some((attachment) => attachment.size > uploadLimit)) {
+    console.warn(
+      `Discord attachment exceeds this server’s ${Math.floor(uploadLimit / MEBIBYTE)} MB upload limit; sending it as a direct media preview.`,
+    )
+    return channel.send(buildDirectMediaPayload(payload, attachments))
+  }
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await sendOnce(client, channel, attachments, payload)
+    let result
+    try {
+      result = await sendOnce(client, channel, attachments, payload)
+    } catch (reason) {
+      if (reason?.statusCode === 413) {
+        console.warn(
+          'Discord rejected the attachment size; sending it as a direct media preview.',
+        )
+        return channel.send(buildDirectMediaPayload(payload, attachments))
+      }
+      throw reason
+    }
     if (result.retryAfter === null) return result.data
     if (attempt === 1) {
       throw new Error('Discord kept rate-limiting the attachment upload.')

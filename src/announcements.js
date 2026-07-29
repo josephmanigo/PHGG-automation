@@ -12,6 +12,8 @@ const WEEKDAY_NAMES = [
   'Sunday',
 ]
 const WEEKDAYS = new Set(WEEKDAY_NAMES)
+const DISCORD_ATTACHMENT_URL =
+  /https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/attachments\/[^\s]+/gi
 
 function timeParts(time) {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time)
@@ -174,6 +176,13 @@ export function announcementMessageSignature(message, normalizeDate = false) {
   const comparable =
     [...(message.messageSnapshots?.values?.() ?? [])][0] ?? message
   const text = (value) => announcementText(value, normalizeDate ? '<DATE>' : null)
+  const linkedMedia = []
+  const content = text(comparable.content)
+    .replace(DISCORD_ATTACHMENT_URL, (url) => {
+      linkedMedia.push(url)
+      return ''
+    })
+    .trim()
   const mediaUrl = (value) => {
     if (!value) return null
     try {
@@ -202,23 +211,27 @@ export function announcementMessageSignature(message, normalizeDate = false) {
       (embed) =>
         embed.title ||
         embed.description ||
-        embed.url ||
         embed.fields.length > 0,
     )
   return JSON.stringify({
-    content: text(comparable.content),
+    content,
     media: [
-      ...[...comparable.attachments.values()].map(
-        (attachment) => attachment.url,
+      ...new Set(
+        [
+          ...linkedMedia,
+          ...[...comparable.attachments.values()].map(
+            (attachment) => attachment.url,
+          ),
+          ...comparable.embeds.flatMap((embed) => [
+            embed.image?.url,
+            embed.thumbnail?.url,
+            embed.video?.url,
+          ]),
+        ]
+          .map(mediaUrl)
+          .filter(Boolean),
       ),
-      ...comparable.embeds.flatMap((embed) => [
-        embed.image?.url,
-        embed.thumbnail?.url,
-        embed.video?.url,
-      ]),
-    ]
-      .map(mediaUrl)
-      .filter(Boolean),
+    ],
     embeds,
   })
 }
