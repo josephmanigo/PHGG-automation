@@ -83,7 +83,7 @@ test('loads independent mobile and PC scrim channel sets', () => {
           {
             channelId: '1345800858138574979',
             sourceChannelId: '1340963218582929430',
-            messageId: '1531386624233963561',
+            messageId: '1531940434861887610',
           },
         ],
       },
@@ -106,7 +106,7 @@ test('loads independent mobile and PC scrim channel sets', () => {
           {
             channelId: '1340963218582929430',
             sourceChannelId: '1340963218582929430',
-            messageId: '1531386624233963561',
+            messageId: '1531940434861887610',
           },
         ],
       },
