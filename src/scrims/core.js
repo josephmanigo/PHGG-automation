@@ -227,17 +227,15 @@ export class ScrimBoard {
       this.waitlist.splice(found.index, 1)
       return { status: 'waitlist_removed', team: found.team, waitIndex: found.index }
     }
-    const promotedTeam = this.waitlist.shift() ?? null
-    this.slots[found.index] = promotedTeam
+    this.slots[found.index] = null
+    this.mineOnlySlots.add(found.index)
     this.pendingCancellations.set(cancellationMessageId, {
       slotIndex: found.index,
-      promotedTeamKey: promotedTeam?.key ?? null,
     })
     return {
       status: 'slot_removed',
       slotIndex: found.index,
       team: found.team,
-      promotedTeam,
     }
   }
 
@@ -298,23 +296,20 @@ export class ScrimBoard {
       return { status: 'claimed', slotIndex, team }
     }
 
-    if (existing?.location === 'slot' && existing.index !== pending.slotIndex) {
+    if (existing?.location === 'slot') {
       return { status: 'already_registered', team: existing.team, slotIndex: existing.index }
     }
-    if (existing?.location === 'slot' && existing.index === pending.slotIndex) {
+    if (
+      !this.mineOnlySlots.has(pending.slotIndex) ||
+      this.slots[pending.slotIndex]
+    ) {
       this.pendingCancellations.delete(cancellationMessageId)
-      return { status: 'claimed', slotIndex: pending.slotIndex, team: existing.team }
+      return { status: 'not_available' }
     }
     if (existing?.location === 'waitlist') this.waitlist.splice(existing.index, 1)
 
-    const currentTeam = this.slots[pending.slotIndex]
-    if (currentTeam && currentTeam.key === pending.promotedTeamKey) {
-      this.waitlist.unshift(currentTeam)
-    } else if (currentTeam && currentTeam.key !== team.key) {
-      return { status: 'not_available' }
-    }
-
     this.slots[pending.slotIndex] = team
+    this.mineOnlySlots.delete(pending.slotIndex)
     this.pendingCancellations.delete(cancellationMessageId)
     return { status: 'claimed', slotIndex: pending.slotIndex, team }
   }

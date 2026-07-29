@@ -553,7 +553,7 @@ test('rebuild removes a deleted registration from team slots', () => {
   assert.equal(board.waitlist.length, 0)
 })
 
-test('cancellation promotes the first waiting team into the exact slot', () => {
+test('cancellation leaves the exact slot mine-only and preserves the waitlist', () => {
   const board = new ScrimBoard(2)
   board.register(makeTeam('A', 'ALPHA'))
   board.register(makeTeam('B', 'BRAVO'))
@@ -562,11 +562,19 @@ test('cancellation promotes the first waiting team into the exact slot', () => {
   const result = board.cancel('ALPHA', 'cancel-message')
   assert.equal(result.status, 'slot_removed')
   assert.equal(result.slotIndex, 0)
-  assert.equal(board.slots[0].name, 'CHARLIE')
-  assert.equal(board.waitlist.length, 0)
+  assert.equal(board.slots[0], null)
+  assert.equal(board.waitlist[0].name, 'CHARLIE')
+  assert.equal(board.mineOnlySlots.has(0), true)
+
+  assert.equal(board.register(makeTeam('D', 'DELTA')).status, 'waitlist')
+  assert.equal(board.slots[0], null)
+  assert.deepEqual(
+    board.waitlist.map((team) => team.name),
+    ['CHARLIE', 'DELTA'],
+  )
 })
 
-test('a MINE reply takes the canceled slot and restores the promoted team', () => {
+test('a MINE reply takes the canceled slot without changing waitlist order', () => {
   const board = new ScrimBoard(2)
   board.register(makeTeam('A', 'ALPHA'))
   board.register(makeTeam('B', 'BRAVO'))
@@ -577,6 +585,40 @@ test('a MINE reply takes the canceled slot and restores the promoted team', () =
   assert.equal(result.status, 'claimed')
   assert.equal(board.slots[0].name, 'DELTA')
   assert.equal(board.waitlist[0].name, 'CHARLIE')
+  assert.equal(board.mineOnlySlots.has(0), false)
+})
+
+test('rebuild keeps a canceled slot mine-only instead of promoting registrations', () => {
+  const board = new ScrimBoard(2)
+  replayScrimEvents(board, [
+    {
+      type: 'registration',
+      message: { id: 'team-a', content: 'A - ALPHA | 🇵🇭' },
+    },
+    {
+      type: 'registration',
+      message: { id: 'team-b', content: 'B - BRAVO | 🇵🇭' },
+    },
+    {
+      type: 'registration',
+      message: { id: 'team-c', content: 'C - CHARLIE | 🇵🇭' },
+    },
+    {
+      type: 'cancellation',
+      message: { id: 'cancel-a', content: 'CANCEL - ALPHA' },
+    },
+    {
+      type: 'registration',
+      message: { id: 'team-d', content: 'D - DELTA | 🇵🇭' },
+    },
+  ])
+
+  assert.equal(board.slots[0], null)
+  assert.equal(board.mineOnlySlots.has(0), true)
+  assert.deepEqual(
+    board.waitlist.map((team) => team.name),
+    ['CHARLIE', 'DELTA'],
+  )
 })
 
 test('parses cancellation commands and slot labels', () => {

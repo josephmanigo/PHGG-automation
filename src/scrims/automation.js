@@ -749,12 +749,9 @@ export function installScrimAutomation(client, config, botConfig) {
         await reply(message, `✅ **${result.team.name}** was removed from the waiting list.`)
         return
       }
-      const promotion = result.promotedTeam
-        ? ` **${result.promotedTeam.name}** moved into that slot.`
-        : ' The slot is now open.'
       await reply(
         message,
-        `✅ **${result.team.name}** canceled slot **${slotCode(result.slotIndex)}**.${promotion}`,
+        `✅ **${result.team.name}** canceled slot **${slotCode(result.slotIndex)}**. The slot is now available for **MINE replies only**.`,
       )
       return
     }
