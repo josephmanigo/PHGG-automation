@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   makeTeam,
+  parseAvailableSlotsContent,
   parseCancelContent,
   parseMineContent,
   ScrimBoard,
@@ -584,4 +585,117 @@ test('parses cancellation commands and slot labels', () => {
   assert.equal(parseMineContent('MINE -'), null)
   assert.equal(slotCode(0), '01A')
   assert.equal(slotCode(24), '25Y')
+})
+
+test('parses admin available-slot lists', () => {
+  assert.deepEqual(parseAvailableSlotsContent('AVAILABLE SLOT 2, 15 & 16'), [
+    1,
+    14,
+    15,
+  ])
+  assert.deepEqual(parseAvailableSlotsContent('available slots: 4 and 9'), [
+    3,
+    8,
+  ])
+  assert.deepEqual(parseAvailableSlotsContent('**AVAILABLE SLOT 7**'), [6])
+  assert.equal(parseAvailableSlotsContent('AVAILABLE SLOT TWO'), null)
+  assert.equal(parseAvailableSlotsContent('AVAILABLE SLOT 0'), null)
+})
+
+test('keeps admin-opened slots mine-only and does not promote the waitlist', () => {
+  const board = new ScrimBoard(3)
+  board.register(makeTeam('A', 'ALPHA'))
+  board.register(makeTeam('B', 'BRAVO'))
+  board.register(makeTeam('C', 'CHARLIE'))
+  board.register(makeTeam('W', 'WAITING TEAM'))
+
+  const result = board.makeSlotsAvailable([1, 2], 'available-message')
+  assert.equal(result.status, 'available')
+  assert.equal(result.removedTeams[0].name, 'BRAVO')
+  assert.equal(result.removedTeams[1].name, 'CHARLIE')
+  assert.equal(board.slots[1], null)
+  assert.equal(board.slots[2], null)
+  assert.equal(board.waitlist[0].name, 'WAITING TEAM')
+
+  assert.equal(board.register(makeTeam('N', 'NEW REGISTRATION')).status, 'waitlist')
+  assert.equal(board.slots[1], null)
+
+  const claim = board.claim(
+    'MINE - W WAITING TEAM'.replace(/^MINE\s*-\s*/i, ''),
+    'available-message',
+    'mine-message',
+  )
+  assert.equal(claim.status, 'claimed')
+  assert.equal(claim.slotIndex, 1)
+  assert.equal(board.slots[1].name, 'WAITING TEAM')
+  assert.equal(board.waitlist.some((team) => team.name === 'WAITING TEAM'), false)
+
+  const secondClaim = board.claim(
+    'X SECOND CLAIM',
+    'available-message',
+    'second-mine-message',
+  )
+  assert.equal(secondClaim.status, 'claimed')
+  assert.equal(secondClaim.slotIndex, 2)
+  assert.equal(board.slots[2].name, 'SECOND CLAIM')
+  assert.equal(
+    board.claim('Y LATE CLAIM', 'available-message').status,
+    'not_available',
+  )
+})
+
+test('rebuild restores admin availability and its ordered MINE replies', () => {
+  const board = new ScrimBoard(3)
+  replayScrimEvents(board, [
+    {
+      type: 'registration',
+      message: {
+        id: 'team-a',
+        content: 'A - ALPHA | 🇵🇭',
+      },
+    },
+    {
+      type: 'registration',
+      message: {
+        id: 'team-b',
+        content: 'B - BRAVO | 🇵🇭',
+      },
+    },
+    {
+      type: 'registration',
+      message: {
+        id: 'team-c',
+        content: 'C - CHARLIE | 🇵🇭',
+      },
+    },
+    {
+      type: 'cancellation',
+      canManageScrim: true,
+      message: {
+        id: 'available-slots',
+        content: 'AVAILABLE SLOT 2 & 3',
+      },
+    },
+    {
+      type: 'cancellation',
+      message: {
+        id: 'first-mine',
+        content: 'MINE - X FIRST CLAIM',
+        reference: { messageId: 'available-slots' },
+      },
+    },
+    {
+      type: 'cancellation',
+      message: {
+        id: 'second-mine',
+        content: 'MINE - Y SECOND CLAIM',
+        reference: { messageId: 'available-slots' },
+      },
+    },
+  ])
+
+  assert.equal(board.slots[0].name, 'ALPHA')
+  assert.equal(board.slots[1].name, 'FIRST CLAIM')
+  assert.equal(board.slots[2].name, 'SECOND CLAIM')
+  assert.equal(board.waitlist.length, 0)
 })

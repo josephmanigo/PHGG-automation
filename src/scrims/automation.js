@@ -1,5 +1,6 @@
 import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
 import {
+  parseAvailableSlotsContent,
   parseCancelContent,
   parseMineContent,
   ScrimBoard,
@@ -30,6 +31,11 @@ const MINE_SLOT_FORMAT_MESSAGE = [
   '❌ **WRONG FORMAT**',
   'Follow this format:',
   '`MINE - CLAN TAG TEAM NAME`',
+].join('\n')
+const AVAILABLE_SLOT_FORMAT_MESSAGE = [
+  '❌ **WRONG FORMAT**',
+  'Admins must follow this format:',
+  '`AVAILABLE SLOT 2, 15 & 16`',
 ].join('\n')
 
 function messageSignals(message) {
@@ -80,6 +86,11 @@ export function replayScrimEvents(board, events) {
       continue
     }
 
+    const availableSlots = parseAvailableSlotsContent(message.content)
+    if (availableSlots && event.canManageScrim) {
+      board.makeSlotsAvailable(availableSlots, message.id)
+      continue
+    }
     const cancel = parseCancelContent(message.content)
     if (cancel) {
       board.cancel(cancel, message.id)
@@ -152,7 +163,7 @@ function hasGifMedia(message) {
   })
 }
 
-function canManuallyOpenRegistration(message, member = message.member) {
+function canManageScrim(message, member = message.member) {
   if (
     message.guild?.ownerId &&
     message.author?.id === message.guild.ownerId
@@ -176,7 +187,7 @@ export function isAdminRegistrationOpener(
   member = message.member,
 ) {
   if (
-    !canManuallyOpenRegistration(message, member) ||
+    !canManageScrim(message, member) ||
     validateRegistrationContent(message.content).valid
   ) {
     return false
@@ -202,6 +213,15 @@ async function isCycleOpener(message, config, botUserId) {
     .fetch(message.author.id)
     .catch(() => null)
   return isAdminRegistrationOpener(message, config, member)
+}
+
+async function canManageScrimMessage(message) {
+  if (canManageScrim(message)) return true
+  if (!message.guild || !message.author?.id) return false
+  const member = await message.guild.members
+    .fetch(message.author.id)
+    .catch(() => null)
+  return canManageScrim(message, member)
 }
 
 function dateLabel(timezone) {
@@ -494,9 +514,18 @@ export function installScrimAutomation(client, config, botConfig) {
     const cancellationMessages = [
       ...(await cancelChannel.messages.fetch({ limit: 100 })).values(),
     ]
+    const cancellationEvents = await Promise.all(
+      cancellationMessages.map(async (message) => ({
+        type: 'cancellation',
+        message,
+        canManageScrim: parseAvailableSlotsContent(message.content)
+          ? await canManageScrimMessage(message)
+          : false,
+      })),
+    )
     const events = [
       ...registrationMessages.map((message) => ({ type: 'registration', message })),
-      ...cancellationMessages.map((message) => ({ type: 'cancellation', message })),
+      ...cancellationEvents,
     ]
       .filter(
         ({ message }) =>
@@ -633,6 +662,39 @@ export function installScrimAutomation(client, config, botConfig) {
   }
 
   async function handleCancellation(message) {
+    const availableSlots = parseAvailableSlotsContent(message.content)
+    if (/^\s*(?:\*\*)?AVAILABLE\b/i.test(message.content)) {
+      const validSlots =
+        availableSlots?.filter((slotIndex) => slotIndex < board.maxSlots) ?? []
+      if (
+        !availableSlots ||
+        validSlots.length !== availableSlots.length
+      ) {
+        await setCancellationFormatReaction(message, false)
+        await reply(message, AVAILABLE_SLOT_FORMAT_MESSAGE)
+        return
+      }
+      if (!(await canManageScrimMessage(message))) {
+        await setCancellationFormatReaction(message, false)
+        await reply(message, '❌ Only server admins or scrim staff can open available slots.')
+        return
+      }
+      await setCancellationFormatReaction(message, true)
+      if (!state.registrationOpen) return
+      const result = board.makeSlotsAvailable(validSlots, message.id)
+      await syncBoard()
+      const slotNumbers = result.slotIndexes.map((slotIndex) => slotIndex + 1)
+      const displaySlots =
+        slotNumbers.length === 1
+          ? String(slotNumbers[0])
+          : `${slotNumbers.slice(0, -1).join(', ')} & ${slotNumbers.at(-1)}`
+      await reply(
+        message,
+        `✅ Slot${slotNumbers.length === 1 ? '' : 's'} **${displaySlots}** ${slotNumbers.length === 1 ? 'is' : 'are'} available for **MINE replies only**.`,
+      )
+      return
+    }
+
     const cancel = parseCancelContent(message.content)
     const mine = parseMineContent(message.content)
     const referenceId = message.reference?.messageId
@@ -669,7 +731,11 @@ export function installScrimAutomation(client, config, botConfig) {
     const referencedMessage = await message.channel.messages
       .fetch(referenceId)
       .catch(() => null)
-    if (!referencedMessage || !parseCancelContent(referencedMessage.content)) {
+    if (
+      !referencedMessage ||
+      (!parseCancelContent(referencedMessage.content) &&
+        !parseAvailableSlotsContent(referencedMessage.content))
+    ) {
       await rejectCancellationFormat(message, 'MINE')
       return
     }
@@ -688,7 +754,7 @@ export function installScrimAutomation(client, config, botConfig) {
     } else if (result.status === 'invalid_team') {
       await rejectCancellationFormat(message, 'MINE')
     } else {
-      await reply(message, '❌ That canceled slot is no longer available.')
+      await reply(message, '❌ That slot is no longer available.')
     }
   }
 

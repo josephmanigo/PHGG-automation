@@ -62,6 +62,22 @@ export function parseMineContent(content) {
   return match ? cleanPart(match[1], 64) : null
 }
 
+export function parseAvailableSlotsContent(content) {
+  const value = String(content ?? '')
+    .trim()
+    .replace(/^\*\*(.+)\*\*$/, '$1')
+  const match =
+    /^\s*AVAILABLE\s+SLOTS?\s*(?:[-:]\s*)?(.+?)\s*$/i.exec(
+      value,
+    )
+  if (!match) return null
+  const slotList = match[1].replace(/\bAND\b/gi, '&')
+  if (!/^\d+(?:\s*(?:,|&)\s*\d+)*$/.test(slotList)) return null
+  const numbers = [...slotList.matchAll(/\d+/g)].map(([value]) => Number(value))
+  if (numbers.some((number) => number < 1)) return null
+  return [...new Set(numbers)].map((number) => number - 1)
+}
+
 function teamMatches(team, query) {
   const target = normalize(query)
   if (!target) return false
@@ -98,6 +114,8 @@ export class ScrimBoard {
     })
     this.waitlist = []
     this.pendingCancellations = new Map()
+    this.pendingAvailableSlots = new Map()
+    this.mineOnlySlots = new Set()
   }
 
   find(query) {
@@ -117,7 +135,9 @@ export class ScrimBoard {
     if (this.find(`${storedTeam.tag} ${storedTeam.name}`)) {
       return { status: 'duplicate', team: storedTeam }
     }
-    const slotIndex = this.slots.findIndex((entry) => !entry)
+    const slotIndex = this.slots.findIndex(
+      (entry, index) => !entry && !this.mineOnlySlots.has(index),
+    )
     if (slotIndex >= 0) {
       this.slots[slotIndex] = storedTeam
       return { status: 'slot', slotIndex, team: storedTeam }
@@ -128,6 +148,53 @@ export class ScrimBoard {
 
   registerMany(teams, messageId = null) {
     return teams.map((team) => this.register(team, messageId))
+  }
+
+  makeSlotsAvailable(slotIndexes, availabilityMessageId) {
+    const validIndexes = [
+      ...new Set(
+        slotIndexes.filter(
+          (slotIndex) =>
+            Number.isInteger(slotIndex) &&
+            slotIndex >= 0 &&
+            slotIndex < this.maxSlots,
+        ),
+      ),
+    ]
+    if (validIndexes.length === 0) {
+      return { status: 'invalid_slots', slotIndexes: [] }
+    }
+
+    for (const pending of this.pendingAvailableSlots.values()) {
+      pending.slotIndexes = pending.slotIndexes.filter(
+        (slotIndex) => !validIndexes.includes(slotIndex),
+      )
+    }
+    for (const [messageId, pending] of this.pendingAvailableSlots) {
+      if (pending.slotIndexes.length === 0) {
+        this.pendingAvailableSlots.delete(messageId)
+      }
+    }
+    for (const [messageId, pending] of this.pendingCancellations) {
+      if (validIndexes.includes(pending.slotIndex)) {
+        this.pendingCancellations.delete(messageId)
+      }
+    }
+
+    const removedTeams = validIndexes.map((slotIndex) => {
+      const team = this.slots[slotIndex]
+      this.slots[slotIndex] = null
+      this.mineOnlySlots.add(slotIndex)
+      return team
+    })
+    this.pendingAvailableSlots.set(availabilityMessageId, {
+      slotIndexes: [...validIndexes],
+    })
+    return {
+      status: 'available',
+      slotIndexes: validIndexes,
+      removedTeams,
+    }
   }
 
   cancel(query, cancellationMessageId) {
@@ -169,7 +236,8 @@ export class ScrimBoard {
 
   claim(value, cancellationMessageId, claimMessageId = null) {
     const pending = this.pendingCancellations.get(cancellationMessageId)
-    if (!pending) return { status: 'not_available' }
+    const pendingAvailable = this.pendingAvailableSlots.get(cancellationMessageId)
+    if (!pending && !pendingAvailable) return { status: 'not_available' }
 
     const parsed = this.teamFromClaim(value)
     if (!parsed) return { status: 'invalid_team' }
@@ -178,6 +246,36 @@ export class ScrimBoard {
       : parsed
 
     const existing = this.find(`${team.tag} ${team.name}`)
+    if (pendingAvailable) {
+      const slotIndex = pendingAvailable.slotIndexes.find(
+        (index) => this.mineOnlySlots.has(index) && !this.slots[index],
+      )
+      if (slotIndex === undefined) {
+        this.pendingAvailableSlots.delete(cancellationMessageId)
+        return { status: 'not_available' }
+      }
+      if (existing?.location === 'slot') {
+        return {
+          status: 'already_registered',
+          team: existing.team,
+          slotIndex: existing.index,
+        }
+      }
+      if (existing?.location === 'waitlist') {
+        this.waitlist.splice(existing.index, 1)
+      }
+
+      this.slots[slotIndex] = team
+      this.mineOnlySlots.delete(slotIndex)
+      pendingAvailable.slotIndexes = pendingAvailable.slotIndexes.filter(
+        (index) => index !== slotIndex,
+      )
+      if (pendingAvailable.slotIndexes.length === 0) {
+        this.pendingAvailableSlots.delete(cancellationMessageId)
+      }
+      return { status: 'claimed', slotIndex, team }
+    }
+
     if (existing?.location === 'slot' && existing.index !== pending.slotIndex) {
       return { status: 'already_registered', team: existing.team, slotIndex: existing.index }
     }
