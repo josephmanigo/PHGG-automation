@@ -14,6 +14,14 @@ const WEEKDAY_NAMES = [
 const WEEKDAYS = new Set(WEEKDAY_NAMES)
 const DISCORD_ATTACHMENT_URL =
   /https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/attachments\/[^\s]+/gi
+const ANNOUNCEMENT_DETAIL_EMOJIS = [
+  ['DATE', '\u{1F4C5}'],
+  ['TIME', '\u{23F0}'],
+  ['ROUNDS', '\u{1F4CC}'],
+  ['IMPORTANT', '\u{1F4CC}'],
+]
+const LEADING_DETAIL_EMOJI =
+  /^([\t ]*(?:>\s*)?)(?:(?:<a?:[^>\r\n]+>|:[A-Z0-9_]+:|\p{Extended_Pictographic}\uFE0F?)[\t ]*)?/iu
 
 function timeParts(time) {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time)
@@ -102,31 +110,39 @@ export function announcementDateLabel(runKey) {
 
 export function replaceAnnouncementDate(value, dateLabel) {
   if (!value) return value
-  return value.replace(
-    /(\bDATE\b\s*:\s*\*{0,2}\s*)[^\r\n]*/gi,
-    `$1${dateLabel}`,
-  )
+  return value
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!isAnnouncementDetailLine(line, 'DATE')) return line
+      const colonIndex = line.lastIndexOf(':')
+      if (colonIndex < 0) return line
+      const closingBold =
+        /^\*{0,2}/.exec(line.slice(colonIndex + 1))?.[0] ?? ''
+      return `${line.slice(0, colonIndex + 1)}${closingBold} ${dateLabel}`
+    })
+    .join('\n')
+}
+
+function isAnnouncementDetailLine(line, label) {
+  const withoutEmoji = line
+    .normalize('NFKC')
+    .replace(LEADING_DETAIL_EMOJI, '')
+  return new RegExp(`^\\*{0,2}${label}\\b`, 'i').test(withoutEmoji)
 }
 
 export function replaceAnnouncementDetailEmojis(value) {
   if (!value) return value
-  const details = [
-    ['DATE', '📅'],
-    ['TIME', '⏰'],
-    ['ROUNDS', '📌'],
-    ['IMPORTANT', '📌'],
-  ]
-  return details.reduce(
-    (result, [label, emoji]) =>
-      result.replace(
-        new RegExp(
-          `^[\\t ]*(?:(?:<a?:[^>]+>|:[A-Z0-9_]+:|\\p{Extended_Pictographic}\\uFE0F?)[\\t ]*)?(?=\\*{0,2}${label}\\b)`,
-          'gimu',
-        ),
-        `${emoji} `,
-      ),
-    value,
-  )
+  return value
+    .split(/\r?\n/)
+    .map((line) => {
+      const detail = ANNOUNCEMENT_DETAIL_EMOJIS.find(([label]) =>
+        isAnnouncementDetailLine(line, label),
+      )
+      if (!detail) return line
+      const [, emoji] = detail
+      return line.replace(LEADING_DETAIL_EMOJI, `$1${emoji} `)
+    })
+    .join('\n')
 }
 
 function announcementText(value, dateLabel = null) {
@@ -151,7 +167,7 @@ function cloneEmbed(embed, dateLabel = null) {
         ...field,
         name: announcementText(field.name, dateLabel),
         value:
-          dateLabel && /^\s*\**\s*DATE\s*:?\s*\**\s*$/i.test(field.name)
+          dateLabel && isAnnouncementDetailLine(field.name, 'DATE')
             ? dateLabel
             : announcementText(field.value, dateLabel),
       })),
@@ -202,7 +218,7 @@ export function announcementMessageSignature(message, normalizeDate = false) {
       fields: embed.fields.map((field) => ({
         name: field.name,
         value:
-          normalizeDate && /^\s*\**\s*DATE\s*:?\s*\**\s*$/i.test(field.name)
+          normalizeDate && isAnnouncementDetailLine(field.name, 'DATE')
             ? '<DATE>'
             : text(field.value),
       })),

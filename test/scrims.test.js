@@ -17,13 +17,56 @@ import {
   BOARD_PUSHPIN_EMOJI_ID,
   buildBoardContent,
   isCancelChannelAdminNotice,
+  isAdminRegistrationMediaNotice,
   isAdminRegistrationOpener,
   isAutomatedRegistrationOpener,
+  isCurrentScrimCycle,
   isRegistrationOpener,
   replayScrimEvents,
   SCRIM_CHECK_REACTION_ID,
   SCRIM_CROSS_REACTION_ID,
+  selectCurrentScrimBoard,
 } from '../src/scrims/automation.js'
+
+test('opens boards only for a current registration starter cycle', () => {
+  const now = Date.parse('2026-07-29T12:00:00.000Z')
+  assert.equal(
+    isCurrentScrimCycle(now - 71 * 60 * 60 * 1_000, now),
+    true,
+  )
+  assert.equal(
+    isCurrentScrimCycle(now - 73 * 60 * 60 * 1_000, now),
+    false,
+  )
+})
+
+test('recovers the newest bot board from the current starter cycle', () => {
+  const title = 'PH GAMING GUILD BS OPERATION: DOMINATION'
+  const message = (id, authorId, createdTimestamp) => ({
+    id,
+    author: { id: authorId },
+    content: `# ${title}`,
+    embeds: [],
+    createdTimestamp,
+  })
+  const selected = selectCurrentScrimBoard(
+    [
+      message('previous-cycle', 'bot', 1_000),
+      message('current-older', 'bot', 2_100),
+      message('human-board', 'staff', 2_300),
+      message('current-newest', 'bot', 2_400),
+    ],
+    {
+      botUserId: 'bot',
+      brandName: 'PHGG',
+      label: 'MOBILE',
+      title,
+      cycleStartedAt: 2_000,
+    },
+  )
+
+  assert.equal(selected.id, 'current-newest')
+})
 
 test('parses PHGG flag-last registration lines atomically', () => {
   const result = validateRegistrationContent(
@@ -306,96 +349,97 @@ test('recognizes an administrator-owned copied mobile starter GIF', () => {
   )
 })
 
-test('recognizes a renamed GIF file uploaded by an administrator', () => {
+test('ignores an admin GIF divider without treating it as the starter', () => {
+  const message = {
+    id: 'admin-starter',
+    content: '',
+    author: { id: 'server-admin' },
+    member: { permissions: { has: () => true } },
+    attachments: new Map([
+      [
+        'admin-gif',
+        {
+          id: 'admin-gif',
+          name: 'scrimmage.gif',
+          url: 'https://cdn.discordapp.com/admin-scrimmage.gif',
+          contentType: 'image/gif',
+        },
+      ],
+    ]),
+    embeds: [],
+  }
+  const config = {
+    automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+  }
+  assert.equal(isAdminRegistrationMediaNotice(message), true)
+  assert.equal(isAdminRegistrationOpener(message, config), false)
+})
+
+test('ignores a Discord GIF embed posted by staff without opening registration', () => {
+  const message = {
+    id: 'admin-gif-embed',
+    content: '',
+    author: { id: 'server-admin' },
+    member: { permissions: { has: () => true } },
+    attachments: new Map(),
+    embeds: [
+      {
+        data: { type: 'gifv' },
+        video: {
+          url: 'https://media.discordapp.net/rendered-gif.mp4',
+        },
+      },
+    ],
+  }
+  assert.equal(isAdminRegistrationMediaNotice(message), true)
   assert.equal(
     isAdminRegistrationOpener(
-      {
-        id: 'admin-starter',
-        content: '',
-        author: { id: 'server-admin' },
-        member: { permissions: { has: () => true } },
-        attachments: new Map([
-          [
-            'admin-gif',
-            {
-              id: 'admin-gif',
-              name: 'scrimmage.gif',
-              url: 'https://cdn.discordapp.com/admin-scrimmage.gif',
-              contentType: 'image/gif',
-            },
-          ],
-        ]),
-        embeds: [],
-      },
+      message,
       {
         automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
       },
     ),
-    true,
+    false,
   )
 })
 
-test('recognizes a Discord GIF embed posted by staff', () => {
+test('ignores a forwarded staff GIF without opening registration', () => {
+  const message = {
+    id: 'admin-forwarded-gif',
+    content: '',
+    author: { id: 'server-admin' },
+    member: { permissions: { has: () => true } },
+    attachments: new Map(),
+    embeds: [],
+    messageSnapshots: new Map([
+      [
+        'forwarded-message',
+        {
+          attachments: new Map([
+            [
+              'forwarded-gif',
+              {
+                id: 'forwarded-gif',
+                name: 'renamed-file',
+                url: 'https://cdn.discordapp.com/forwarded-media',
+                contentType: 'image/gif',
+              },
+            ],
+          ]),
+          embeds: [],
+        },
+      ],
+    ]),
+  }
+  assert.equal(isAdminRegistrationMediaNotice(message), true)
   assert.equal(
     isAdminRegistrationOpener(
-      {
-        id: 'admin-gif-embed',
-        content: '',
-        author: { id: 'server-admin' },
-        member: { permissions: { has: () => true } },
-        attachments: new Map(),
-        embeds: [
-          {
-            data: { type: 'gifv' },
-            video: {
-              url: 'https://media.discordapp.net/rendered-gif.mp4',
-            },
-          },
-        ],
-      },
+      message,
       {
         automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
       },
     ),
-    true,
-  )
-})
-
-test('recognizes a forwarded GIF attachment posted by staff', () => {
-  assert.equal(
-    isAdminRegistrationOpener(
-      {
-        id: 'admin-forwarded-gif',
-        content: '',
-        author: { id: 'server-admin' },
-        member: { permissions: { has: () => true } },
-        attachments: new Map(),
-        embeds: [],
-        messageSnapshots: new Map([
-          [
-            'forwarded-message',
-            {
-              attachments: new Map([
-                [
-                  'forwarded-gif',
-                  {
-                    id: 'forwarded-gif',
-                    name: 'renamed-file',
-                    url: 'https://cdn.discordapp.com/forwarded-media',
-                    contentType: 'image/gif',
-                  },
-                ],
-              ]),
-              embeds: [],
-            },
-          ],
-        ]),
-      },
-      {
-        automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
-      },
-    ),
-    true,
+    false,
   )
 })
 

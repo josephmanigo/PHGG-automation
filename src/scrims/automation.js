@@ -20,6 +20,7 @@ import { sendDiscordAttachments } from '../discord-upload.js'
 
 const MAX_WAITLIST_DISPLAY = 40
 const ALWAYS_OPEN_CYCLE_ID = 'ALWAYS_OPEN'
+export const SCRIM_CYCLE_TTL_MS = 72 * 60 * 60 * 1_000
 export const SCRIM_CHECK_REACTION_ID = BOT_CHECK_REACTION_ID
 export const SCRIM_CROSS_REACTION_ID = BOT_CROSS_REACTION_ID
 export const BOARD_CALENDAR_EMOJI_ID = '1436064495939354634'
@@ -40,6 +41,12 @@ const AVAILABLE_SLOT_FORMAT_MESSAGE = [
   'Admins must follow this format:',
   '`AVAILABLE SLOT 2, 15 & 16`',
 ].join('\n')
+
+export function isCurrentScrimCycle(createdTimestamp, now = Date.now()) {
+  if (!Number.isFinite(createdTimestamp)) return false
+  const age = now - createdTimestamp
+  return age >= -5 * 60 * 1_000 && age <= SCRIM_CYCLE_TTL_MS
+}
 
 function messageSignals(message) {
   return messageMediaSources(message)
@@ -202,14 +209,20 @@ export function isAdminRegistrationOpener(
   config,
   member = message.member,
 ) {
-  if (
-    !canManageScrim(message, member) ||
-    validateRegistrationContent(message.content).valid
-  ) {
-    return false
-  }
+  if (!isAdminRegistrationMediaNotice(message, member)) return false
   return (
     hasExpectedStarterAttachmentName(message, config) ||
+    hasConfiguredStarterSignal(message, config)
+  )
+}
+
+export function isAdminRegistrationMediaNotice(
+  message,
+  member = message.member,
+) {
+  return (
+    canManageScrim(message, member) &&
+    !validateRegistrationContent(message.content).valid &&
     hasGifMedia(message)
   )
 }
@@ -311,14 +324,6 @@ export function buildBoardContent(
   ].join('\n')
 }
 
-function boardCycleId(message) {
-  for (const embed of message.embeds) {
-    const match = /• CYCLE (\S+)$/.exec(embed.footer?.text ?? '')
-    if (match) return match[1]
-  }
-  return null
-}
-
 function isLiveBoard(message, botUserId, brandName, label, title) {
   if (message.author.id !== botUserId) return false
   const marker = `${brandName.toUpperCase()} ${label} SCRIM BOARD • LIVE`
@@ -332,6 +337,31 @@ function isLiveBoard(message, botUserId, brandName, label, title) {
   )
 }
 
+export function selectCurrentScrimBoard(
+  messages,
+  {
+    botUserId,
+    brandName,
+    label,
+    title,
+    cycleStartedAt,
+  },
+) {
+  return (
+    [...messages]
+      .filter(
+        (message) =>
+          isLiveBoard(message, botUserId, brandName, label, title) &&
+          (cycleStartedAt === 0 ||
+            message.createdTimestamp >= cycleStartedAt),
+      )
+      .sort(
+        (left, right) =>
+          right.createdTimestamp - left.createdTimestamp,
+      )[0] ?? null
+  )
+}
+
 async function readableChannel(client, channelId) {
   const channel = await client.channels.fetch(channelId)
   if (!channel?.isTextBased() || !('messages' in channel)) {
@@ -340,26 +370,41 @@ async function readableChannel(client, channelId) {
   return channel
 }
 
-async function findLiveBoard(channel, botUserId, brandName, label, title) {
+async function findLiveBoard(
+  channel,
+  botUserId,
+  brandName,
+  label,
+  title,
+  cycleStartedAt,
+) {
+  const belongsToCycle = (message) =>
+    isLiveBoard(message, botUserId, brandName, label, title) &&
+    (cycleStartedAt === 0 ||
+      message.createdTimestamp >= cycleStartedAt)
   const pins = await channel.messages.fetchPins({ limit: 50 })
-  const pinnedBoards = pins.items
+  const pinnedBotBoards = pins.items
     .map((item) => item.message)
     .filter((message) =>
       isLiveBoard(message, botUserId, brandName, label, title),
     )
-  for (const message of pinnedBoards) {
+  for (const message of pinnedBotBoards) {
     await message
       .unpin('PHGG scrim boards are no longer pinned automatically.')
       .catch(() => undefined)
   }
+  const pinnedBoards = pinnedBotBoards.filter(belongsToCycle)
 
   const recent = await channel.messages.fetch({ limit: 100 })
-  return (
-    [...pinnedBoards, ...recent.values()]
-      .filter((message) =>
-        isLiveBoard(message, botUserId, brandName, label, title),
-      )
-      .sort((left, right) => right.createdTimestamp - left.createdTimestamp)[0] ?? null
+  return selectCurrentScrimBoard(
+    [...pinnedBoards, ...recent.values()],
+    {
+      botUserId,
+      brandName,
+      label,
+      title,
+      cycleStartedAt,
+    },
   )
 }
 
@@ -380,6 +425,14 @@ export function installScrimAutomation(client, config, botConfig) {
   let initialized = Promise.resolve()
   let queueValue = Promise.resolve()
   const processedMessages = new Set()
+
+  function registrationCycleIsCurrent(now = Date.now()) {
+    return (
+      state.registrationOpen &&
+      (state.cycleStartMessageId === ALWAYS_OPEN_CYCLE_ID ||
+        isCurrentScrimCycle(state.cycleStartedAt, now))
+    )
+  }
 
   function openRegistration(message, { createBoard = false } = {}) {
     board.reset()
@@ -414,6 +467,8 @@ export function installScrimAutomation(client, config, botConfig) {
       embeds: source.embeds
         .filter((embed) => embed.type === 'rich')
         .map((embed) => embed.toJSON()),
+      nonce: `H${state.cycleStartMessageId}`.slice(0, 25),
+      enforceNonce: true,
       allowedMentions: { parse: [] },
     }
     const attachments = [...source.attachments.values()]
@@ -438,7 +493,10 @@ export function installScrimAutomation(client, config, botConfig) {
   }
 
   async function syncBoard() {
-    if (!state.registrationOpen) return null
+    if (!registrationCycleIsCurrent()) {
+      if (state.registrationOpen) closeRegistration()
+      return null
+    }
     const channel = await readableChannel(client, config.channels.board)
     const payload = {
       content: buildBoardContent(board, state, config, botConfig),
@@ -460,8 +518,31 @@ export function installScrimAutomation(client, config, botConfig) {
       }
     }
 
+    const existing = await findLiveBoard(
+      channel,
+      client.user.id,
+      botConfig.brandName,
+      config.label,
+      config.title,
+      state.cycleStartedAt,
+    )
+    if (existing) {
+      state.boardMessageId = existing.id
+      await existing.edit(payload)
+      if (existing.pinned) {
+        await existing
+          .unpin('PHGG scrim boards are no longer pinned automatically.')
+          .catch(() => undefined)
+      }
+      return existing
+    }
+
     await copyBoardHeader(channel)
-    const message = await channel.send(payload)
+    const message = await channel.send({
+      ...payload,
+      nonce: `B${state.cycleStartMessageId}`.slice(0, 25),
+      enforceNonce: true,
+    })
     state.boardMessageId = message.id
     return message
   }
@@ -472,27 +553,14 @@ export function installScrimAutomation(client, config, botConfig) {
     const registrationMessages = [
       ...(await registrationChannel.messages.fetch({ limit: 100 })).values(),
     ].sort((left, right) => left.createdTimestamp - right.createdTimestamp)
-    let configuredOpener = starterSignalIds(config).length > 0
-      ? registrationMessages.find((message) =>
-          hasConfiguredStarterSignal(message, config),
-        )
-      : null
-    if (!configuredOpener && config.bannerAssetId) {
-      configuredOpener = await registrationChannel.messages
-        .fetch(config.bannerAssetId)
-        .catch(() => null)
-    }
     let opener = null
     for (const message of [...registrationMessages].reverse()) {
+      if (!isCurrentScrimCycle(message.createdTimestamp)) continue
       if (await isCycleOpener(message, config, client.user?.id)) {
         opener = message
         break
       }
     }
-    opener ??=
-      configuredOpener && isRegistrationOpener(configuredOpener, config)
-        ? configuredOpener
-        : null
     if (opener) {
       openRegistration(opener)
       await clearBotRegistrationReactions(opener)
@@ -544,26 +612,8 @@ export function installScrimAutomation(client, config, botConfig) {
     }
   }
 
-  async function initialize(readyClient) {
-    const boardChannel = await readableChannel(client, config.channels.board)
-    const existing = await findLiveBoard(
-      boardChannel,
-      readyClient.user.id,
-      botConfig.brandName,
-      config.label,
-      config.title,
-    )
+  async function initialize() {
     await loadCycle()
-    const recordedCycleId = existing ? boardCycleId(existing) : null
-    state.boardMessageId =
-      existing &&
-      (state.cycleStartMessageId === ALWAYS_OPEN_CYCLE_ID ||
-        recordedCycleId === state.cycleStartMessageId ||
-        (!recordedCycleId &&
-          state.cycleStartedAt !== null &&
-          existing.createdTimestamp >= state.cycleStartedAt))
-        ? existing.id
-        : null
     await syncBoard()
     console.log(
       `${config.label} scrim automation ready: ${state.registrationOpen ? 'OPEN' : 'CLOSED'}, ` +
@@ -645,9 +695,17 @@ export function installScrimAutomation(client, config, botConfig) {
       await clearBotRegistrationReactions(message)
       return
     }
+    if (
+      hasGifMedia(message) &&
+      (await canManageScrimMessage(message))
+    ) {
+      await clearBotRegistrationReactions(message)
+      return
+    }
 
     const registration = validateRegistrationContent(message.content)
-    if (!state.registrationOpen) {
+    if (!registrationCycleIsCurrent()) {
+      if (state.registrationOpen) closeRegistration()
       console.warn(
         `${config.label} registration rejected for ${message.author.tag}: the official opening GIF was not detected.`,
       )
@@ -700,7 +758,7 @@ export function installScrimAutomation(client, config, botConfig) {
         return
       }
       await setCancellationFormatReaction(message, true)
-      if (!state.registrationOpen) return
+      if (!registrationCycleIsCurrent()) return
       const result = board.makeSlotsAvailable(validSlots, message.id)
       await syncBoard()
       const slotNumbers = result.slotIndexes.map((slotIndex) => slotIndex + 1)
@@ -725,7 +783,7 @@ export function installScrimAutomation(client, config, botConfig) {
       return
     }
     await setCancellationFormatReaction(message, true)
-    if (!state.registrationOpen) return
+    if (!registrationCycleIsCurrent()) return
 
     if (cancel) {
       const result = board.cancel(cancel, message.id)
@@ -798,8 +856,8 @@ export function installScrimAutomation(client, config, botConfig) {
     return true
   }
 
-  client.once(Events.ClientReady, (readyClient) => {
-    initialized = initialize(readyClient)
+  client.once(Events.ClientReady, () => {
+    initialized = initialize()
   })
 
   client.on(Events.MessageCreate, (message) => {

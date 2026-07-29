@@ -67,6 +67,32 @@ test('uses normal announcement detail emojis', () => {
   )
 })
 
+test('normalizes the stylized Mobile and PC announcement labels', () => {
+  const source = [
+    '<a:emoji_150:1258450242601484338>   𝐃𝐀𝐓𝐄: July 28, 2026 (Tuesday)',
+    '<a:emoji_157:1259806144080248894>   𝐓𝐈𝐌𝐄: 10:00PM',
+    '<a:PIN:1237358846922719323>   𝐑𝐎𝐔𝐍𝐃𝐒: 4 Rounds',
+    '<a:pinned:1240329558033436722>  𝐈𝐌𝐏𝐎𝐑𝐓𝐀𝐍𝐓: Updated nicknames only.',
+  ].join('\n')
+
+  assert.equal(
+    replaceAnnouncementDetailEmojis(source),
+    [
+      '\u{1F4C5} 𝐃𝐀𝐓𝐄: July 28, 2026 (Tuesday)',
+      '\u{23F0} 𝐓𝐈𝐌𝐄: 10:00PM',
+      '\u{1F4CC} 𝐑𝐎𝐔𝐍𝐃𝐒: 4 Rounds',
+      '\u{1F4CC} 𝐈𝐌𝐏𝐎𝐑𝐓𝐀𝐍𝐓: Updated nicknames only.',
+    ].join('\n'),
+  )
+  assert.equal(
+    replaceAnnouncementDate(
+      '<a:emoji_150:1258450242601484338> 𝐃𝐀𝐓𝐄: July 28, 2026 (Tuesday)',
+      'August 4, 2026 (Tuesday)',
+    ),
+    '<a:emoji_150:1258450242601484338> 𝐃𝐀𝐓𝐄: August 4, 2026 (Tuesday)',
+  )
+})
+
 test('normalizes refreshed Discord attachment URLs for deduplication', () => {
   const source = {
     content: '',

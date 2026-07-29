@@ -60,6 +60,8 @@ function apiPayload(payload, attachments) {
     )
   }
   if (payload.stickers?.length > 0) result.sticker_ids = payload.stickers
+  if (payload.nonce !== undefined) result.nonce = payload.nonce
+  if (payload.enforceNonce) result.enforce_nonce = true
   if (payload.allowedMentions) {
     result.allowed_mentions = {
       parse: payload.allowedMentions.parse ?? [],

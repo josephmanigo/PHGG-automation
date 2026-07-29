@@ -17,6 +17,8 @@ test('builds a fixed-length multipart upload without buffering the GIF', () => {
   const multipart = buildStreamingMultipart(
     {
       content: 'Scrim announcement',
+      nonce: 'test-cycle',
+      enforceNonce: true,
       allowedMentions: { parse: [] },
     },
     [attachment],
@@ -24,6 +26,8 @@ test('builds a fixed-length multipart upload without buffering the GIF', () => {
   )
 
   assert.match(multipart.json.toString(), /"content":"Scrim announcement"/)
+  assert.match(multipart.json.toString(), /"nonce":"test-cycle"/)
+  assert.match(multipart.json.toString(), /"enforce_nonce":true/)
   assert.match(
     multipart.files[0].header.toString(),
     /name="files\[0\]"; filename="Announcement\.gif"/,
