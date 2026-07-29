@@ -254,6 +254,70 @@ test('recognizes a renamed GIF file uploaded by an administrator', () => {
   )
 })
 
+test('recognizes a Discord GIF embed posted by staff', () => {
+  assert.equal(
+    isAdminRegistrationOpener(
+      {
+        id: 'admin-gif-embed',
+        content: '',
+        author: { id: 'server-admin' },
+        member: { permissions: { has: () => true } },
+        attachments: new Map(),
+        embeds: [
+          {
+            data: { type: 'gifv' },
+            video: {
+              url: 'https://media.discordapp.net/rendered-gif.mp4',
+            },
+          },
+        ],
+      },
+      {
+        automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+      },
+    ),
+    true,
+  )
+})
+
+test('recognizes a forwarded GIF attachment posted by staff', () => {
+  assert.equal(
+    isAdminRegistrationOpener(
+      {
+        id: 'admin-forwarded-gif',
+        content: '',
+        author: { id: 'server-admin' },
+        member: { permissions: { has: () => true } },
+        attachments: new Map(),
+        embeds: [],
+        messageSnapshots: new Map([
+          [
+            'forwarded-message',
+            {
+              attachments: new Map([
+                [
+                  'forwarded-gif',
+                  {
+                    id: 'forwarded-gif',
+                    name: 'renamed-file',
+                    url: 'https://cdn.discordapp.com/forwarded-media',
+                    contentType: 'image/gif',
+                  },
+                ],
+              ]),
+              embeds: [],
+            },
+          ],
+        ]),
+      },
+      {
+        automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+      },
+    ),
+    true,
+  )
+})
+
 test('rejects an admin upload that is not a GIF', () => {
   assert.equal(
     isAdminRegistrationOpener(

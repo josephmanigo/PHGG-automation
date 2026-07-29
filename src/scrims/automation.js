@@ -112,50 +112,93 @@ function hasExpectedStarterAttachmentName(message, config) {
   )
 }
 
-function hasUploadedGif(message) {
-  return [...message.attachments.values()].some((attachment) => {
-    const contentType = (attachment.contentType ?? '').toLowerCase()
-    if (contentType.startsWith('image/gif')) return true
-    return [attachment.name, attachment.url].some((value) =>
-      /\.gif(?:$|[?#])/i.test(value ?? ''),
-    )
+function messageMediaSources(message) {
+  return [
+    message,
+    ...[...(message.messageSnapshots?.values?.() ?? [])],
+  ]
+}
+
+function hasGifMedia(message) {
+  return messageMediaSources(message).some((source) => {
+    const attachments = [...(source.attachments?.values?.() ?? [])]
+    if (
+      attachments.some((attachment) => {
+        const contentType = (attachment.contentType ?? '').toLowerCase()
+        if (contentType.startsWith('image/gif')) return true
+        return [attachment.name, attachment.url].some((value) =>
+          /\.gif(?:$|[?#])/i.test(value ?? ''),
+        )
+      })
+    ) {
+      return true
+    }
+
+    return [...(source.embeds ?? [])].some((embed) => {
+      if ((embed.data?.type ?? embed.type) === 'gifv') return true
+      return [
+        embed.url,
+        embed.image?.url,
+        embed.image?.proxyURL,
+        embed.thumbnail?.url,
+        embed.thumbnail?.proxyURL,
+        embed.video?.url,
+        embed.video?.proxyURL,
+      ].some((value) => /\.gif(?:$|[?#])/i.test(value ?? ''))
+    })
   })
 }
 
-function canManuallyOpenRegistration(message) {
+function canManuallyOpenRegistration(message, member = message.member) {
   if (
     message.guild?.ownerId &&
     message.author?.id === message.guild.ownerId
   ) {
     return true
   }
-  const permissions = message.member?.permissions
+  const permissions = member?.permissions
   return [
     PermissionFlagsBits.Administrator,
     PermissionFlagsBits.ManageGuild,
     PermissionFlagsBits.ManageMessages,
+    PermissionFlagsBits.ManageChannels,
+    PermissionFlagsBits.ManageRoles,
+    PermissionFlagsBits.ModerateMembers,
   ].some((permission) => permissions?.has?.(permission))
 }
 
-export function isAdminRegistrationOpener(message, config) {
+export function isAdminRegistrationOpener(
+  message,
+  config,
+  member = message.member,
+) {
   if (
-    !canManuallyOpenRegistration(message) ||
+    !canManuallyOpenRegistration(message, member) ||
     validateRegistrationContent(message.content).valid
   ) {
     return false
   }
   return (
     hasExpectedStarterAttachmentName(message, config) ||
-    hasUploadedGif(message)
+    hasGifMedia(message)
   )
 }
 
-function isCycleOpener(message, config, botUserId) {
-  return (
+async function isCycleOpener(message, config, botUserId) {
+  if (
     isRegistrationOpener(message, config) ||
     isAutomatedRegistrationOpener(message, config, botUserId) ||
     isAdminRegistrationOpener(message, config)
-  )
+  ) {
+    return true
+  }
+  if (!hasGifMedia(message) || !message.guild || !message.author?.id) {
+    return false
+  }
+  const member = await message.guild.members
+    .fetch(message.author.id)
+    .catch(() => null)
+  return isAdminRegistrationOpener(message, config, member)
 }
 
 function dateLabel(timezone) {
@@ -417,13 +460,17 @@ export function installScrimAutomation(client, config, botConfig) {
         .fetch(config.bannerAssetId)
         .catch(() => null)
     }
-    const opener =
-      [...registrationMessages]
-        .reverse()
-        .find((message) => isCycleOpener(message, config, client.user?.id)) ??
-      (configuredOpener && isRegistrationOpener(configuredOpener, config)
+    let opener = null
+    for (const message of [...registrationMessages].reverse()) {
+      if (await isCycleOpener(message, config, client.user?.id)) {
+        opener = message
+        break
+      }
+    }
+    opener ??=
+      configuredOpener && isRegistrationOpener(configuredOpener, config)
         ? configuredOpener
-        : null)
+        : null
     if (opener) {
       openRegistration(opener)
       await clearBotRegistrationReactions(opener)
@@ -551,7 +598,7 @@ export function installScrimAutomation(client, config, botConfig) {
   }
 
   async function handleRegistration(message) {
-    if (isCycleOpener(message, config, client.user?.id)) {
+    if (await isCycleOpener(message, config, client.user?.id)) {
       openRegistration(message, { createBoard: true })
       await syncBoard()
       await clearBotRegistrationReactions(message)
