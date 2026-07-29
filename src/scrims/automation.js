@@ -118,7 +118,10 @@ export function isRegistrationOpener(message, config) {
 export function isAutomatedRegistrationOpener(message, config, botUserId) {
   if (!botUserId || message.author?.id !== botUserId) return false
   if (validateRegistrationContent(message.content).valid) return false
-  return hasExpectedStarterAttachmentName(message, config)
+  return (
+    hasExpectedStarterAttachmentName(message, config) ||
+    hasConfiguredStarterSignal(message, config)
+  )
 }
 
 function hasExpectedStarterAttachmentName(message, config) {
@@ -430,21 +433,17 @@ export function installScrimAutomation(client, config, botConfig) {
       })
     if (!source) return null
 
-    if (source.attachments.size > 0 && typeof source.forward === 'function') {
-      return source.forward(channel).catch((reason) => {
-        console.warn(
-          `${config.label} board header could not be forwarded:`,
-          reason instanceof Error ? reason.message : reason,
-        )
-        return null
-      })
-    }
-
+    const attachmentEmbeds = [...source.attachments.values()]
+      .slice(0, Math.max(0, 10 - source.embeds.length))
+      .map((attachment) => new EmbedBuilder().setImage(attachment.url))
     const payload = {
       content: source.content || undefined,
-      embeds: source.embeds
-        .filter((embed) => embed.type === 'rich')
-        .map((embed) => embed.toJSON()),
+      embeds: [
+        ...source.embeds
+          .filter((embed) => embed.type === 'rich')
+          .map((embed) => embed.toJSON()),
+        ...attachmentEmbeds,
+      ],
       allowedMentions: { parse: [] },
     }
     if (!payload.content && payload.embeds.length === 0) {

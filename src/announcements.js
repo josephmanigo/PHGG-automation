@@ -153,23 +153,27 @@ function cloneEmbed(embed, dateLabel = null) {
   return result
 }
 
-function messageSignature(message, normalizeDate = false) {
+export function announcementMessageSignature(message, normalizeDate = false) {
   const comparable =
     [...(message.messageSnapshots?.values?.() ?? [])][0] ?? message
   const text = (value) =>
     normalizeDate ? replaceAnnouncementDate(value, '<DATE>') : value
-  return JSON.stringify({
-    content: text(comparable.content),
-    attachments: [...comparable.attachments.values()].map((attachment) => ({
-      name: attachment.name,
-      size: attachment.size,
-    })),
-    embeds: comparable.embeds.map((embed) => ({
+  const mediaUrl = (value) => {
+    if (!value) return null
+    try {
+      const url = new URL(value)
+      return url.pathname.startsWith('/attachments/')
+        ? url.pathname
+        : `${url.hostname}${url.pathname}`
+    } catch {
+      return String(value).split(/[?#]/, 1)[0]
+    }
+  }
+  const embeds = comparable.embeds
+    .map((embed) => ({
       title: text(embed.title),
       description: text(embed.description),
       url: embed.url,
-      image: embed.image?.url,
-      thumbnail: embed.thumbnail?.url,
       fields: embed.fields.map((field) => ({
         name: field.name,
         value:
@@ -177,12 +181,36 @@ function messageSignature(message, normalizeDate = false) {
             ? '<DATE>'
             : text(field.value),
       })),
-    })),
+    }))
+    .filter(
+      (embed) =>
+        embed.title ||
+        embed.description ||
+        embed.url ||
+        embed.fields.length > 0,
+    )
+  return JSON.stringify({
+    content: text(comparable.content),
+    media: [
+      ...[...comparable.attachments.values()].map(
+        (attachment) => attachment.url,
+      ),
+      ...comparable.embeds.flatMap((embed) => [
+        embed.image?.url,
+        embed.thumbnail?.url,
+        embed.video?.url,
+      ]),
+    ]
+      .map(mediaUrl)
+      .filter(Boolean),
+    embeds,
   })
 }
 
-export function shouldForwardAnnouncementMessage(message) {
-  return (message.attachments?.size ?? 0) > 0
+export function attachmentImageEmbeds(message) {
+  return [...(message.attachments?.values?.() ?? [])].map((attachment) =>
+    new EmbedBuilder().setImage(attachment.url),
+  )
 }
 
 function clonePayload(message, allowMentions, dateLabel = null) {
@@ -196,10 +224,15 @@ function clonePayload(message, allowMentions, dateLabel = null) {
       ? replaceAnnouncementDate(message.content, dateLabel)
       : message.content
   }
-  if (message.embeds.length > 0) {
-    payload.embeds = message.embeds
-      .slice(0, 10)
-      .map((embed) => cloneEmbed(embed, dateLabel))
+  const embeds = message.embeds
+    .slice(0, 10)
+    .map((embed) => cloneEmbed(embed, dateLabel))
+  const attachmentEmbeds = attachmentImageEmbeds(message).slice(
+    0,
+    10 - embeds.length,
+  )
+  if (embeds.length + attachmentEmbeds.length > 0) {
+    payload.embeds = [...embeds, ...attachmentEmbeds]
   }
   if (message.stickers.size > 0) payload.stickers = [...message.stickers.keys()].slice(0, 3)
   if (!payload.content && !payload.embeds && !payload.stickers) {
@@ -209,14 +242,6 @@ function clonePayload(message, allowMentions, dateLabel = null) {
 }
 
 async function publishMessage(channel, source, allowMentions, dateLabel = null) {
-  if (shouldForwardAnnouncementMessage(source)) {
-    if (typeof source.forward !== 'function') {
-      throw new Error(
-        `Source message ${source.id} cannot be forwarded without downloading its attachments.`,
-      )
-    }
-    return source.forward(channel)
-  }
   return channel.send(clonePayload(source, allowMentions, dateLabel))
 }
 
@@ -269,8 +294,12 @@ async function publishAfterMessageOnce(
       scheduler,
       runKey,
     )
-    const signature = messageSignature(source)
-    if (recent.some((message) => messageSignature(message) === signature)) {
+    const signature = announcementMessageSignature(source)
+    if (
+      recent.some(
+        (message) => announcementMessageSignature(message) === signature,
+      )
+    ) {
       return false
     }
   }
@@ -304,9 +333,10 @@ async function publishGroup(
   let posted = 0
   for (const source of sources) {
     const updatesDate = datedMessageIds.has(source.id)
-    const signature = messageSignature(source, updatesDate)
+    const signature = announcementMessageSignature(source, updatesDate)
     const existingIndex = remainingRecent.findIndex(
-      (message) => messageSignature(message, updatesDate) === signature,
+      (message) =>
+        announcementMessageSignature(message, updatesDate) === signature,
     )
     if (existingIndex >= 0) {
       remainingRecent.splice(existingIndex, 1)

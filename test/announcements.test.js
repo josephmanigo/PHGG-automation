@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   announcementDateLabel,
+  announcementMessageSignature,
+  attachmentImageEmbeds,
   nextScheduledRunKey,
   replaceAnnouncementDate,
   scheduledRunKey,
-  shouldForwardAnnouncementMessage,
 } from '../src/announcements.js'
 
 const schedule = {
@@ -47,15 +48,58 @@ test('updates the labeled mobile announcement date', () => {
   )
 })
 
-test('forwards attachment messages instead of downloading them into memory', () => {
+test('reposts attachment GIFs as normal memory-safe image embeds', () => {
+  const embeds = attachmentImageEmbeds({
+    attachments: new Map([
+      [
+        'gif',
+        {
+          name: 'Announcement.gif',
+          url: 'https://cdn.discordapp.com/attachments/banner.gif',
+        },
+      ],
+    ]),
+  })
   assert.equal(
-    shouldForwardAnnouncementMessage({
-      attachments: new Map([['gif', { name: 'Announcement.gif' }]]),
-    }),
-    true,
+    embeds[0].toJSON().image.url,
+    'https://cdn.discordapp.com/attachments/banner.gif',
   )
+  assert.deepEqual(attachmentImageEmbeds({ attachments: new Map() }), [])
+})
+
+test('deduplicates a source GIF attachment against its normal image embed', () => {
+  const source = {
+    content: '',
+    attachments: new Map([
+      [
+        'gif',
+        {
+          url: 'https://cdn.discordapp.com/attachments/123/456/banner.gif?ex=new-signature',
+        },
+      ],
+    ]),
+    embeds: [],
+  }
+  const posted = {
+    content: '',
+    attachments: new Map(),
+    embeds: [
+      {
+        title: null,
+        description: null,
+        url: null,
+        image: {
+          url: 'https://media.discordapp.net/attachments/123/456/banner.gif?ex=old-signature',
+        },
+        thumbnail: null,
+        video: null,
+        fields: [],
+      },
+    ],
+  }
+
   assert.equal(
-    shouldForwardAnnouncementMessage({ attachments: new Map() }),
-    false,
+    announcementMessageSignature(source),
+    announcementMessageSignature(posted),
   )
 })

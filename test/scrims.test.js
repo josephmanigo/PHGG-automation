@@ -218,6 +218,33 @@ test('recognizes a bot-forwarded mobile starter GIF snapshot', () => {
   )
 })
 
+test('recognizes a bot-posted mobile starter GIF image embed', () => {
+  const message = {
+    id: 'embedded-mobile-starter',
+    content: '',
+    author: { id: 'phgg-bot' },
+    attachments: new Map(),
+    embeds: [
+      {
+        image: {
+          url: 'https://cdn.discordapp.com/attachments/1345795374962704465/1531385927811989674/Mob_Reg.gif',
+        },
+      },
+    ],
+  }
+  const config = {
+    bannerAssetId: '1531385928105594940',
+    bannerSignalIds: new Set(['1531385927811989674']),
+    automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+  }
+
+  assert.equal(isRegistrationOpener(message, config), true)
+  assert.equal(
+    isAutomatedRegistrationOpener(message, config, 'phgg-bot'),
+    true,
+  )
+})
+
 test('recognizes the bot-owned copied PC starter GIF', () => {
   const message = {
     id: 'copied-pc-starter',
