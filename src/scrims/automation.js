@@ -1,4 +1,4 @@
-import { EmbedBuilder, Events } from 'discord.js'
+import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
 import {
   parseCancelContent,
   parseMineContent,
@@ -98,6 +98,10 @@ export function isRegistrationOpener(message, config) {
 export function isAutomatedRegistrationOpener(message, config, botUserId) {
   if (!botUserId || message.author?.id !== botUserId) return false
   if (validateRegistrationContent(message.content).valid) return false
+  return hasExpectedStarterAttachmentName(message, config)
+}
+
+function hasExpectedStarterAttachmentName(message, config) {
   const expectedNames = new Set(
     [...(config.automatedStarterAttachmentNames ?? [])].map((name) =>
       name.toLowerCase(),
@@ -108,10 +112,21 @@ export function isAutomatedRegistrationOpener(message, config, botUserId) {
   )
 }
 
+export function isAdminRegistrationOpener(message, config) {
+  if (
+    !message.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
+    validateRegistrationContent(message.content).valid
+  ) {
+    return false
+  }
+  return hasExpectedStarterAttachmentName(message, config)
+}
+
 function isCycleOpener(message, config, botUserId) {
   return (
     isRegistrationOpener(message, config) ||
-    isAutomatedRegistrationOpener(message, config, botUserId)
+    isAutomatedRegistrationOpener(message, config, botUserId) ||
+    isAdminRegistrationOpener(message, config)
   )
 }
 

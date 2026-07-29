@@ -10,6 +10,7 @@ import {
 } from '../src/scrims/core.js'
 import {
   buildEmbeds,
+  isAdminRegistrationOpener,
   isAutomatedRegistrationOpener,
   isRegistrationOpener,
   replayScrimEvents,
@@ -190,9 +191,43 @@ test('recognizes the bot-owned copied PC starter GIF', () => {
   )
 })
 
+test('recognizes an administrator-owned copied mobile starter GIF', () => {
+  const message = {
+    id: 'admin-mobile-starter',
+    content: '',
+    author: { id: 'server-admin' },
+    member: { permissions: { has: () => true } },
+    attachments: new Map([
+      [
+        'new-admin-attachment',
+        {
+          id: 'new-admin-attachment',
+          name: 'Mob_Reg.gif',
+          url: 'https://cdn.discordapp.com/new-admin-attachment/Mob_Reg.gif',
+        },
+      ],
+    ]),
+    embeds: [],
+  }
+  const config = {
+    automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+  }
+  assert.equal(isAdminRegistrationOpener(message, config), true)
+  assert.equal(
+    isAdminRegistrationOpener(
+      {
+        ...message,
+        member: { permissions: { has: () => false } },
+      },
+      config,
+    ),
+    false,
+  )
+})
+
 test('rejects a different GIF even when posted by an administrator', () => {
   assert.equal(
-    isRegistrationOpener(
+    isAdminRegistrationOpener(
       {
         id: 'admin-starter',
         content: '',
@@ -212,9 +247,7 @@ test('rejects a different GIF even when posted by an administrator', () => {
         embeds: [],
       },
       {
-        bannerAssetId: 'different-id',
-        bannerSignalIds: new Set(['different-asset']),
-        openerIds: new Set(),
+        automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
       },
     ),
     false,
