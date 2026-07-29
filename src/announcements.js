@@ -223,7 +223,11 @@ async function publishAfterMessageOnce(
   runKey,
 ) {
   const channel = await textChannel(client, action.channelId)
-  const source = await channel.messages.fetch(action.messageId)
+  const sourceChannel =
+    action.sourceChannelId && action.sourceChannelId !== action.channelId
+      ? await textChannel(client, action.sourceChannelId)
+      : channel
+  const source = await sourceChannel.messages.fetch(action.messageId)
   const recent = await recentScheduledBotMessages(
     channel,
     client.user.id,

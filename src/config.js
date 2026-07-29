@@ -15,11 +15,31 @@ const ANNOUNCEMENT_AFTER_MESSAGES = {
       channelId: '1345795374962704465',
       messageId: '1531385928105594940',
     },
+    {
+      channelId: '1345800858138574979',
+      sourceChannelId: '1340963218582929430',
+      messageId: '1531386615472328756',
+    },
+    {
+      channelId: '1345800858138574979',
+      sourceChannelId: '1340963218582929430',
+      messageId: '1531386624233963561',
+    },
   ],
   PC: [
     {
       channelId: '1340963116954947635',
       messageId: '1531386417434071191',
+    },
+    {
+      channelId: '1340963218582929430',
+      sourceChannelId: '1340963218582929430',
+      messageId: '1531386615472328756',
+    },
+    {
+      channelId: '1340963218582929430',
+      sourceChannelId: '1340963218582929430',
+      messageId: '1531386624233963561',
     },
   ],
 }
