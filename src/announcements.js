@@ -1,4 +1,4 @@
-import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
+import { EmbedBuilder, Events, MessageFlags } from 'discord.js'
 
 const TEST_COMMAND_NAME = 'test'
 const WEEKDAY_NAMES = [
@@ -154,15 +154,17 @@ function cloneEmbed(embed, dateLabel = null) {
 }
 
 function messageSignature(message, normalizeDate = false) {
+  const comparable =
+    [...(message.messageSnapshots?.values?.() ?? [])][0] ?? message
   const text = (value) =>
     normalizeDate ? replaceAnnouncementDate(value, '<DATE>') : value
   return JSON.stringify({
-    content: text(message.content),
-    attachments: [...message.attachments.values()].map((attachment) => ({
+    content: text(comparable.content),
+    attachments: [...comparable.attachments.values()].map((attachment) => ({
       name: attachment.name,
       size: attachment.size,
     })),
-    embeds: message.embeds.map((embed) => ({
+    embeds: comparable.embeds.map((embed) => ({
       title: text(embed.title),
       description: text(embed.description),
       url: embed.url,
@@ -177,6 +179,10 @@ function messageSignature(message, normalizeDate = false) {
       })),
     })),
   })
+}
+
+export function shouldForwardAnnouncementMessage(message) {
+  return (message.attachments?.size ?? 0) > 0
 }
 
 function clonePayload(message, allowMentions, dateLabel = null) {
@@ -195,17 +201,23 @@ function clonePayload(message, allowMentions, dateLabel = null) {
       .slice(0, 10)
       .map((embed) => cloneEmbed(embed, dateLabel))
   }
-  if (message.attachments.size > 0) {
-    payload.files = [...message.attachments.values()].map((attachment) => ({
-      attachment: attachment.url,
-      name: attachment.name ?? 'announcement-attachment',
-    }))
-  }
   if (message.stickers.size > 0) payload.stickers = [...message.stickers.keys()].slice(0, 3)
-  if (!payload.content && !payload.embeds && !payload.files && !payload.stickers) {
+  if (!payload.content && !payload.embeds && !payload.stickers) {
     throw new Error(`Source message ${message.id} has no content that can be reposted.`)
   }
   return payload
+}
+
+async function publishMessage(channel, source, allowMentions, dateLabel = null) {
+  if (shouldForwardAnnouncementMessage(source)) {
+    if (typeof source.forward !== 'function') {
+      throw new Error(
+        `Source message ${source.id} cannot be forwarded without downloading its attachments.`,
+      )
+    }
+    return source.forward(channel)
+  }
+  return channel.send(clonePayload(source, allowMentions, dateLabel))
 }
 
 async function textChannel(client, channelId) {
@@ -262,7 +274,7 @@ async function publishAfterMessageOnce(
       return false
     }
   }
-  await channel.send(clonePayload(source, scheduler.allowMentions))
+  await publishMessage(channel, source, scheduler.allowMentions)
   return true
 }
 
@@ -300,12 +312,11 @@ async function publishGroup(
       remainingRecent.splice(existingIndex, 1)
       continue
     }
-    await channel.send(
-      clonePayload(
-        source,
-        scheduler.allowMentions,
-        updatesDate ? dateLabel : null,
-      ),
+    await publishMessage(
+      channel,
+      source,
+      scheduler.allowMentions,
+      updatesDate ? dateLabel : null,
     )
     posted += 1
   }
@@ -383,7 +394,7 @@ export function installAnnouncementAutomation(client, config) {
       const definition = {
         name: TEST_COMMAND_NAME,
         description: 'Test the weekly Mobile and PC scrim announcement flow now.',
-        defaultMemberPermissions: PermissionFlagsBits.Administrator,
+        defaultMemberPermissions: null,
       }
       const existing = commands.find(
         (command) => command.name === TEST_COMMAND_NAME,
@@ -406,27 +417,17 @@ export function installAnnouncementAutomation(client, config) {
     ) {
       return
     }
-    if (
-      !interaction.inGuild() ||
-      !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
-    ) {
-      await interaction.reply({
-        content: '❌ Only server administrators can run this scheduler test.',
-        ephemeral: true,
-      })
-      return
-    }
     if (testActive) {
       await interaction.reply({
         content: '⚠️ A scheduler test is already running. Please wait for it to finish.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       })
       return
     }
 
     testActive = true
     try {
-      await interaction.deferReply({ ephemeral: true })
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral })
       const runKey = nextScheduledRunKey(new Date(), config)
       const results = []
       for (const group of groups) {
@@ -467,7 +468,7 @@ export function installAnnouncementAutomation(client, config) {
         await interaction.editReply(payload).catch(() => undefined)
       } else {
         await interaction
-          .reply({ ...payload, ephemeral: true })
+          .reply({ ...payload, flags: MessageFlags.Ephemeral })
           .catch(() => undefined)
       }
     } finally {

@@ -41,21 +41,25 @@ const AVAILABLE_SLOT_FORMAT_MESSAGE = [
 ].join('\n')
 
 function messageSignals(message) {
-  return [
-    message.id,
-    message.content,
-    ...[...message.attachments.values()].flatMap((attachment) => [
-      attachment.id,
-      attachment.name,
-      attachment.url,
-    ]),
-    ...message.embeds.flatMap((embed) => [
-      embed.url,
-      embed.image?.url,
-      embed.thumbnail?.url,
-      embed.video?.url,
-    ]),
-  ].filter(Boolean)
+  return messageMediaSources(message)
+    .flatMap((source) => [
+      source.id,
+      source.content,
+      ...[...(source.attachments?.values?.() ?? [])].flatMap(
+        (attachment) => [
+          attachment.id,
+          attachment.name,
+          attachment.url,
+        ],
+      ),
+      ...(source.embeds ?? []).flatMap((embed) => [
+        embed.url,
+        embed.image?.url,
+        embed.thumbnail?.url,
+        embed.video?.url,
+      ]),
+    ])
+    .filter(Boolean)
 }
 
 function starterSignalIds(config) {
@@ -123,8 +127,10 @@ function hasExpectedStarterAttachmentName(message, config) {
       name.toLowerCase(),
     ),
   )
-  return [...message.attachments.values()].some((attachment) =>
-    expectedNames.has((attachment.name ?? '').toLowerCase()),
+  return messageMediaSources(message).some((source) =>
+    [...(source.attachments?.values?.() ?? [])].some((attachment) =>
+      expectedNames.has((attachment.name ?? '').toLowerCase()),
+    ),
   )
 }
 
@@ -424,19 +430,24 @@ export function installScrimAutomation(client, config, botConfig) {
       })
     if (!source) return null
 
-    const files = [...source.attachments.values()].map((attachment) => ({
-      attachment: attachment.url,
-      name: attachment.name ?? `attachment-${attachment.id}`,
-    }))
+    if (source.attachments.size > 0 && typeof source.forward === 'function') {
+      return source.forward(channel).catch((reason) => {
+        console.warn(
+          `${config.label} board header could not be forwarded:`,
+          reason instanceof Error ? reason.message : reason,
+        )
+        return null
+      })
+    }
+
     const payload = {
       content: source.content || undefined,
       embeds: source.embeds
         .filter((embed) => embed.type === 'rich')
         .map((embed) => embed.toJSON()),
-      files,
       allowedMentions: { parse: [] },
     }
-    if (!payload.content && payload.embeds.length === 0 && files.length === 0) {
+    if (!payload.content && payload.embeds.length === 0) {
       return null
     }
     return channel.send(payload).catch((reason) => {

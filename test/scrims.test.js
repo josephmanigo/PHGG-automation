@@ -177,6 +177,47 @@ test('recognizes only the bot-owned copied mobile starter GIF', () => {
   )
 })
 
+test('recognizes a bot-forwarded mobile starter GIF snapshot', () => {
+  const message = {
+    id: 'forwarded-mobile-starter',
+    content: '',
+    author: { id: 'phgg-bot' },
+    attachments: new Map(),
+    embeds: [],
+    messageSnapshots: new Map([
+      [
+        '1531385928105594940',
+        {
+          id: '1531385928105594940',
+          content: '',
+          attachments: new Map([
+            [
+              '1531385927811989674',
+              {
+                id: '1531385927811989674',
+                name: 'Mob_Reg.gif',
+                url: 'https://cdn.discordapp.com/attachments/Mob_Reg.gif',
+              },
+            ],
+          ]),
+          embeds: [],
+        },
+      ],
+    ]),
+  }
+  const config = {
+    bannerAssetId: '1531385928105594940',
+    bannerSignalIds: new Set(['1531385927811989674']),
+    automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+  }
+
+  assert.equal(isRegistrationOpener(message, config), true)
+  assert.equal(
+    isAutomatedRegistrationOpener(message, config, 'phgg-bot'),
+    true,
+  )
+})
+
 test('recognizes the bot-owned copied PC starter GIF', () => {
   const message = {
     id: 'copied-pc-starter',

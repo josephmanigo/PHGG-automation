@@ -5,6 +5,7 @@ import {
   nextScheduledRunKey,
   replaceAnnouncementDate,
   scheduledRunKey,
+  shouldForwardAnnouncementMessage,
 } from '../src/announcements.js'
 
 const schedule = {
@@ -43,5 +44,18 @@ test('updates the labeled mobile announcement date', () => {
       label,
     ),
     '📅 **DATE:** July 28, 2026 (Tuesday)\n⏰ **TIME:** 8:00PM',
+  )
+})
+
+test('forwards attachment messages instead of downloading them into memory', () => {
+  assert.equal(
+    shouldForwardAnnouncementMessage({
+      attachments: new Map([['gif', { name: 'Announcement.gif' }]]),
+    }),
+    true,
+  )
+  assert.equal(
+    shouldForwardAnnouncementMessage({ attachments: new Map() }),
+    false,
   )
 })
