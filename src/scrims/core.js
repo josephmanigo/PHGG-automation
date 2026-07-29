@@ -82,7 +82,6 @@ export class ScrimBoard {
           ? {
               ...normalized,
               countryLabel: team.countryLabel,
-              fixed: true,
               sourceType: 'fixed',
             }
           : null
@@ -139,14 +138,6 @@ export class ScrimBoard {
       this.waitlist.splice(found.index, 1)
       return { status: 'waitlist_removed', team: found.team, waitIndex: found.index }
     }
-    if (found.team.fixed) {
-      return {
-        status: 'fixed',
-        slotIndex: found.index,
-        team: found.team,
-      }
-    }
-
     const promotedTeam = this.waitlist.shift() ?? null
     this.slots[found.index] = promotedTeam
     this.pendingCancellations.set(cancellationMessageId, {

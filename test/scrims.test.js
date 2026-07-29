@@ -374,7 +374,7 @@ test('keeps a duplicate registration on the board only once', () => {
   assert.equal(board.waitlist.length, 0)
 })
 
-test('keeps the two PC teams permanently reserved in the first slots', () => {
+test('seeds the first two PC slots and allows their cancellation', () => {
   const fixedTeams = [
     {
       tag: 'SS',
@@ -392,7 +392,11 @@ test('keeps the two PC teams permanently reserved in the first slots', () => {
   assert.equal(board.slots[1].name, 'SYNDICATE')
   assert.equal(board.register(makeTeam('NR', 'NIGHTRAID ESPORTS')).slotIndex, 2)
   assert.equal(board.register(makeTeam('SS', 'RAMPAGE SENTINELS')).status, 'duplicate')
-  assert.equal(board.cancel('RAMPAGE SENTINELS', 'cancel-fixed').status, 'fixed')
+  assert.equal(
+    board.cancel('RAMPAGE SENTINELS', 'cancel-seeded').status,
+    'slot_removed',
+  )
+  assert.equal(board.slots[0], null)
 
   board.reset()
   assert.equal(board.slots[0].name, 'RAMPAGE SENTINELS')

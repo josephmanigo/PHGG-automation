@@ -651,13 +651,6 @@ export function installScrimAutomation(client, config, botConfig) {
         await reply(message, `⚠️ I could not find **${cancel}** on the board.`)
         return
       }
-      if (result.status === 'fixed') {
-        await reply(
-          message,
-          `⚠️ **${result.team.name}** is permanently reserved in slot **${slotCode(result.slotIndex)}**.`,
-        )
-        return
-      }
       await syncBoard()
       if (result.status === 'waitlist_removed') {
         await reply(message, `✅ **${result.team.name}** was removed from the waiting list.`)
