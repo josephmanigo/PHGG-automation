@@ -81,6 +81,11 @@ export function isAvailableSlotsCommand(content) {
   return /^AVAILABLE\s+SLOTS?\b/i.test(normalizeCommandMarkdown(content))
 }
 
+export function isAdminNoteContent(content) {
+  const firstLine = String(content ?? '').trim().split(/\r?\n/, 1)[0]
+  return /^NOTE\s*:?$/i.test(normalizeCommandMarkdown(firstLine))
+}
+
 export function parseAvailableSlotsContent(content) {
   const value = normalizeCommandMarkdown(content)
   const match =

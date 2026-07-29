@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  isAdminNoteContent,
   isAvailableSlotsCommand,
   makeTeam,
   parseAvailableSlotsContent,
@@ -15,6 +16,7 @@ import {
   BOARD_CALENDAR_EMOJI_ID,
   BOARD_PUSHPIN_EMOJI_ID,
   buildEmbeds,
+  isCancelChannelAdminNotice,
   isAdminRegistrationOpener,
   isAutomatedRegistrationOpener,
   isRegistrationOpener,
@@ -607,6 +609,57 @@ test('parses admin available-slot lists', () => {
   assert.equal(isAvailableSlotsCommand('## **AVAILABLE SLOT TWO**'), true)
   assert.equal(parseAvailableSlotsContent('AVAILABLE SLOT TWO'), null)
   assert.equal(parseAvailableSlotsContent('AVAILABLE SLOT 0'), null)
+})
+
+test('recognizes formatted admin NOTE notices and GIF dividers', () => {
+  const note = [
+    '**NOTE:**',
+    '*If a team cancels, we will replace them with a team from the waiting list until 9:30 PM (PH Time).*',
+  ].join('\n')
+  assert.equal(isAdminNoteContent(note), true)
+  assert.equal(isAdminNoteContent('# **NOTE:**\nDivider information'), true)
+  assert.equal(isAdminNoteContent('CANCEL - NOTE TEAM'), false)
+
+  assert.equal(
+    isCancelChannelAdminNotice({
+      content: 'Scrim divider',
+      attachments: new Map([
+        [
+          'divider',
+          {
+            name: 'divider.gif',
+            contentType: 'image/gif',
+          },
+        ],
+      ]),
+      embeds: [],
+    }),
+    true,
+  )
+  assert.equal(
+    isCancelChannelAdminNotice({
+      content: note,
+      attachments: new Map(),
+      embeds: [],
+    }),
+    true,
+  )
+  assert.equal(
+    isCancelChannelAdminNotice({
+      content: 'ordinary message',
+      attachments: new Map([
+        [
+          'image',
+          {
+            name: 'divider.png',
+            contentType: 'image/png',
+          },
+        ],
+      ]),
+      embeds: [],
+    }),
+    false,
+  )
 })
 
 test('keeps admin-opened slots mine-only and does not promote the waitlist', () => {

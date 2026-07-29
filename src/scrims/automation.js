@@ -1,5 +1,6 @@
 import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
 import {
+  isAdminNoteContent,
   isAvailableSlotsCommand,
   parseAvailableSlotsContent,
   parseCancelContent,
@@ -162,6 +163,10 @@ function hasGifMedia(message) {
       ].some((value) => /\.gif(?:$|[?#])/i.test(value ?? ''))
     })
   })
+}
+
+export function isCancelChannelAdminNotice(message) {
+  return hasGifMedia(message) || isAdminNoteContent(message.content)
 }
 
 function canManageScrim(message, member = message.member) {
@@ -516,13 +521,18 @@ export function installScrimAutomation(client, config, botConfig) {
       ...(await cancelChannel.messages.fetch({ limit: 100 })).values(),
     ]
     const cancellationEvents = await Promise.all(
-      cancellationMessages.map(async (message) => ({
-        type: 'cancellation',
-        message,
-        canManageScrim: parseAvailableSlotsContent(message.content)
-          ? await canManageScrimMessage(message)
-          : false,
-      })),
+      cancellationMessages.map(async (message) => {
+        const adminNotice = isCancelChannelAdminNotice(message)
+        return {
+          type: 'cancellation',
+          message,
+          adminNotice,
+          canManageScrim:
+            parseAvailableSlotsContent(message.content) || adminNotice
+              ? await canManageScrimMessage(message)
+              : false,
+        }
+      }),
     )
     const events = [
       ...registrationMessages.map((message) => ({ type: 'registration', message })),
@@ -537,6 +547,11 @@ export function installScrimAutomation(client, config, botConfig) {
     const registrationOutcomes = replayScrimEvents(board, events)
     for (const { message, accepted } of registrationOutcomes) {
       await setRegistrationReaction(message, accepted)
+    }
+    for (const event of cancellationEvents) {
+      if (event.adminNotice && event.canManageScrim) {
+        await setCancellationFormatReaction(event.message, true)
+      }
     }
   }
 
@@ -664,7 +679,19 @@ export function installScrimAutomation(client, config, botConfig) {
 
   async function handleCancellation(message) {
     const availableSlots = parseAvailableSlotsContent(message.content)
-    if (isAvailableSlotsCommand(message.content)) {
+    const availableCommand = isAvailableSlotsCommand(message.content)
+    const adminNotice = isCancelChannelAdminNotice(message)
+    const canPostAdminNotice =
+      adminNotice && (await canManageScrimMessage(message))
+    if (
+      canPostAdminNotice &&
+      (!availableCommand || !availableSlots)
+    ) {
+      await setCancellationFormatReaction(message, true)
+      return
+    }
+
+    if (availableCommand) {
       const validSlots =
         availableSlots?.filter((slotIndex) => slotIndex < board.maxSlots) ?? []
       if (
@@ -675,7 +702,10 @@ export function installScrimAutomation(client, config, botConfig) {
         await reply(message, AVAILABLE_SLOT_FORMAT_MESSAGE)
         return
       }
-      if (!(await canManageScrimMessage(message))) {
+      if (
+        !canPostAdminNotice &&
+        !(await canManageScrimMessage(message))
+      ) {
         await setCancellationFormatReaction(message, false)
         await reply(message, '❌ Only server admins or scrim staff can open available slots.')
         return
