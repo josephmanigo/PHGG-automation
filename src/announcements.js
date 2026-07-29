@@ -1,6 +1,9 @@
 import { EmbedBuilder, Events, MessageFlags } from 'discord.js'
 
 const TEST_COMMAND_NAME = 'test'
+export const ANNOUNCEMENT_DATE_EMOJI_ID = '1258450242601484338'
+export const ANNOUNCEMENT_TIME_EMOJI_ID = '1259806144080248894'
+export const ANNOUNCEMENT_ROUNDS_EMOJI_ID = '1237358846922719323'
 const WEEKDAY_NAMES = [
   'Monday',
   'Tuesday',
@@ -105,19 +108,51 @@ export function replaceAnnouncementDate(value, dateLabel) {
   )
 }
 
+function animatedEmoji(name, id) {
+  return `<a:${name}:${id}>`
+}
+
+export function replaceAnnouncementDetailEmojis(value) {
+  if (!value) return value
+  const details = [
+    [
+      'DATE',
+      animatedEmoji('calendar', ANNOUNCEMENT_DATE_EMOJI_ID),
+    ],
+    [
+      'TIME',
+      animatedEmoji('alarm_clock', ANNOUNCEMENT_TIME_EMOJI_ID),
+    ],
+    [
+      'ROUNDS',
+      animatedEmoji('rounds', ANNOUNCEMENT_ROUNDS_EMOJI_ID),
+    ],
+  ]
+  return details.reduce(
+    (result, [label, emoji]) =>
+      result.replace(
+        new RegExp(
+          `^[\\t ]*(?:(?:<a?:[^>]+>|\\p{Extended_Pictographic}\\uFE0F?)[\\t ]*)?(?=\\*{0,2}${label}\\b)`,
+          'gimu',
+        ),
+        `${emoji} `,
+      ),
+    value,
+  )
+}
+
+function announcementText(value, dateLabel = null) {
+  const result = replaceAnnouncementDetailEmojis(value)
+  return dateLabel ? replaceAnnouncementDate(result, dateLabel) : result
+}
+
 function cloneEmbed(embed, dateLabel = null) {
   const result = new EmbedBuilder()
   if (embed.title) {
-    result.setTitle(
-      dateLabel ? replaceAnnouncementDate(embed.title, dateLabel) : embed.title,
-    )
+    result.setTitle(announcementText(embed.title, dateLabel))
   }
   if (embed.description) {
-    result.setDescription(
-      dateLabel
-        ? replaceAnnouncementDate(embed.description, dateLabel)
-        : embed.description,
-    )
+    result.setDescription(announcementText(embed.description, dateLabel))
   }
   if (embed.url) result.setURL(embed.url)
   if (embed.color !== null) result.setColor(embed.color)
@@ -126,15 +161,11 @@ function cloneEmbed(embed, dateLabel = null) {
     result.setFields(
       embed.fields.map((field) => ({
         ...field,
-        name: dateLabel
-          ? replaceAnnouncementDate(field.name, dateLabel)
-          : field.name,
+        name: announcementText(field.name, dateLabel),
         value:
           dateLabel && /^\s*\**\s*DATE\s*:?\s*\**\s*$/i.test(field.name)
             ? dateLabel
-            : dateLabel
-              ? replaceAnnouncementDate(field.value, dateLabel)
-              : field.value,
+            : announcementText(field.value, dateLabel),
       })),
     )
   }
@@ -156,8 +187,7 @@ function cloneEmbed(embed, dateLabel = null) {
 export function announcementMessageSignature(message, normalizeDate = false) {
   const comparable =
     [...(message.messageSnapshots?.values?.() ?? [])][0] ?? message
-  const text = (value) =>
-    normalizeDate ? replaceAnnouncementDate(value, '<DATE>') : value
+  const text = (value) => announcementText(value, normalizeDate ? '<DATE>' : null)
   const mediaUrl = (value) => {
     if (!value) return null
     try {
@@ -220,9 +250,7 @@ function clonePayload(message, allowMentions, dateLabel = null) {
       : { parse: [], repliedUser: false },
   }
   if (message.content) {
-    payload.content = dateLabel
-      ? replaceAnnouncementDate(message.content, dateLabel)
-      : message.content
+    payload.content = announcementText(message.content, dateLabel)
   }
   const embeds = message.embeds
     .slice(0, 10)

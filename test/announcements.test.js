@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  ANNOUNCEMENT_DATE_EMOJI_ID,
+  ANNOUNCEMENT_ROUNDS_EMOJI_ID,
+  ANNOUNCEMENT_TIME_EMOJI_ID,
   announcementDateLabel,
   announcementMessageSignature,
   attachmentImageEmbeds,
   nextScheduledRunKey,
   replaceAnnouncementDate,
+  replaceAnnouncementDetailEmojis,
   scheduledRunKey,
 } from '../src/announcements.js'
 
@@ -45,6 +49,26 @@ test('updates the labeled mobile announcement date', () => {
       label,
     ),
     '📅 **DATE:** July 28, 2026 (Tuesday)\n⏰ **TIME:** 8:00PM',
+  )
+})
+
+test('uses the configured animated announcement detail emojis', () => {
+  assert.equal(ANNOUNCEMENT_DATE_EMOJI_ID, '1258450242601484338')
+  assert.equal(ANNOUNCEMENT_TIME_EMOJI_ID, '1259806144080248894')
+  assert.equal(ANNOUNCEMENT_ROUNDS_EMOJI_ID, '1237358846922719323')
+  assert.equal(
+    replaceAnnouncementDetailEmojis(
+      [
+        '📅 **DATE:** August 4, 2026 (Tuesday)',
+        '⏰ **TIME:** 8:00PM PH Time',
+        '📌 **ROUNDS:** 4 Rounds | 2SB-1DV-1SI',
+      ].join('\n'),
+    ),
+    [
+      '<a:calendar:1258450242601484338> **DATE:** August 4, 2026 (Tuesday)',
+      '<a:alarm_clock:1259806144080248894> **TIME:** 8:00PM PH Time',
+      '<a:rounds:1237358846922719323> **ROUNDS:** 4 Rounds | 2SB-1DV-1SI',
+    ].join('\n'),
   )
 })
 
