@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  isAvailableSlotsCommand,
   makeTeam,
   parseAvailableSlotsContent,
   parseCancelContent,
@@ -598,6 +599,12 @@ test('parses admin available-slot lists', () => {
     8,
   ])
   assert.deepEqual(parseAvailableSlotsContent('**AVAILABLE SLOT 7**'), [6])
+  assert.deepEqual(parseAvailableSlotsContent('# Available slot 1,2'), [0, 1])
+  assert.deepEqual(
+    parseAvailableSlotsContent('# **Available slot 3 & 4**'),
+    [2, 3],
+  )
+  assert.equal(isAvailableSlotsCommand('## **AVAILABLE SLOT TWO**'), true)
   assert.equal(parseAvailableSlotsContent('AVAILABLE SLOT TWO'), null)
   assert.equal(parseAvailableSlotsContent('AVAILABLE SLOT 0'), null)
 })

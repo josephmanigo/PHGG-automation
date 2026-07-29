@@ -62,10 +62,27 @@ export function parseMineContent(content) {
   return match ? cleanPart(match[1], 64) : null
 }
 
+function normalizeCommandMarkdown(content) {
+  let value = String(content ?? '').trim()
+  let previous
+  do {
+    previous = value
+    value = value
+      .replace(/^#{1,6}\s*/, '')
+      .replace(/^\*\*([\s\S]+)\*\*$/, '$1')
+      .replace(/^__([\s\S]+)__$/, '$1')
+      .replace(/^\*([\s\S]+)\*$/, '$1')
+      .trim()
+  } while (value !== previous)
+  return value
+}
+
+export function isAvailableSlotsCommand(content) {
+  return /^AVAILABLE\s+SLOTS?\b/i.test(normalizeCommandMarkdown(content))
+}
+
 export function parseAvailableSlotsContent(content) {
-  const value = String(content ?? '')
-    .trim()
-    .replace(/^\*\*(.+)\*\*$/, '$1')
+  const value = normalizeCommandMarkdown(content)
   const match =
     /^\s*AVAILABLE\s+SLOTS?\s*(?:[-:]\s*)?(.+?)\s*$/i.exec(
       value,

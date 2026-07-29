@@ -1,5 +1,6 @@
 import { EmbedBuilder, Events, PermissionFlagsBits } from 'discord.js'
 import {
+  isAvailableSlotsCommand,
   parseAvailableSlotsContent,
   parseCancelContent,
   parseMineContent,
@@ -663,7 +664,7 @@ export function installScrimAutomation(client, config, botConfig) {
 
   async function handleCancellation(message) {
     const availableSlots = parseAvailableSlotsContent(message.content)
-    if (/^\s*(?:\*\*)?AVAILABLE\b/i.test(message.content)) {
+    if (isAvailableSlotsCommand(message.content)) {
       const validSlots =
         availableSlots?.filter((slotIndex) => slotIndex < board.maxSlots) ?? []
       if (
