@@ -112,14 +112,42 @@ function hasExpectedStarterAttachmentName(message, config) {
   )
 }
 
+function hasUploadedGif(message) {
+  return [...message.attachments.values()].some((attachment) => {
+    const contentType = (attachment.contentType ?? '').toLowerCase()
+    if (contentType.startsWith('image/gif')) return true
+    return [attachment.name, attachment.url].some((value) =>
+      /\.gif(?:$|[?#])/i.test(value ?? ''),
+    )
+  })
+}
+
+function canManuallyOpenRegistration(message) {
+  if (
+    message.guild?.ownerId &&
+    message.author?.id === message.guild.ownerId
+  ) {
+    return true
+  }
+  const permissions = message.member?.permissions
+  return [
+    PermissionFlagsBits.Administrator,
+    PermissionFlagsBits.ManageGuild,
+    PermissionFlagsBits.ManageMessages,
+  ].some((permission) => permissions?.has?.(permission))
+}
+
 export function isAdminRegistrationOpener(message, config) {
   if (
-    !message.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
+    !canManuallyOpenRegistration(message) ||
     validateRegistrationContent(message.content).valid
   ) {
     return false
   }
-  return hasExpectedStarterAttachmentName(message, config)
+  return (
+    hasExpectedStarterAttachmentName(message, config) ||
+    hasUploadedGif(message)
+  )
 }
 
 function isCycleOpener(message, config, botUserId) {

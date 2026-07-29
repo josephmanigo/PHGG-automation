@@ -225,7 +225,7 @@ test('recognizes an administrator-owned copied mobile starter GIF', () => {
   )
 })
 
-test('rejects a different GIF even when posted by an administrator', () => {
+test('recognizes a renamed GIF file uploaded by an administrator', () => {
   assert.equal(
     isAdminRegistrationOpener(
       {
@@ -241,6 +241,35 @@ test('rejects a different GIF even when posted by an administrator', () => {
               name: 'scrimmage.gif',
               url: 'https://cdn.discordapp.com/admin-scrimmage.gif',
               contentType: 'image/gif',
+            },
+          ],
+        ]),
+        embeds: [],
+      },
+      {
+        automatedStarterAttachmentNames: new Set(['Mob_Reg.gif']),
+      },
+    ),
+    true,
+  )
+})
+
+test('rejects an admin upload that is not a GIF', () => {
+  assert.equal(
+    isAdminRegistrationOpener(
+      {
+        id: 'admin-static-image',
+        content: '',
+        author: { id: 'server-admin' },
+        member: { permissions: { has: () => true } },
+        attachments: new Map([
+          [
+            'admin-image',
+            {
+              id: 'admin-image',
+              name: 'scrimmage.png',
+              url: 'https://cdn.discordapp.com/admin-scrimmage.png',
+              contentType: 'image/png',
             },
           ],
         ]),
