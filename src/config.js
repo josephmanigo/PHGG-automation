@@ -2,9 +2,20 @@ function value(name, fallback = '') {
   return process.env[name]?.trim() || fallback
 }
 
+const DEFAULT_NICKNAME_CHANNEL_ID = '1270790990772437073'
 const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1345795209417457685'
 const DEFAULT_SCRIM_RULES_MESSAGE_IDS =
   '1346107866951581817,1412431092031553547'
+const DEFAULT_ANNOUNCEMENTS = {
+  MOBILE: {
+    channelId: '1345793370454495242',
+    messageIds: ['1531386132703613029', '1531386979907014667'],
+  },
+  PC: {
+    channelId: '1345794008471044176',
+    messageIds: ['1531386761190838283', '1531386923203952910'],
+  },
+}
 const ANNOUNCEMENT_DATE_MESSAGE_IDS = {
   MOBILE: ['1531386979907014667'],
   PC: ['1531386923203952910'],
@@ -231,8 +242,15 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
 }
 
 function loadAnnouncementConfig(scope) {
-  const channelId = value(`${scope}_ANNOUNCEMENT_CHANNEL_ID`)
-  const messageIds = value(`${scope}_ANNOUNCEMENT_MESSAGE_IDS`)
+  const defaults = DEFAULT_ANNOUNCEMENTS[scope] ?? {}
+  const channelId = value(
+    `${scope}_ANNOUNCEMENT_CHANNEL_ID`,
+    defaults.channelId,
+  )
+  const messageIds = value(
+    `${scope}_ANNOUNCEMENT_MESSAGE_IDS`,
+    defaults.messageIds?.join(','),
+  )
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean)
@@ -253,8 +271,14 @@ function loadAnnouncementConfig(scope) {
 
 export function loadConfig() {
   const brandName = value('BOT_BRAND_NAME', 'PHGG')
-  const nicknameChannelId = value('DISCORD_NICKNAME_CHANNEL_ID')
-  const rulesChannelId = value('DISCORD_RULES_CHANNEL_ID')
+  const nicknameChannelId = value(
+    'DISCORD_NICKNAME_CHANNEL_ID',
+    DEFAULT_NICKNAME_CHANNEL_ID,
+  )
+  const rulesChannelId = value(
+    'DISCORD_RULES_CHANNEL_ID',
+    DEFAULT_SCRIM_RULES_CHANNEL_ID,
+  )
   const scrimRulesChannelId = DEFAULT_SCRIM_RULES_CHANNEL_ID
   const scrimRulesMessageIds = DEFAULT_SCRIM_RULES_MESSAGE_IDS
     .split(',')

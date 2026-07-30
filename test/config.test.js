@@ -6,6 +6,8 @@ test('loads independent mobile and PC scrim channel sets', () => {
   const keys = [
     'DISCORD_BOT_TOKEN',
     'DISCORD_GUILD_ID',
+    'DISCORD_NICKNAME_CHANNEL_ID',
+    'DISCORD_RULES_CHANNEL_ID',
     'MOBILE_SCRIM_REGISTRATION_CHANNEL_ID',
     'MOBILE_SCRIM_BOARD_CHANNEL_ID',
     'MOBILE_SCRIM_CANCEL_CHANNEL_ID',
@@ -157,6 +159,8 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
   const keys = [
     'DISCORD_BOT_TOKEN',
     'DISCORD_GUILD_ID',
+    'DISCORD_NICKNAME_CHANNEL_ID',
+    'DISCORD_RULES_CHANNEL_ID',
     'MOBILE_SCRIM_REGISTRATION_CHANNEL_ID',
     'MOBILE_SCRIM_BOARD_CHANNEL_ID',
     'MOBILE_SCRIM_CANCEL_CHANNEL_ID',
@@ -193,6 +197,10 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     'PC_SCRIM_TITLE_EMOJI_ID',
     'PC_SCRIM_TIME_LABEL',
     'PC_SCRIM_ROUNDS_LABEL',
+    'MOBILE_ANNOUNCEMENT_CHANNEL_ID',
+    'MOBILE_ANNOUNCEMENT_MESSAGE_IDS',
+    'PC_ANNOUNCEMENT_CHANNEL_ID',
+    'PC_ANNOUNCEMENT_MESSAGE_IDS',
   ]
   const previous = new Map(keys.map((key) => [key, process.env[key]]))
   for (const key of keys) delete process.env[key]
@@ -267,6 +275,47 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
         countryLabel: '🇵🇭',
       },
     ])
+
+    assert.deepEqual(
+      loadConfig().announcements.groups.map(
+        ({ label, enabled, channelId, messageIds }) => ({
+          label,
+          enabled,
+          channelId,
+          messageIds,
+        }),
+      ),
+      [
+        {
+          label: 'MOBILE',
+          enabled: true,
+          channelId: '1345793370454495242',
+          messageIds: ['1531386132703613029', '1531386979907014667'],
+        },
+        {
+          label: 'PC',
+          enabled: true,
+          channelId: '1345794008471044176',
+          messageIds: ['1531386761190838283', '1531386923203952910'],
+        },
+      ],
+    )
+
+    const defaults = loadConfig()
+    assert.deepEqual(defaults.nickname, {
+      enabled: true,
+      channelId: '1270790990772437073',
+    })
+    assert.deepEqual(
+      {
+        enabled: defaults.rules.enabled,
+        channelId: defaults.rules.channelId,
+      },
+      {
+        enabled: true,
+        channelId: '1345795209417457685',
+      },
+    )
   } finally {
     for (const [key, oldValue] of previous) {
       if (oldValue === undefined) delete process.env[key]
