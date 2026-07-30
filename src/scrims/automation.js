@@ -459,14 +459,27 @@ export function installScrimAutomation(client, config, botConfig) {
           reason instanceof Error ? reason.message : reason,
         )
         return null
-      })
+    })
     if (!source) return null
 
+    const embedContent = source.embeds
+      .filter((embed) => embed.type === 'rich')
+      .flatMap((embed) => [
+        embed.author?.name ? `**${embed.author.name}**` : null,
+        embed.title ? `# ${embed.title}` : null,
+        embed.description,
+        ...embed.fields.map(
+          (field) => `**${field.name}**\n${field.value}`,
+        ),
+        embed.image?.url,
+        embed.thumbnail?.url,
+      ])
+      .filter(Boolean)
+      .join('\n')
     const payload = {
-      content: source.content || undefined,
-      embeds: source.embeds
-        .filter((embed) => embed.type === 'rich')
-        .map((embed) => embed.toJSON()),
+      content: [source.content, embedContent]
+        .filter(Boolean)
+        .join('\n\n') || undefined,
       nonce: `H${state.cycleStartMessageId}`.slice(0, 25),
       enforceNonce: true,
       allowedMentions: { parse: [] },
@@ -474,7 +487,6 @@ export function installScrimAutomation(client, config, botConfig) {
     const attachments = [...source.attachments.values()]
     if (
       !payload.content &&
-      payload.embeds.length === 0 &&
       attachments.length === 0
     ) {
       return null
@@ -500,7 +512,6 @@ export function installScrimAutomation(client, config, botConfig) {
     const channel = await readableChannel(client, config.channels.board)
     const payload = {
       content: buildBoardContent(board, state, config, botConfig),
-      embeds: [],
       allowedMentions: { parse: [] },
     }
     if (state.boardMessageId) {

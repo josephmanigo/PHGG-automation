@@ -2,37 +2,54 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { scrimRulesResponses } from '../src/rules.js'
 
-function rulesMessage(id, content, createdTimestamp) {
+function rulesMessage(id, content, createdTimestamp, attachments = []) {
   return {
     id,
     content,
     createdTimestamp,
-    attachments: new Map(),
+    attachments: new Map(
+      attachments.map((attachment, index) => [
+        String(index),
+        attachment,
+      ]),
+    ),
     embeds: [],
   }
 }
 
-test('paginates long scrim rules within Discord embed limits', () => {
+test('paginates scrim rules as plain messages and keeps the source image', () => {
   const pages = scrimRulesResponses(
     [
-      rulesMessage('rules-2', 'B'.repeat(3_700), 2),
+      rulesMessage(
+        'rules-2',
+        'B'.repeat(3_700),
+        2,
+        [
+          {
+            url: 'https://cdn.discordapp.com/attachments/rules/points.png',
+            name: 'PHGG_PT_SYSTEM.png',
+          },
+        ],
+      ),
       rulesMessage('rules-1', 'A'.repeat(3_700), 1),
     ],
-    {
-      color: 0xed1c24,
-      guildId: 'guild',
-      channelId: 'rules-channel',
-    },
   )
 
-  assert.equal(pages.length, 2)
-  assert.equal(pages[0].embeds.length, 1)
-  assert.equal(pages[1].embeds.length, 1)
-  assert.ok(pages.every((page) => page.embeds[0].data.description.length <= 3_800))
-  assert.equal(pages[0].components.length, 1)
-  assert.equal(pages[1].components.length, 0)
-  assert.match(
-    pages[0].components[0].components[0].data.url,
-    /\/rules-channel\/rules-1$/,
-  )
+  assert.equal(pages.length, 4)
+  assert.ok(pages.every((page) => page.content.length <= 1_900))
+  assert.ok(pages.every((page) => !('embeds' in page)))
+  assert.ok(pages.every((page) => !('components' in page)))
+  assert.deepEqual(pages.at(-1).files, [
+    {
+      attachment:
+        'https://cdn.discordapp.com/attachments/rules/points.png',
+      name: 'PHGG_PT_SYSTEM.png',
+      description: undefined,
+    },
+  ])
+  assert.deepEqual(pages.slice(0, -1).map((page) => page.files), [
+    [],
+    [],
+    [],
+  ])
 })

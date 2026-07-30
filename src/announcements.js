@@ -1,4 +1,4 @@
-import { EmbedBuilder, Events, MessageFlags } from 'discord.js'
+import { Events, MessageFlags } from 'discord.js'
 import { sendDiscordAttachments } from './discord-upload.js'
 
 const TEST_COMMAND_NAME = 'test'
@@ -179,50 +179,27 @@ export function announcementAllowsMentions(
   return Boolean(configured || (formatLabel === 'PC' && !force))
 }
 
-function isPcAnnouncement(value) {
-  const normalized = String(value ?? '').normalize('NFKC').toUpperCase()
-  return (
-    normalized.includes('PC SCRIMMAGE OPERATION') &&
-    normalized.includes('DATE:')
-  )
-}
-
-function cloneEmbed(embed, dateLabel = null) {
-  const result = new EmbedBuilder()
+function plainEmbedText(embed, dateLabel = null) {
+  const parts = []
+  if (embed.author?.name) {
+    parts.push(`**${announcementText(embed.author.name, dateLabel)}**`)
+  }
   if (embed.title) {
-    result.setTitle(announcementText(embed.title, dateLabel))
+    parts.push(`# ${announcementText(embed.title, dateLabel)}`)
   }
   if (embed.description) {
-    result.setDescription(announcementText(embed.description, dateLabel))
+    parts.push(announcementText(embed.description, dateLabel))
   }
-  if (embed.url) result.setURL(embed.url)
-  if (embed.color !== null) result.setColor(embed.color)
-  if (embed.timestamp) result.setTimestamp(new Date(embed.timestamp))
-  if (embed.fields.length > 0) {
-    result.setFields(
-      embed.fields.map((field) => ({
-        ...field,
-        name: announcementText(field.name, dateLabel),
-        value:
-          dateLabel && isAnnouncementDetailLine(field.name, 'DATE')
-            ? dateLabel
-            : announcementText(field.value, dateLabel),
-      })),
+  for (const field of embed.fields ?? []) {
+    const value =
+      dateLabel && isAnnouncementDetailLine(field.name, 'DATE')
+        ? dateLabel
+        : announcementText(field.value, dateLabel)
+    parts.push(
+      `**${announcementText(field.name, dateLabel)}**\n${value}`,
     )
   }
-  if (embed.author?.name) {
-    result.setAuthor({
-      name: embed.author.name,
-      iconURL: embed.author.iconURL,
-      url: embed.author.url,
-    })
-  }
-  if (embed.footer?.text) {
-    result.setFooter({ text: embed.footer.text, iconURL: embed.footer.iconURL })
-  }
-  if (embed.thumbnail?.url) result.setThumbnail(embed.thumbnail.url)
-  if (embed.image?.url) result.setImage(embed.image.url)
-  return result
+  return parts.map((part) => part?.trim()).filter(Boolean).join('\n')
 }
 
 export function announcementMessageSignature(
@@ -235,12 +212,18 @@ export function announcementMessageSignature(
   const text = (value) => announcementText(value, normalizeDate ? '<DATE>' : null)
   const linkedMedia = []
   const comparableContent =
-    formatLabel === 'PC' &&
-    normalizeDate &&
-    isPcAnnouncement(comparable.content)
+    formatLabel === 'PC' && normalizeDate
       ? pcAnnouncementContent('<DATE>')
       : text(comparable.content)
-  const content = comparableContent
+  const flattenedEmbeds =
+    formatLabel === 'PC' && normalizeDate
+      ? []
+      : comparable.embeds.map((embed) =>
+          plainEmbedText(embed, normalizeDate ? '<DATE>' : null),
+        )
+  const content = [comparableContent, ...flattenedEmbeds]
+    .filter(Boolean)
+    .join('\n\n')
     .replace(DISCORD_ATTACHMENT_URL, (url) => {
       linkedMedia.push(url)
       return ''
@@ -257,25 +240,6 @@ export function announcementMessageSignature(
       return String(value).split(/[?#]/, 1)[0]
     }
   }
-  const embeds = comparable.embeds
-    .map((embed) => ({
-      title: text(embed.title),
-      description: text(embed.description),
-      url: embed.url,
-      fields: embed.fields.map((field) => ({
-        name: field.name,
-        value:
-          normalizeDate && isAnnouncementDetailLine(field.name, 'DATE')
-            ? '<DATE>'
-            : text(field.value),
-      })),
-    }))
-    .filter(
-      (embed) =>
-        embed.title ||
-        embed.description ||
-        embed.fields.length > 0,
-    )
   return JSON.stringify({
     content,
     media: [
@@ -295,7 +259,6 @@ export function announcementMessageSignature(
           .filter(Boolean),
       ),
     ],
-    embeds,
   })
 }
 
@@ -310,19 +273,27 @@ function clonePayload(
       ? { parse: ['everyone', 'roles', 'users'], repliedUser: false }
       : { parse: [], repliedUser: false },
   }
-  if (formatLabel === 'PC' && dateLabel) {
-    payload.content = pcAnnouncementContent(dateLabel)
-  } else if (message.content) {
-    payload.content = announcementText(message.content, dateLabel)
+  const contentParts =
+    formatLabel === 'PC' && dateLabel
+      ? [pcAnnouncementContent(dateLabel)]
+      : [
+          announcementText(message.content, dateLabel),
+          ...message.embeds
+            .slice(0, 10)
+            .map((embed) => plainEmbedText(embed, dateLabel)),
+        ]
+  payload.content = contentParts
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join('\n\n')
+  if (payload.content.length > 2_000) {
+    throw new Error(
+      `Source message ${message.id} is longer than Discord's 2,000-character plain-message limit.`,
+    )
   }
-  const embeds = message.embeds
-    .slice(0, 10)
-    .map((embed) => cloneEmbed(embed, dateLabel))
-  if (embeds.length > 0) payload.embeds = embeds
   if (message.stickers.size > 0) payload.stickers = [...message.stickers.keys()].slice(0, 3)
   if (
     !payload.content &&
-    !payload.embeds &&
     !payload.stickers &&
     message.attachments.size === 0
   ) {

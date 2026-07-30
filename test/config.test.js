@@ -116,7 +116,7 @@ test('loads independent mobile and PC scrim channel sets', () => {
     assert.deepEqual(config.rules.scrims, {
       enabled: true,
       channelId: '1345795209417457685',
-      messageIds: ['1346107866951581817', '1412431092031553547'],
+      messageIds: ['1531917547014721666'],
     })
   } finally {
     for (const [key, oldValue] of previous) {
@@ -145,7 +145,7 @@ test('ignores stale Render overrides for the PHGG scrim rules source', () => {
     assert.deepEqual(loadConfig().rules.scrims, {
       enabled: true,
       channelId: '1345795209417457685',
-      messageIds: ['1346107866951581817', '1412431092031553547'],
+      messageIds: ['1531917547014721666'],
     })
   } finally {
     for (const [key, oldValue] of previous) {

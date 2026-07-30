@@ -1,24 +1,16 @@
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  Events,
-} from 'discord.js'
+import { Events } from 'discord.js'
 
 const COMMAND_NAME = 'rules'
 const SCRIM_COMMAND_NAME = 'scrimrules'
-const EMBED_LIMIT = 3_800
+const MESSAGE_LIMIT = 1_900
 
 function messageText(message) {
   const parts = [message.content]
   for (const embed of message.embeds) {
-    if (embed.title) parts.push(`**${embed.title}**`)
+    if (embed.author?.name) parts.push(`**${embed.author.name}**`)
+    if (embed.title) parts.push(`# ${embed.title}`)
     if (embed.description) parts.push(embed.description)
     for (const field of embed.fields) parts.push(`**${field.name}**\n${field.value}`)
-  }
-  for (const attachment of message.attachments.values()) {
-    parts.push(`[${attachment.name ?? 'Attachment'}](${attachment.url})`)
   }
   return parts.map((part) => part?.trim()).filter(Boolean).join('\n')
 }
@@ -26,15 +18,40 @@ function messageText(message) {
 function splitContent(content) {
   const chunks = []
   let remaining = content
-  while (remaining.length > EMBED_LIMIT && chunks.length < 9) {
-    let splitAt = remaining.lastIndexOf('\n\n', EMBED_LIMIT)
-    if (splitAt < EMBED_LIMIT / 2) splitAt = remaining.lastIndexOf('\n', EMBED_LIMIT)
-    if (splitAt < EMBED_LIMIT / 2) splitAt = EMBED_LIMIT
+  while (remaining.length > MESSAGE_LIMIT && chunks.length < 9) {
+    let splitAt = remaining.lastIndexOf('\n\n', MESSAGE_LIMIT)
+    if (splitAt < MESSAGE_LIMIT / 2) {
+      splitAt = remaining.lastIndexOf('\n', MESSAGE_LIMIT)
+    }
+    if (splitAt < MESSAGE_LIMIT / 2) splitAt = MESSAGE_LIMIT
     chunks.push(remaining.slice(0, splitAt).trim())
     remaining = remaining.slice(splitAt).trim()
   }
-  if (remaining) chunks.push(remaining.slice(0, EMBED_LIMIT))
+  if (remaining) chunks.push(remaining.slice(0, MESSAGE_LIMIT))
   return chunks
+}
+
+function sourceFiles(messages) {
+  const attachments = messages.flatMap((message) => [
+    ...message.attachments.values(),
+  ])
+  if (attachments.length > 0) {
+    return attachments.slice(0, 10).map((attachment, index) => ({
+      attachment: attachment.url,
+      name: attachment.name ?? `rules-${index + 1}.png`,
+      description: attachment.description ?? undefined,
+    }))
+  }
+
+  return messages
+    .flatMap((message) => message.embeds)
+    .flatMap((embed) => [embed.image?.url, embed.thumbnail?.url])
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((url, index) => ({
+      attachment: url,
+      name: `rules-${index + 1}.png`,
+    }))
 }
 
 async function readableChannel(client, channelId) {
@@ -63,93 +80,44 @@ async function fetchConfiguredRules(channel, messageIds) {
   return fetchRules(channel)
 }
 
-function response(messages, { brandName, color, guildId, channelId }) {
+function responses(messages, { brandName }) {
   const content = messages
     .sort((left, right) => left.createdTimestamp - right.createdTimestamp)
     .map(messageText)
     .filter(Boolean)
     .join('\n\n')
-  const description = content || `Read the official rules in <#${channelId}>.`
-  const embeds = splitContent(description).map((chunk, index) =>
-    new EmbedBuilder()
-      .setColor(color)
-      .setTitle(index === 0 ? `${brandName.toUpperCase()} RULES` : 'RULES • CONTINUED')
-      .setDescription(chunk)
-      .setFooter({ text: `Official ${brandName} rules` }),
-  )
-  const components = [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('OPEN RULES CHANNEL')
-        .setStyle(ButtonStyle.Link)
-        .setURL(`https://discord.com/channels/${guildId}/${channelId}`),
-    ),
-  ]
-  return { embeds, components, allowedMentions: { parse: [] } }
+  const text = content || `No official ${brandName} rules text was found.`
+  const pages = splitContent(text)
+  const files = sourceFiles(messages)
+  return pages.map((page, index) => ({
+    content: page,
+    files: index === pages.length - 1 ? files : [],
+    allowedMentions: { parse: [] },
+  }))
 }
 
-export function scrimRulesResponses(messages, { color, guildId, channelId }) {
+export function scrimRulesResponses(messages) {
   const content = messages
     .sort((left, right) => left.createdTimestamp - right.createdTimestamp)
     .map(messageText)
     .filter(Boolean)
     .join('\n\n')
-  const description =
+  const text =
     content || 'No scrim-rules text was found in the configured source message.'
-  const chunks = splitContent(description)
-  const imageUrl =
-    messages
-      .flatMap((message) => [...message.attachments.values()])
-      .find((attachment) => attachment.contentType?.startsWith('image/'))?.url ??
-    messages.flatMap((message) => message.embeds).find((embed) => embed.image?.url)?.image?.url
-
-  const sourceMessage = messages[0]
-  const sourceUrl = sourceMessage
-    ? `https://discord.com/channels/${guildId}/${channelId}/${sourceMessage.id}`
-    : `https://discord.com/channels/${guildId}/${channelId}`
-  return chunks.map((chunk, index) => {
-    const embed = new EmbedBuilder()
-      .setColor(color)
-      .setTitle(index === 0 ? 'SCRIM RULES' : 'SCRIM RULES • CONTINUED')
-      .setDescription(chunk)
-      .setFooter({ text: 'Official PHGG scrim rules' })
-    if (imageUrl && index === chunks.length - 1) embed.setImage(imageUrl)
-
-    return {
-      embeds: [embed],
-      components:
-        index === 0
-          ? [
-              new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                  .setLabel('OPEN SCRIM RULES')
-                  .setStyle(ButtonStyle.Link)
-                  .setURL(sourceUrl),
-              ),
-            ]
-          : [],
-      allowedMentions: { parse: [] },
-    }
-  })
+  const pages = splitContent(text)
+  const files = sourceFiles(messages)
+  return pages.map((page, index) => ({
+    content: page,
+    files: index === pages.length - 1 ? files : [],
+    allowedMentions: { parse: [] },
+  }))
 }
 
-function scrimRulesErrorResponse({ guildId, channelId, messageIds }) {
-  const sourceUrl = messageIds[0]
-    ? `https://discord.com/channels/${guildId}/${channelId}/${messageIds[0]}`
-    : `https://discord.com/channels/${guildId}/${channelId}`
+function scrimRulesErrorResponse() {
   return {
     content:
       '❌ Scrim rules could not be loaded. Give the bot **View Channel** and ' +
       '**Read Message History** permissions in the scrim-rules source channel.',
-    embeds: [],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('OPEN SCRIM RULES SOURCE')
-          .setStyle(ButtonStyle.Link)
-          .setURL(sourceUrl),
-      ),
-    ],
     allowedMentions: { parse: [] },
   }
 }
@@ -198,14 +166,11 @@ export function installRulesAutomation(client, config, botConfig) {
       if (interaction.commandName === COMMAND_NAME) {
         const channel = await readableChannel(client, config.channelId)
         const messages = await fetchRules(channel)
-        await interaction.editReply(
-          response(messages, {
-            brandName: botConfig.brandName,
-            color: botConfig.color,
-            guildId: interaction.guildId ?? botConfig.guildId,
-            channelId: config.channelId,
-          }),
-        )
+        const pages = responses(messages, {
+          brandName: botConfig.brandName,
+        })
+        await interaction.editReply(pages[0])
+        for (const page of pages.slice(1)) await interaction.followUp(page)
         return
       }
 
@@ -214,11 +179,7 @@ export function installRulesAutomation(client, config, botConfig) {
         channel,
         config.scrims.messageIds,
       )
-      const pages = scrimRulesResponses(messages, {
-        color: botConfig.color,
-        guildId: interaction.guildId ?? botConfig.guildId,
-        channelId: config.scrims.channelId,
-      })
+      const pages = scrimRulesResponses(messages)
       await interaction.editReply(pages[0])
       for (const page of pages.slice(1)) await interaction.followUp(page)
     } catch (reason) {
@@ -232,11 +193,7 @@ export function installRulesAutomation(client, config, botConfig) {
           : config.channelId
       const payload =
         interaction.commandName === SCRIM_COMMAND_NAME
-          ? scrimRulesErrorResponse({
-              guildId: interaction.guildId ?? botConfig.guildId,
-              channelId: sourceChannelId,
-              messageIds: config.scrims.messageIds,
-            })
+          ? scrimRulesErrorResponse()
           : {
               content: `Rules could not be loaded right now. Open <#${sourceChannelId}> to view them.`,
               allowedMentions: { parse: [] },

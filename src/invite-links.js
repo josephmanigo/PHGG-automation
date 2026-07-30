@@ -1,10 +1,4 @@
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  Events,
-} from 'discord.js'
+import { Events } from 'discord.js'
 
 const LINK_KEYWORD = /\blink\b/i
 
@@ -23,25 +17,13 @@ export function selectBestInvite(invites) {
     .sort((left, right) => (right.uses ?? 0) - (left.uses ?? 0))[0] ?? null
 }
 
-function inviteReply(guild, inviteUrl, color) {
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(`🔗 ${guild.name.toUpperCase()} SERVER LINK`)
-    .setDescription(`Here is the official **${guild.name}** server invite:\n${inviteUrl}`)
-    .setFooter({ text: 'Official server invite' })
-  const iconUrl = guild.iconURL({ size: 256 })
-  if (iconUrl) embed.setThumbnail(iconUrl)
-
+function inviteReply(guild, inviteUrl) {
   return {
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('JOIN SERVER')
-          .setStyle(ButtonStyle.Link)
-          .setURL(inviteUrl),
-      ),
-    ],
+    content: [
+      `# 🔗 ${guild.name.toUpperCase()} SERVER LINK`,
+      `Here is the official **${guild.name}** server invite:`,
+      `<${inviteUrl}>`,
+    ].join('\n'),
     allowedMentions: { parse: [], repliedUser: false },
   }
 }
@@ -108,7 +90,7 @@ export function installServerInviteAutomation(client, config, botConfig) {
         pendingInvite = null
       })
       const inviteUrl = await pendingInvite
-      await message.reply(inviteReply(message.guild, inviteUrl, botConfig.color))
+      await message.reply(inviteReply(message.guild, inviteUrl))
     } catch (reason) {
       console.error(
         'Could not fetch the server invite:',
