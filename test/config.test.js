@@ -275,7 +275,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
         countryLabel: '🇵🇭',
       },
       {
-        tag: '',
+        tag: 'APXS',
         name: 'SYNDICATE',
         countryLabel: '🇵🇭',
       },

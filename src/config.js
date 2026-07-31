@@ -108,7 +108,7 @@ const DEFAULT_SCRIMS = {
         countryLabel: '🇵🇭',
       },
       {
-        tag: '',
+        tag: 'APXS',
         name: 'SYNDICATE',
         countryLabel: '🇵🇭',
       },
