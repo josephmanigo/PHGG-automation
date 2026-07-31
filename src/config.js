@@ -3,10 +3,11 @@ function value(name, fallback = '') {
 }
 
 const DEFAULT_NICKNAME_CHANNEL_ID = '1270790990772437073'
+const DEFAULT_RULES_CHANNEL_ID = '1270783545685577871'
+const DEFAULT_RULES_MESSAGE_IDS = '1336451755734732861'
 const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1345795209417457685'
 const DEFAULT_SCRIM_RULES_MESSAGE_IDS =
   '1531917547014721666'
-const DEFAULT_SERVER_INVITE_GUILD_ID = '1336451755734732861'
 const DEFAULT_ANNOUNCEMENTS = {
   MOBILE: {
     channelId: '1345793370454495242',
@@ -277,14 +278,22 @@ function loadAnnouncementConfig(scope) {
 
 export function loadConfig() {
   const brandName = value('BOT_BRAND_NAME', 'PHGG')
+  const guildId = required('DISCORD_GUILD_ID')
   const nicknameChannelId = value(
     'DISCORD_NICKNAME_CHANNEL_ID',
     DEFAULT_NICKNAME_CHANNEL_ID,
   )
   const rulesChannelId = value(
     'DISCORD_RULES_CHANNEL_ID',
-    DEFAULT_SCRIM_RULES_CHANNEL_ID,
+    DEFAULT_RULES_CHANNEL_ID,
   )
+  const rulesMessageIds = value(
+    'DISCORD_RULES_MESSAGE_IDS',
+    DEFAULT_RULES_MESSAGE_IDS,
+  )
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
   const scrimRulesChannelId = DEFAULT_SCRIM_RULES_CHANNEL_ID
   const scrimRulesMessageIds = DEFAULT_SCRIM_RULES_MESSAGE_IDS
     .split(',')
@@ -298,7 +307,7 @@ export function loadConfig() {
 
   return {
     token: required('DISCORD_BOT_TOKEN'),
-    guildId: required('DISCORD_GUILD_ID'),
+    guildId,
     brandName,
     color: color('BOT_COLOR', '#ED1C24'),
     timezone: value('BOT_TIMEZONE', 'Asia/Manila'),
@@ -309,6 +318,7 @@ export function loadConfig() {
     rules: {
       enabled: Boolean(rulesChannelId),
       channelId: rulesChannelId,
+      messageIds: rulesMessageIds,
       scrims: {
         enabled: Boolean(scrimRulesChannelId),
         channelId: scrimRulesChannelId,
@@ -338,7 +348,7 @@ export function loadConfig() {
         ),
         true,
       ),
-      guildId: DEFAULT_SERVER_INVITE_GUILD_ID,
+      guildId,
     },
   }
 }

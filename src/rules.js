@@ -69,7 +69,11 @@ async function fetchRules(channel) {
   return [...(await channel.messages.fetch({ limit: 100 })).values()]
 }
 
-async function fetchConfiguredRules(channel, messageIds) {
+async function fetchConfiguredRules(
+  channel,
+  messageIds,
+  { fallbackToChannel = true } = {},
+) {
   const results = await Promise.allSettled(
     messageIds.map((messageId) => channel.messages.fetch(messageId)),
   )
@@ -77,6 +81,9 @@ async function fetchConfiguredRules(channel, messageIds) {
     .filter((result) => result.status === 'fulfilled')
     .map((result) => result.value)
   if (messages.length > 0) return messages
+  if (!fallbackToChannel) {
+    throw new Error(`Could not fetch configured rules message ${messageIds.join(', ')}.`)
+  }
   return fetchRules(channel)
 }
 
@@ -165,7 +172,11 @@ export function installRulesAutomation(client, config, botConfig) {
       await interaction.deferReply()
       if (interaction.commandName === COMMAND_NAME) {
         const channel = await readableChannel(client, config.channelId)
-        const messages = await fetchRules(channel)
+        const messages = await fetchConfiguredRules(
+          channel,
+          config.messageIds,
+          { fallbackToChannel: false },
+        )
         const pages = responses(messages, {
           brandName: botConfig.brandName,
         })

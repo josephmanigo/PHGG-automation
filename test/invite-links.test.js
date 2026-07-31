@@ -74,20 +74,16 @@ test('never returns an expiring or limited invite', () => {
   assert.equal(selectBestInvite(invites), null)
 })
 
-test('/server fetches the configured guild and returns its official invite', async () => {
+test('/server fetches the current configured guild and returns its official invite', async () => {
   const onceHandlers = new Map()
   const eventHandlers = new Map()
   const fetchedGuildIds = []
   const createdCommands = []
-  const targetGuild = {
-    id: '1336451755734732861',
-    name: 'NightRaid Esports',
-    vanityURLCode: 'nightraid',
-    fetch: async () => targetGuild,
-  }
   const commandGuild = {
     id: 'test-guild',
     name: 'PHGG',
+    vanityURLCode: 'phgg',
+    fetch: async () => commandGuild,
     commands: {
       fetch: async () => ({ find: () => null }),
       create: async (definition) => createdCommands.push(definition),
@@ -97,7 +93,7 @@ test('/server fetches the configured guild and returns its official invite', asy
     guilds: {
       fetch: async (guildId) => {
         fetchedGuildIds.push(guildId)
-        return guildId === commandGuild.id ? commandGuild : targetGuild
+        return commandGuild
       },
     },
     once: (event, handler) => onceHandlers.set(event, handler),
@@ -106,7 +102,7 @@ test('/server fetches the configured guild and returns its official invite', asy
 
   installServerInviteAutomation(
     client,
-    { enabled: true, guildId: targetGuild.id },
+    { enabled: true, guildId: commandGuild.id },
     { guildId: commandGuild.id },
   )
   await onceHandlers.get('clientReady')(client)
@@ -128,7 +124,7 @@ test('/server fetches the configured guild and returns its official invite', asy
       description: 'Get the official server invite.',
     },
   ])
-  assert.deepEqual(fetchedGuildIds, [commandGuild.id, targetGuild.id])
-  assert.match(reply.content, /NIGHTRAID ESPORTS SERVER LINK/)
-  assert.match(reply.content, /https:\/\/discord\.gg\/nightraid/)
+  assert.deepEqual(fetchedGuildIds, [commandGuild.id, commandGuild.id])
+  assert.match(reply.content, /PHGG SERVER LINK/)
+  assert.match(reply.content, /https:\/\/discord\.gg\/phgg/)
 })

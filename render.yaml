@@ -24,6 +24,10 @@ services:
         value: Asia/Manila
       - key: DISCORD_NICKNAME_CHANNEL_ID
         value: "1270790990772437073"
+      - key: DISCORD_RULES_CHANNEL_ID
+        value: "1270783545685577871"
+      - key: DISCORD_RULES_MESSAGE_IDS
+        value: "1336451755734732861"
       - key: SCRIM_RULES_CHANNEL_ID
         value: "1345795209417457685"
       - key: SCRIM_RULES_MESSAGE_IDS

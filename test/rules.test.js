@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { scrimRulesResponses } from '../src/rules.js'
+import {
+  installRulesAutomation,
+  scrimRulesResponses,
+} from '../src/rules.js'
 
 function rulesMessage(id, content, createdTimestamp, attachments = []) {
   return {
@@ -52,4 +55,66 @@ test('paginates scrim rules as plain messages and keeps the source image', () =>
     [],
     [],
   ])
+})
+
+test('/rules fetches the configured server-rules message directly', async () => {
+  const eventHandlers = new Map()
+  const fetchedChannelIds = []
+  const fetchedMessageIds = []
+  const message = rulesMessage(
+    '1336451755734732861',
+    'SERVER RULES CONTENT',
+    1,
+  )
+  const channel = {
+    isTextBased: () => true,
+    messages: {
+      fetch: async (messageId) => {
+        fetchedMessageIds.push(messageId)
+        return message
+      },
+      fetchPins: async () => {
+        throw new Error('/rules must not fall back to channel pins')
+      },
+    },
+  }
+  const client = {
+    channels: {
+      fetch: async (channelId) => {
+        fetchedChannelIds.push(channelId)
+        return channel
+      },
+    },
+    once: () => undefined,
+    on: (event, handler) => eventHandlers.set(event, handler),
+  }
+
+  installRulesAutomation(
+    client,
+    {
+      enabled: true,
+      channelId: '1270783545685577871',
+      messageIds: ['1336451755734732861'],
+      scrims: { enabled: false, channelId: '', messageIds: [] },
+    },
+    { brandName: 'PHGG', guildId: 'test-guild' },
+  )
+
+  let reply
+  await eventHandlers.get('interactionCreate')({
+    commandName: 'rules',
+    isChatInputCommand: () => true,
+    deferReply: async () => undefined,
+    editReply: async (payload) => {
+      reply = payload
+    },
+  })
+
+  assert.deepEqual(fetchedChannelIds, ['1270783545685577871'])
+  assert.deepEqual(fetchedMessageIds, ['1336451755734732861'])
+  assert.deepEqual(reply, {
+    content: 'SERVER RULES CONTENT',
+    files: [],
+    allowedMentions: { parse: [] },
+  })
 })

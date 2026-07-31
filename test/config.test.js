@@ -8,6 +8,7 @@ test('loads independent mobile and PC scrim channel sets', () => {
     'DISCORD_GUILD_ID',
     'DISCORD_NICKNAME_CHANNEL_ID',
     'DISCORD_RULES_CHANNEL_ID',
+    'DISCORD_RULES_MESSAGE_IDS',
     'MOBILE_SCRIM_REGISTRATION_CHANNEL_ID',
     'MOBILE_SCRIM_BOARD_CHANNEL_ID',
     'MOBILE_SCRIM_CANCEL_CHANNEL_ID',
@@ -118,6 +119,18 @@ test('loads independent mobile and PC scrim channel sets', () => {
       channelId: '1345795209417457685',
       messageIds: ['1531917547014721666'],
     })
+    assert.deepEqual(
+      {
+        enabled: config.rules.enabled,
+        channelId: config.rules.channelId,
+        messageIds: config.rules.messageIds,
+      },
+      {
+        enabled: true,
+        channelId: '1270783545685577871',
+        messageIds: ['1336451755734732861'],
+      },
+    )
   } finally {
     for (const [key, oldValue] of previous) {
       if (oldValue === undefined) delete process.env[key]
@@ -161,6 +174,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     'DISCORD_GUILD_ID',
     'DISCORD_NICKNAME_CHANNEL_ID',
     'DISCORD_RULES_CHANNEL_ID',
+    'DISCORD_RULES_MESSAGE_IDS',
     'MOBILE_SCRIM_REGISTRATION_CHANNEL_ID',
     'MOBILE_SCRIM_BOARD_CHANNEL_ID',
     'MOBILE_SCRIM_CANCEL_CHANNEL_ID',
@@ -280,7 +294,7 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
         countryLabel: '🇵🇭',
       },
     ])
-    assert.equal(loadConfig().serverInvite.guildId, '1336451755734732861')
+    assert.equal(loadConfig().serverInvite.guildId, 'test-guild')
 
     assert.deepEqual(
       loadConfig().announcements.groups.map(
@@ -316,10 +330,12 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       {
         enabled: defaults.rules.enabled,
         channelId: defaults.rules.channelId,
+        messageIds: defaults.rules.messageIds,
       },
       {
         enabled: true,
-        channelId: '1345795209417457685',
+        channelId: '1270783545685577871',
+        messageIds: ['1336451755734732861'],
       },
     )
   } finally {
