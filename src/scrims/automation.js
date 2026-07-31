@@ -268,7 +268,8 @@ function dateLabel(timezone) {
 function displayTeam(team, config) {
   if (!team) return ''
   const tag = config.padTeamTags ? team.tag.padEnd(5) : team.tag
-  return `${tag} - ${team.name} | ${team.countryLabel ?? 'PH'}`
+  const identity = team.tag ? `${tag} - ${team.name}` : team.name
+  return `${identity} | ${team.countryLabel ?? 'PH'}`
 }
 
 function boardTitle(config) {

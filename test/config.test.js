@@ -265,16 +265,22 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     assert.equal(pc.roundsLabel, '4 Rounds | 1SB-1DV-2SI')
     assert.deepEqual(pc.fixedTeams, [
       {
+        tag: 'NR',
+        name: 'NIGHTRAID ESPORTS',
+        countryLabel: '🇵🇭',
+      },
+      {
         tag: 'SS',
         name: 'RAMPAGE SENTINELS',
         countryLabel: '🇵🇭',
       },
       {
-        tag: 'APXS',
+        tag: '',
         name: 'SYNDICATE',
         countryLabel: '🇵🇭',
       },
     ])
+    assert.equal(loadConfig().serverInvite.guildId, '1336451755734732861')
 
     assert.deepEqual(
       loadConfig().announcements.groups.map(

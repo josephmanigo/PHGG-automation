@@ -490,33 +490,41 @@ test('keeps a duplicate registration on the board only once', () => {
   assert.equal(board.waitlist.length, 0)
 })
 
-test('seeds the first two PC slots and allows their cancellation', () => {
+test('seeds the first three PC slots and allows their cancellation', () => {
   const fixedTeams = [
+    {
+      tag: 'NR',
+      name: 'NIGHTRAID ESPORTS',
+      countryLabel: '🇵🇭',
+    },
     {
       tag: 'SS',
       name: 'RAMPAGE SENTINELS',
       countryLabel: '🇵🇭',
     },
     {
-      tag: 'APXS',
+      tag: '',
       name: 'SYNDICATE',
       countryLabel: '🇵🇭',
     },
   ]
   const board = new ScrimBoard(25, fixedTeams)
-  assert.equal(board.slots[0].name, 'RAMPAGE SENTINELS')
-  assert.equal(board.slots[1].name, 'SYNDICATE')
-  assert.equal(board.register(makeTeam('NR', 'NIGHTRAID ESPORTS')).slotIndex, 2)
+  assert.equal(board.slots[0].name, 'NIGHTRAID ESPORTS')
+  assert.equal(board.slots[1].name, 'RAMPAGE SENTINELS')
+  assert.equal(board.slots[2].name, 'SYNDICATE')
+  assert.equal(board.register(makeTeam('NEW', 'NEW TEAM')).slotIndex, 3)
+  assert.equal(board.register(makeTeam('NR', 'NIGHTRAID ESPORTS')).status, 'duplicate')
   assert.equal(board.register(makeTeam('SS', 'RAMPAGE SENTINELS')).status, 'duplicate')
   assert.equal(
-    board.cancel('RAMPAGE SENTINELS', 'cancel-seeded').status,
+    board.cancel('NIGHTRAID ESPORTS', 'cancel-seeded').status,
     'slot_removed',
   )
   assert.equal(board.slots[0], null)
 
   board.reset()
-  assert.equal(board.slots[0].name, 'RAMPAGE SENTINELS')
-  assert.equal(board.slots[1].name, 'SYNDICATE')
+  assert.equal(board.slots[0].name, 'NIGHTRAID ESPORTS')
+  assert.equal(board.slots[1].name, 'RAMPAGE SENTINELS')
+  assert.equal(board.slots[2].name, 'SYNDICATE')
 })
 
 test('renders the exact 20-slot PHGG board layout', () => {
@@ -572,17 +580,21 @@ test('renders the exact 20-slot PHGG board layout', () => {
 test('renders the exact 25-slot PC board layout', () => {
   const board = new ScrimBoard(25, [
     {
+      tag: 'NR',
+      name: 'NIGHTRAID ESPORTS',
+      countryLabel: '🇵🇭',
+    },
+    {
       tag: 'SS',
       name: 'RAMPAGE SENTINELS',
       countryLabel: '🇵🇭',
     },
     {
-      tag: 'APXS',
+      tag: '',
       name: 'SYNDICATE',
       countryLabel: '🇵🇭',
     },
   ])
-  board.register(makeTeam('NR', 'NIGHTRAID ESPORTS'))
   const state = {
     cycleStartMessageId: 'pc-starter-message',
     lastRenderedDate: '',
@@ -609,9 +621,9 @@ test('renders the exact 25-slot PC board layout', () => {
   )
   assert.match(rendered, /\*\*TIME:\*\* 10:00PM PH Time/)
   assert.match(rendered, /\*\*ROUNDS:\*\* 4 Rounds \| 1SB-1DV-2SI/)
-  assert.ok(rendered.includes('01A  :  SS    - RAMPAGE SENTINELS | 🇵🇭'))
-  assert.ok(rendered.includes('02B  :  APXS  - SYNDICATE | 🇵🇭'))
-  assert.ok(rendered.includes('03C  :  NR    - NIGHTRAID ESPORTS | PH'))
+  assert.ok(rendered.includes('01A  :  NR    - NIGHTRAID ESPORTS | 🇵🇭'))
+  assert.ok(rendered.includes('02B  :  SS    - RAMPAGE SENTINELS | 🇵🇭'))
+  assert.ok(rendered.includes('03C  :  SYNDICATE | 🇵🇭'))
   assert.ok(rendered.includes('25Y  :'))
   assert.ok(rendered.includes('00   :'))
   assert.ok(rendered.includes('10   :'))

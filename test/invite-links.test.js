@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { containsLinkKeyword, selectBestInvite } from '../src/invite-links.js'
+import {
+  containsLinkKeyword,
+  installServerInviteAutomation,
+  selectBestInvite,
+} from '../src/invite-links.js'
 
 test('detects the word link anywhere in a sentence', () => {
   assert.equal(containsLinkKeyword('link'), true)
@@ -68,4 +72,63 @@ test('never returns an expiring or limited invite', () => {
     ],
   ])
   assert.equal(selectBestInvite(invites), null)
+})
+
+test('/server fetches the configured guild and returns its official invite', async () => {
+  const onceHandlers = new Map()
+  const eventHandlers = new Map()
+  const fetchedGuildIds = []
+  const createdCommands = []
+  const targetGuild = {
+    id: '1336451755734732861',
+    name: 'NightRaid Esports',
+    vanityURLCode: 'nightraid',
+    fetch: async () => targetGuild,
+  }
+  const commandGuild = {
+    id: 'test-guild',
+    name: 'PHGG',
+    commands: {
+      fetch: async () => ({ find: () => null }),
+      create: async (definition) => createdCommands.push(definition),
+    },
+  }
+  const client = {
+    guilds: {
+      fetch: async (guildId) => {
+        fetchedGuildIds.push(guildId)
+        return guildId === commandGuild.id ? commandGuild : targetGuild
+      },
+    },
+    once: (event, handler) => onceHandlers.set(event, handler),
+    on: (event, handler) => eventHandlers.set(event, handler),
+  }
+
+  installServerInviteAutomation(
+    client,
+    { enabled: true, guildId: targetGuild.id },
+    { guildId: commandGuild.id },
+  )
+  await onceHandlers.get('clientReady')(client)
+
+  let reply
+  const interaction = {
+    commandName: 'server',
+    isChatInputCommand: () => true,
+    deferReply: async () => undefined,
+    editReply: async (payload) => {
+      reply = payload
+    },
+  }
+  await eventHandlers.get('interactionCreate')(interaction)
+
+  assert.deepEqual(createdCommands, [
+    {
+      name: 'server',
+      description: 'Get the official server invite.',
+    },
+  ])
+  assert.deepEqual(fetchedGuildIds, [commandGuild.id, targetGuild.id])
+  assert.match(reply.content, /NIGHTRAID ESPORTS SERVER LINK/)
+  assert.match(reply.content, /https:\/\/discord\.gg\/nightraid/)
 })

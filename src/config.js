@@ -6,6 +6,7 @@ const DEFAULT_NICKNAME_CHANNEL_ID = '1270790990772437073'
 const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1345795209417457685'
 const DEFAULT_SCRIM_RULES_MESSAGE_IDS =
   '1531917547014721666'
+const DEFAULT_SERVER_INVITE_GUILD_ID = '1336451755734732861'
 const DEFAULT_ANNOUNCEMENTS = {
   MOBILE: {
     channelId: '1345793370454495242',
@@ -97,12 +98,17 @@ const DEFAULT_SCRIMS = {
     fixedRoundsLabel: true,
     fixedTeams: [
       {
+        tag: 'NR',
+        name: 'NIGHTRAID ESPORTS',
+        countryLabel: '🇵🇭',
+      },
+      {
         tag: 'SS',
         name: 'RAMPAGE SENTINELS',
         countryLabel: '🇵🇭',
       },
       {
-        tag: 'APXS',
+        tag: '',
         name: 'SYNDICATE',
         countryLabel: '🇵🇭',
       },
@@ -332,6 +338,7 @@ export function loadConfig() {
         ),
         true,
       ),
+      guildId: DEFAULT_SERVER_INVITE_GUILD_ID,
     },
   }
 }

@@ -115,7 +115,17 @@ export class ScrimBoard {
     this.maxSlots = maxSlots
     this.fixedTeams = fixedTeams
       .map((team) => {
-        const normalized = makeTeam(team.tag, team.name)
+        const safeTag = cleanPart(team.tag, 12).toUpperCase()
+        const safeName = cleanPart(team.name, 48).toUpperCase()
+        const normalized = safeTag
+          ? makeTeam(safeTag, safeName)
+          : safeName
+            ? {
+                tag: '',
+                name: safeName,
+                key: normalize(safeName),
+              }
+            : null
         return normalized
           ? {
               ...normalized,
