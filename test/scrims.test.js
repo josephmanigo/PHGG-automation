@@ -495,17 +495,17 @@ test('seeds the first three PC slots and allows their cancellation', () => {
     {
       tag: 'NR',
       name: 'NIGHTRAID ESPORTS',
-      countryLabel: '🇵🇭',
+      countryLabel: 'PH',
     },
     {
       tag: 'SS',
       name: 'RAMPAGE SENTINELS',
-      countryLabel: '🇵🇭',
+      countryLabel: 'PH',
     },
     {
       tag: 'APXS',
       name: 'SYNDICATE',
-      countryLabel: '🇵🇭',
+      countryLabel: 'PH',
     },
   ]
   const board = new ScrimBoard(25, fixedTeams)
@@ -582,17 +582,17 @@ test('renders the exact 25-slot PC board layout', () => {
     {
       tag: 'NR',
       name: 'NIGHTRAID ESPORTS',
-      countryLabel: '🇵🇭',
+      countryLabel: 'PH',
     },
     {
       tag: 'SS',
       name: 'RAMPAGE SENTINELS',
-      countryLabel: '🇵🇭',
+      countryLabel: 'PH',
     },
     {
       tag: 'APXS',
       name: 'SYNDICATE',
-      countryLabel: '🇵🇭',
+      countryLabel: 'PH',
     },
   ])
   const state = {
@@ -621,9 +621,9 @@ test('renders the exact 25-slot PC board layout', () => {
   )
   assert.match(rendered, /\*\*TIME:\*\* 10:00PM PH Time/)
   assert.match(rendered, /\*\*ROUNDS:\*\* 4 Rounds \| 1SB-1DV-2SI/)
-  assert.ok(rendered.includes('01A  :  NR    - NIGHTRAID ESPORTS | 🇵🇭'))
-  assert.ok(rendered.includes('02B  :  SS    - RAMPAGE SENTINELS | 🇵🇭'))
-  assert.ok(rendered.includes('03C  :  APXS  - SYNDICATE | 🇵🇭'))
+  assert.ok(rendered.includes('01A  :  NR  - NIGHTRAID ESPORTS | PH'))
+  assert.ok(rendered.includes('02B  :  SS  - RAMPAGE SENTINELS | PH'))
+  assert.ok(rendered.includes('03C  :  APXS  - SYNDICATE | PH'))
   assert.ok(rendered.includes('25Y  :'))
   assert.ok(rendered.includes('00   :'))
   assert.ok(rendered.includes('10   :'))

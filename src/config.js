@@ -101,17 +101,17 @@ const DEFAULT_SCRIMS = {
       {
         tag: 'NR',
         name: 'NIGHTRAID ESPORTS',
-        countryLabel: '🇵🇭',
+        countryLabel: 'PH',
       },
       {
         tag: 'SS',
         name: 'RAMPAGE SENTINELS',
-        countryLabel: '🇵🇭',
+        countryLabel: 'PH',
       },
       {
         tag: 'APXS',
         name: 'SYNDICATE',
-        countryLabel: '🇵🇭',
+        countryLabel: 'PH',
       },
     ],
   },

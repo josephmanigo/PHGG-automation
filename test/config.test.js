@@ -281,17 +281,17 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
       {
         tag: 'NR',
         name: 'NIGHTRAID ESPORTS',
-        countryLabel: '🇵🇭',
+        countryLabel: 'PH',
       },
       {
         tag: 'SS',
         name: 'RAMPAGE SENTINELS',
-        countryLabel: '🇵🇭',
+        countryLabel: 'PH',
       },
       {
         tag: 'APXS',
         name: 'SYNDICATE',
-        countryLabel: '🇵🇭',
+        countryLabel: 'PH',
       },
     ])
     assert.equal(loadConfig().serverInvite.guildId, 'test-guild')

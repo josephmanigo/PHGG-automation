@@ -267,6 +267,9 @@ function dateLabel(timezone) {
 
 function displayTeam(team, config) {
   if (!team) return ''
+  if (team.sourceType === 'fixed' && config.label === 'PC') {
+    return `${team.tag}  - ${team.name} | ${team.countryLabel ?? 'PH'}`
+  }
   const tag = config.padTeamTags ? team.tag.padEnd(5) : team.tag
   const identity = team.tag ? `${tag} - ${team.name}` : team.name
   return `${identity} | ${team.countryLabel ?? 'PH'}`
