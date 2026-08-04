@@ -67,7 +67,12 @@ export async function parseScreenshotWithGemini({
   apiKey = process.env.GEMINI_API_KEY,
   modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.0-flash',
 }) {
-  if (!apiKey) {
+  const apiKeys = String(apiKey || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean)
+
+  if (apiKeys.length === 0) {
     throw new Error('GEMINI_API_KEY is not configured.')
   }
 
@@ -146,69 +151,82 @@ Rules:
     .filter((m, i, arr) => arr.indexOf(m) === i)
 
   let lastError = null
-  let dynamicModelsFetched = false
 
-  for (let i = 0; i < candidateModels.length; i++) {
-    const currentModel = candidateModels[i]
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`
+  for (const currentApiKey of apiKeys) {
+    let dynamicModelsFetched = false
 
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+    for (let i = 0; i < candidateModels.length; i++) {
+      const currentModel = candidateModels[i]
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${currentApiKey}`
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.warn(`Gemini API model "${currentModel}" returned HTTP ${response.status} (attempt ${attempt}): ${errorText}`)
-          lastError = new Error(`Gemini API error (${response.status}): ${errorText}`)
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
 
-          // If 404, dynamically query Google API for active model names supported by this API key
-          if (response.status === 404 && !dynamicModelsFetched) {
-            dynamicModelsFetched = true
-            const liveModels = await getAvailableGeminiModels(apiKey)
-            if (liveModels.length > 0) {
-              console.log(`[TALLY] Dynamically discovered active models for this API key: ${liveModels.join(', ')}`)
-              for (const lm of liveModels) {
-                if (!candidateModels.includes(lm)) {
-                  candidateModels.push(lm)
+          if (!response.ok) {
+            const errorText = await response.text()
+            console.warn(`Gemini API model "${currentModel}" key "...${currentApiKey.slice(-4)}" returned HTTP ${response.status} (attempt ${attempt}): ${errorText}`)
+
+            let errorMsg = `Gemini API error (${response.status}): ${errorText}`
+            if (response.status === 429) {
+              errorMsg = `Quota Depleted / Resource Exhausted (HTTP 429). Please generate a new free API key at https://aistudio.google.com/app/apikey (or separate multiple keys with commas in GEMINI_API_KEY).`
+            }
+            lastError = new Error(errorMsg)
+
+            // If 429 (quota depleted), break to try next key in list if available
+            if (response.status === 429 && apiKeys.length > 1) {
+              break
+            }
+
+            // If 404, dynamically query Google API for active model names supported by this API key
+            if (response.status === 404 && !dynamicModelsFetched) {
+              dynamicModelsFetched = true
+              const liveModels = await getAvailableGeminiModels(currentApiKey)
+              if (liveModels.length > 0) {
+                console.log(`[TALLY] Dynamically discovered active models for key: ${liveModels.join(', ')}`)
+                for (const lm of liveModels) {
+                  if (!candidateModels.includes(lm)) {
+                    candidateModels.push(lm)
+                  }
                 }
               }
             }
+
+            if ((response.status === 503 || response.status === 500) && attempt < 2) {
+              await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+              continue
+            }
+            break
           }
 
-          if ((response.status === 503 || response.status === 429 || response.status === 500) && attempt < 2) {
-            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
-            continue
+          const data = await response.json()
+          const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
+          if (!textResponse) {
+            throw new Error('Gemini API returned an empty response.')
           }
-          break
+
+          const cleanJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+          const parsed = JSON.parse(cleanJson)
+
+          const roundNumber = Number(parsed.roundNumber || 1)
+          const entries = (parsed.teams || [])
+            .map((t) => ({
+              rank: Number(t.rank || 0),
+              slotCode: String(t.slotCode || t.slot || '').trim(),
+              teamQuery: String(t.slotCode || t.teamName || t.tag || '').trim(),
+              kills: Math.max(0, Number(t.kills || 0)),
+            }))
+            .filter((e) => e.rank > 0 && (e.slotCode || e.teamQuery))
+
+          return { roundNumber, entries }
+        } catch (err) {
+          console.warn(`Attempt ${attempt} for model "${currentModel}" failed: ${err.message}`)
+          lastError = err
         }
-
-        const data = await response.json()
-        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
-        if (!textResponse) {
-          throw new Error('Gemini API returned an empty response.')
-        }
-
-        const cleanJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-        const parsed = JSON.parse(cleanJson)
-
-        const roundNumber = Number(parsed.roundNumber || 1)
-        const entries = (parsed.teams || [])
-          .map((t) => ({
-            rank: Number(t.rank || 0),
-            slotCode: String(t.slotCode || t.slot || '').trim(),
-            teamQuery: String(t.slotCode || t.teamName || t.tag || '').trim(),
-            kills: Math.max(0, Number(t.kills || 0)),
-          }))
-          .filter((e) => e.rank > 0 && (e.slotCode || e.teamQuery))
-
-        return { roundNumber, entries }
-      } catch (err) {
-        console.warn(`Attempt ${attempt} for model "${currentModel}" failed: ${err.message}`)
-        lastError = err
       }
     }
   }
