@@ -117,14 +117,11 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
     },
   }
 
-  // Normalize any non-standard model aliases to active Google Gemini Flash models
   const requestedModel = String(modelName || '').trim()
-  const normalizedModel = /3\.5|2\.5/i.test(requestedModel)
-    ? 'gemini-2.0-flash'
-    : requestedModel
 
   const candidateModels = [
-    normalizedModel,
+    requestedModel,
+    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash-latest',
     'gemini-1.5-flash',
