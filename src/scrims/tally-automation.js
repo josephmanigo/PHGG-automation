@@ -344,8 +344,65 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
   })
 
-  // Handle Discord Button Interactions
+  // Register Discord Native Slash Commands (/clear, /clearsheet, /standings, /refreshteams)
+  const slashDefinitions = [
+    { name: 'clear', description: 'Clear score tally board and reset Google Sheet to blank.' },
+    { name: 'clearsheet', description: 'Clear score tally board and reset Google Sheet to blank.' },
+    { name: 'standings', description: 'View current overall scrim standings.' },
+    { name: 'refreshteams', description: 'Refresh and view registered teams on the scrim board.' },
+  ]
+
+  client.once(Events.ClientReady, async (readyClient) => {
+    if (globalConfig?.guildId && scrimConfig.label.toUpperCase() === 'PC') {
+      try {
+        const guild = await readyClient.guilds.fetch(globalConfig.guildId)
+        const commands = await guild.commands.fetch()
+        for (const def of slashDefinitions) {
+          const existing = commands.find((c) => c.name === def.name)
+          if (existing) await existing.edit(def)
+          else await guild.commands.create(def)
+        }
+        console.log(`[TALLY] Slash commands (/clear, /clearsheet, /standings, /refreshteams) registered in ${guild.name}.`)
+      } catch (err) {
+        console.error('[TALLY] Could not register slash commands:', err.message)
+      }
+    }
+  })
+
+  // Handle Discord Button & Slash Command Interactions
   client.on(Events.InteractionCreate, async (interaction) => {
+    if (interaction.isChatInputCommand()) {
+      const cmdName = interaction.commandName
+      if (cmdName === 'clear' || cmdName === 'clearsheet') {
+        if (!canManageTally(interaction.member, allowedRoleIds)) {
+          await interaction.reply({ content: '❌ You do not have permission to clear score tallies.', ephemeral: true }).catch(() => {})
+          return
+        }
+        await interaction.deferReply().catch(() => {})
+        tallyBoard.clear()
+        await clearGoogleSheetScores()
+        await interaction.editReply(`✅ Score tally board and Google Sheet reset to blank for **${scrimConfig.label} SCRIM**.`).catch(() => {})
+        return
+      }
+      if (cmdName === 'standings') {
+        const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
+        const standingsText = tallyBoard.formatStandingsMarkdown(
+          registeredTeams,
+          `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
+        )
+        await interaction.reply({ content: standingsText }).catch(() => {})
+        return
+      }
+      if (cmdName === 'refreshteams') {
+        const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
+        const teamListStr = registeredTeams.length > 0
+          ? registeredTeams.map((t) => `${t.slotCode}: ${t.tag ? `[${t.tag}] ` : ''}${t.name}`).join('\n')
+          : '*No teams registered on the board yet.*'
+        await interaction.reply({ content: `🔄 **${scrimConfig.label} SCRIM REGISTERED TEAMS REFRESHED** (${registeredTeams.length} Teams):\n\`\`\`\n${teamListStr}\n\`\`\`` }).catch(() => {})
+        return
+      }
+    }
+
     if (!interaction.isButton()) return
     const { customId } = interaction
 
