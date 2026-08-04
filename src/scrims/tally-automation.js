@@ -30,9 +30,9 @@ function canManageTally(member, allowedRoleIds = new Set()) {
   return memberRoles.some((roleId) => allowedRoleIds.has(String(roleId)))
 }
 
-export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId }) {
+export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC' }) {
   const lines = [
-    `📋 **SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
+    `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
     `*Please verify extracted team ranks and kills before confirming.*`,
     '```',
     `RK  SLOT  TAG / TEAM                 KILLS  PTS`,
@@ -52,15 +52,15 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`phgg_tally:confirm:${roundNumber}:${reviewId}`)
+      .setCustomId(`phgg_tally:confirm:${scrimLabel}:${roundNumber}:${reviewId}`)
       .setLabel('✅ Confirm & Save Scores')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId(`phgg_tally:standings:${reviewId}`)
+      .setCustomId(`phgg_tally:standings:${scrimLabel}:${roundNumber}:${reviewId}`)
       .setLabel('📊 View Standings')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId(`phgg_tally:reject:${roundNumber}:${reviewId}`)
+      .setCustomId(`phgg_tally:reject:${scrimLabel}:${roundNumber}:${reviewId}`)
       .setLabel('❌ Reject')
       .setStyle(ButtonStyle.Danger),
   )
@@ -187,6 +187,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             entries: previewEntries,
             registeredTeams,
             reviewId,
+            scrimLabel: scrimConfig.label,
           })
 
           await message.reply(reviewMsg).catch(() => {})
@@ -221,6 +222,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             entries: previewEntries,
             registeredTeams,
             reviewId,
+            scrimLabel: scrimConfig.label,
           })
 
           await message.reply(reviewMsg).catch(() => {})
@@ -236,7 +238,10 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
     if (!customId.startsWith('phgg_tally:')) return
 
-    const [, action, roundStr, reviewId] = customId.split(':')
+    const parts = customId.split(':')
+    const [, action, targetLabel, roundStr, reviewId] = parts
+    if (targetLabel && targetLabel.toUpperCase() !== scrimConfig.label.toUpperCase()) return
+
     const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
 
     if (action === 'standings') {
