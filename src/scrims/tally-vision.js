@@ -71,32 +71,35 @@ export async function parseScreenshotWithGemini({
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`
 
   const promptText = `
-You are an expert esports tournament scorekeeper for games like Bloodstrike, PUBG Mobile, BGMI, and PC Battle Royale tournaments.
-Analyze these endgame scoreboard screenshots.
+You are an expert esports tournament scorekeeper analyzing Bloodstrike / PUBG / PC Battle Royale endgame scoreboard screenshots.
 These screenshots may be multi-part images of the same endgame leaderboard (e.g. Image 1 shows ranks 1-10, Image 2 shows ranks 11-20, Image 3 shows ranks 21-25).
 
-CRITICAL INSTRUCTIONS FOR ACCURATE EXTRACTION:
-1. READ COLUMN HEADERS CAREFULLY:
-   - "RANK" / "#" / "POS": Placement position (1, 2, 3... 25).
-   - "TEAM" / "TAG" / "PLAYER": Team tag & name (e.g. "NR NIGHTRAID").
-   - "KILLS" / "ELIMS" / "ELIMINATIONS" / "K": Total kills scored by the team. This is usually a smaller number (e.g. 0 to 25).
-   - "POINTS" / "PTS" / "TOTAL SCORE" / "DAMAGE" / "DMG": DO NOT extract Total Score, Points, or Damage as Kills! Kills is strictly the Elimination/Kill count.
-2. DO NOT SKIP RANKS: Extract EVERY single visible team row in exact sequential order (Rank 1, 2, 3... 25).
-3. NO DUPLICATE TEAMS: Each team appears ONLY ONCE on the official leaderboard.
+EXACT VISUAL MAPPING INSTRUCTIONS:
+1. TEAM PLACE (RANK): The placement number "1" to "25" at the start of each row.
+2. TEAM SLOT CODE / LETTER: The slot code or slot letter (e.g. "01A", "02B", "03C"... or "1-A", "2-B"... or single letters "A", "B", "C"..."Y").
+3. TEAM KILLS: The number displayed next to the SKULL ICON (💀) or under the KILLS/ELIMS header.
+   - DO NOT extract Total Score, Points, or Damage as Kills!
+   - Kills is strictly the number next to the SKULL ICON (💀) or ELIMS column.
+4. STRICT NO-DUPLICATE RULE:
+   - Extract each team/slot AT MOST ONCE.
+   - Once a team/slot or rank is extracted from an image, DO NOT extract it again if it appears in another overlapping photo.
+5. NO HALLUCINATIONS:
+   - Extract only the exact visible slot code/letter, placement rank, and skull icon kill count.
 
 Extract:
 - roundNumber: integer (default to 1 if not explicitly shown as Round 1, Round 2, Round 3, Round 4, etc.)
 - teams: array of objects with:
-  - rank: integer (1, 2, 3...)
-  - teamName: string (team tag and team name, e.g. "NR NIGHTRAID")
-  - kills: integer (elimination/kill count ONLY from the KILLS/ELIMS column)
+  - rank: integer (1 to 25)
+  - slotCode: string (e.g. "01A", "02B", "1-A", "2-B", or "A", "B", "C")
+  - teamName: string (team tag or name if shown on screen)
+  - kills: integer (the number next to the SKULL ICON 💀 or KILLS column)
 
 Respond ONLY with valid JSON in this format, without markdown wrapping:
 {
   "roundNumber": 1,
   "teams": [
-    { "rank": 1, "teamName": "NR NIGHTRAID", "kills": 12 },
-    { "rank": 2, "teamName": "SS RAMPAGE", "kills": 8 }
+    { "rank": 1, "slotCode": "01A", "teamName": "NR NIGHTRAID", "kills": 12 },
+    { "rank": 2, "slotCode": "02B", "teamName": "SS RAMPAGE", "kills": 8 }
   ]
 }
 `
@@ -139,9 +142,10 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
   const roundNumber = Number(parsed.roundNumber || 1)
   const entries = (parsed.teams || []).map((t) => ({
     rank: Number(t.rank || 0),
-    teamQuery: String(t.teamName || t.tag || '').trim(),
+    slotCode: String(t.slotCode || t.slot || '').trim(),
+    teamQuery: String(t.slotCode || t.teamName || t.tag || '').trim(),
     kills: Math.max(0, Number(t.kills || 0)),
-  })).filter((e) => e.rank > 0 && e.teamQuery)
+  })).filter((e) => e.rank > 0 && (e.slotCode || e.teamQuery))
 
   return { roundNumber, entries }
 }
