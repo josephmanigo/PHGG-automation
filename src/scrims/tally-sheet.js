@@ -504,3 +504,32 @@ export async function fetchLiveStandingsFromSheet({
   return standings
 }
 
+export async function clearGoogleSheetScores({
+  spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID,
+  sheetName = process.env.GOOGLE_SHEETS_WORKSHEET_NAME || '4 Rounds - 25 Teams (Do Not Edit)',
+} = {}) {
+  const { email: clientEmail, privateKey } = resolveGoogleCredentials()
+  if (!clientEmail || !privateKey) return false
+
+  try {
+    const accessToken = await getGoogleAccessToken(clientEmail, privateKey)
+    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(sheetName)}'!K8:V32:clear`
+
+    const response = await fetch(clearUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (response.ok) {
+      console.log(`[TALLY] Successfully cleared score range K8:V32 on '${sheetName}'`)
+      return true
+    }
+    const errText = await response.text()
+    console.warn('[TALLY] Failed to clear Google Sheet scores:', errText)
+    return false
+  } catch (err) {
+    console.warn('[TALLY] Exception clearing Google Sheet scores:', err.message)
+    return false
+  }
+}
+

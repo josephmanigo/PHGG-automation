@@ -7,7 +7,7 @@ import {
 } from 'discord.js'
 import { TallyBoard } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
-import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet } from './tally-sheet.js'
+import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores } from './tally-sheet.js'
 
 const activeTallyBoards = new Map()
 const pendingReviews = new Map()
@@ -152,7 +152,13 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       return
     }
 
-    if (content.toLowerCase().startsWith('!cleartally')) {
+    const isClearCmd = content.toLowerCase().startsWith('!cleartally') ||
+      content.toLowerCase().startsWith('!clearsheet') ||
+      content.toLowerCase().startsWith('!clear') ||
+      content.toLowerCase().startsWith('/clear') ||
+      content.toLowerCase().startsWith('/clearsheet')
+
+    if (isClearCmd) {
       const parts = content.split(/\s+/)
       const targetScope = parts[1]?.toUpperCase()
       if (targetScope && targetScope !== scrimConfig.label.toUpperCase()) return
@@ -163,7 +169,8 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         return
       }
       tallyBoard.clear()
-      await message.reply(`✅ Score tally board cleared for ${scrimConfig.label} session.`).catch(() => {})
+      await clearGoogleSheetScores()
+      await message.reply(`✅ Score tally board and Google Sheet reset to blank for **${scrimConfig.label} SCRIM**.`).catch(() => {})
       return
     }
 
