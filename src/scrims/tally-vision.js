@@ -99,10 +99,10 @@ Return ONLY a valid JSON object (no markdown, no explanatory text) with this exa
 
 Rules:
 1. "roundNumber": Integer (default to 1 if not explicitly shown on the screenshot).
-2. "rank": Placement integer (1 for #1 / Victory, 2 for #2, etc.).
+2. "rank": Placement integer (1 for #1 / Victory, 2 for #2, etc.) on the far left.
 3. "slotCode": Look for team slot codes if visible (e.g., "1-A", "01A", "2-B", "02B", "25-Y"). If not visible, return empty string "".
-4. "teamName": The team name or clan tag displayed.
-5. "kills": Total team kills integer.
+4. "teamName": The exact team name or clan tag displayed.
+5. "kills": Total team kills integer. CRITICAL: Only extract the number under the "KILLS", "ELIMS", or "K" column header. DO NOT extract numbers from "DAMAGE", "SCORE", "ASSISTS", or "POINTS" columns! (Team kills per match are usually between 0 and 25).
 6. Extract ALL teams visible in the endgame results list.`,
     },
   ]
@@ -240,7 +240,7 @@ Rules:
         messages: [
           {
             role: 'system',
-            content: `You are an expert esports tournament scorekeeper. Extract endgame scores from the provided screenshot. Return a JSON object with: { "roundNumber": 1, "teams": [ { "rank": 1, "slotCode": "01A", "teamName": "NAME", "kills": 10 } ] }`,
+            content: `You are an expert esports tournament scorekeeper. Extract endgame scores from the screenshot into a JSON object: { "roundNumber": 1, "teams": [ { "rank": 1, "slotCode": "01A", "teamName": "NAME", "kills": 10 } ] }. CRITICAL: Extract "kills" ONLY from the "KILLS" or "K" column header. Never confuse Damage, Points, or Score numbers (like 58, 49, 38) for kills.`,
           },
           {
             role: 'user',
