@@ -60,18 +60,28 @@ function levenshteinDistance(a, b) {
 
 export function findMatchingTeam(query, registeredTeams = []) {
   if (!query || registeredTeams.length === 0) return null
-  const target = normalizeIdentifier(query)
+  const rawStr = String(query).trim()
+  const target = normalizeIdentifier(rawStr)
   if (!target) return null
 
-  // 1. Exact match by slot letter (A, B, C...) or slot code (01A, 02B...)
-  const slotMatch = registeredTeams.find(
-    (t) =>
-      normalizeIdentifier(t.slotLetter) === target ||
-      normalizeIdentifier(t.slotCode) === target,
-  )
+  // 1. Exact match by slot letter (A, B, C...) or slot code (01A, 02B...) or slot alternate formats (1A, 1-A)
+  const slotMatch = registeredTeams.find((t) => {
+    const sLetter = normalizeIdentifier(t.slotLetter)
+    const sCode = normalizeIdentifier(t.slotCode)
+    const sNumLetter = normalizeIdentifier(`${t.slotIndex + 1}${t.slotLetter}`)
+    return target === sLetter || target === sCode || target === sNumLetter
+  })
   if (slotMatch) return slotMatch
 
-  // 2. Exact match by tag or name
+  // 2. Numeric slot index match (e.g. query "1" or "01" maps to slotIndex 0)
+  const numMatch = target.match(/^(\d{1,2})$/)
+  if (numMatch) {
+    const slotIdx = Number(numMatch[1]) - 1
+    const teamBySlot = registeredTeams.find((t) => t.slotIndex === slotIdx)
+    if (teamBySlot) return teamBySlot
+  }
+
+  // 3. Exact match by tag or name or combined tag+name
   const exactMatch = registeredTeams.find(
     (t) =>
       normalizeIdentifier(t.tag) === target ||
@@ -80,17 +90,15 @@ export function findMatchingTeam(query, registeredTeams = []) {
   )
   if (exactMatch) return exactMatch
 
-  // 3. Partial match (starts with or includes)
+  // 4. Partial match (starts with or includes tag or name)
   const partialMatch = registeredTeams.find(
     (t) =>
-      normalizeIdentifier(t.tag).startsWith(target) ||
-      target.startsWith(normalizeIdentifier(t.tag)) ||
-      normalizeIdentifier(t.name).includes(target) ||
-      target.includes(normalizeIdentifier(t.name)),
+      (normalizeIdentifier(t.tag) && (normalizeIdentifier(t.tag).startsWith(target) || target.startsWith(normalizeIdentifier(t.tag)))) ||
+      (normalizeIdentifier(t.name) && (normalizeIdentifier(t.name).includes(target) || target.includes(normalizeIdentifier(t.name)))),
   )
   if (partialMatch) return partialMatch
 
-  // 4. Fuzzy Levenshtein match
+  // 5. Fuzzy Levenshtein match
   let bestTeam = null
   let bestDistance = Infinity
   for (const team of registeredTeams) {
