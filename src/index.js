@@ -44,6 +44,7 @@ client.once(Events.ClientReady, (readyClient) => {
         .map((group) => group.label.toLowerCase())
         .join('+') || 'off'}`,
       `server-invite-keyword=${config.serverInvite.enabled ? 'on' : 'off'}`,
+      `tally-score=${config.geminiApiKey ? 'ai-vision' : 'text-fallback'}`,
     ].join(', '),
   )
 })

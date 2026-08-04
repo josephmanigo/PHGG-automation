@@ -8,6 +8,7 @@ const DEFAULT_RULES_MESSAGE_IDS = '1336451755734732861'
 const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1345795209417457685'
 const DEFAULT_SCRIM_RULES_MESSAGE_IDS =
   '1531917547014721666'
+const DEFAULT_TALLY_CHANNEL_ID = '1534258096975904849'
 const DEFAULT_ANNOUNCEMENTS = {
   MOBILE: {
     channelId: '1345793370454495242',
@@ -182,6 +183,10 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     label: scope,
     enabled: suppliedChannels.length === 3,
     channels,
+    tallyChannelId: read('TALLY_CHANNEL_ID', defaults.channels?.tally || value('GAME_RESULTS_CHANNEL_ID', DEFAULT_TALLY_CHANNEL_ID)),
+    scorekeeperRoleIds: idSet(
+      read('SCOREKEEPER_ROLE_IDS', value('GAME_RESULTS_SCOREKEEPER_ROLE_IDS', '')),
+    ),
     openerIds: idSet(read('OPENER_IDS')),
     bannerAssetId: read('BANNER_ASSET_ID', defaults.bannerAssetId),
     bannerSignalIds: idSet(
@@ -309,6 +314,9 @@ export function loadConfig() {
     token: required('DISCORD_BOT_TOKEN'),
     guildId,
     brandName,
+    geminiApiKey: value('GEMINI_API_KEY'),
+    tallyChannelId: value('TALLY_CHANNEL_ID', value('GAME_RESULTS_CHANNEL_ID', DEFAULT_TALLY_CHANNEL_ID)),
+    scorekeeperRoleIds: idSet(value('SCOREKEEPER_ROLE_IDS', value('GAME_RESULTS_SCOREKEEPER_ROLE_IDS', ''))),
     color: color('BOT_COLOR', '#ED1C24'),
     timezone: value('BOT_TIMEZONE', 'Asia/Manila'),
     nickname: {

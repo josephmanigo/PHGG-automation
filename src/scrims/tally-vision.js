@@ -1,0 +1,127 @@
+export function parseTextScoreInput(text) {
+  const content = String(text ?? '').trim()
+  if (!content) return { roundNumber: 1, entries: [] }
+
+  let roundNumber = 1
+  const roundMatch = content.match(/\bROUND\s*#?(\d+)\b/i)
+  if (roundMatch) {
+    roundNumber = Number(roundMatch[1])
+  }
+
+  const entries = []
+  const lines = content.split(/\r?\n/)
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || /\bROUND\s*#?\d+\b/i.test(trimmed)) continue
+
+    // Pattern 1: #1 NR - NIGHTRAID | 12 KILLS or 1. NR - NIGHTRAID - 12 KILLS
+    const match1 = /^(?:#|RANK\s*)?(\d+)[.\s\-\:]+\s*(.+?)\s*(?:[|\-:]\s*)?(\d+)\s*(?:KILLS?|K|PTS?|POINTS?)?$/i.exec(trimmed)
+    if (match1) {
+      const rank = Number(match1[1])
+      const teamQuery = match1[2].replace(/[|\-:]\s*$/, '').trim()
+      const kills = Number(match1[3])
+      if (rank >= 1 && teamQuery) {
+        entries.push({ rank, teamQuery, kills })
+        continue
+      }
+    }
+
+    // Pattern 2: 1-NR (12) or #1 NR (12 KILLS)
+    const match2 = /^(?:#|RANK\s*)?(\d+)[.\s\-\:]+\s*(.+?)\s*\(\s*(\d+)\s*(?:KILLS?|K)?\s*\)$/i.exec(trimmed)
+    if (match2) {
+      const rank = Number(match2[1])
+      const teamQuery = match2[2].trim()
+      const kills = Number(match2[3])
+      if (rank >= 1 && teamQuery) {
+        entries.push({ rank, teamQuery, kills })
+      }
+    }
+  }
+
+  return { roundNumber, entries }
+}
+
+export async function parseScreenshotWithGemini({
+  buffer,
+  mimeType = 'image/png',
+  apiKey = process.env.GEMINI_API_KEY,
+  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash',
+}) {
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured.')
+  }
+
+  const base64Data = buffer.toString('base64')
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`
+
+  const promptText = `
+You are an expert esports tournament scorekeeper.
+Analyze this endgame scoreboard screenshot (PUBG / PUBG Mobile / BGMI / Mobile Legends / Farlight).
+Extract all teams shown in the scoreboard ordered by rank (Rank 1, 2, 3, etc.).
+Extract:
+- roundNumber: integer (default to 1 if not explicitly shown as Round 1, Round 2, Round 3, Round 4, etc.)
+- teams: array of objects with:
+  - rank: integer (1, 2, 3...)
+  - teamName: string (team tag and team name, e.g. "NR NIGHTRAID")
+  - kills: integer (total team kills or eliminations)
+
+Respond ONLY with valid JSON in this format, without markdown wrapping:
+{
+  "roundNumber": 1,
+  "teams": [
+    { "rank": 1, "teamName": "NR NIGHTRAID", "kills": 12 },
+    { "rank": 2, "teamName": "SS RAMPAGE", "kills": 8 }
+  ]
+}
+`
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: promptText },
+          {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+    },
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Gemini API error (${response.status}): ${errorText}`)
+  }
+
+  const data = await response.json()
+  const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!textResponse) {
+    throw new Error('Gemini API returned an empty response.')
+  }
+
+  const cleanJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+  const parsed = JSON.parse(cleanJson)
+
+  const roundNumber = Number(parsed.roundNumber || 1)
+  const entries = (parsed.teams || []).map((t) => ({
+    rank: Number(t.rank || 0),
+    teamQuery: String(t.teamName || t.tag || '').trim(),
+    kills: Math.max(0, Number(t.kills || 0)),
+  })).filter((e) => e.rank > 0 && e.teamQuery)
+
+  return { roundNumber, entries }
+}

@@ -345,6 +345,23 @@ export class ScrimBoard {
     this.pendingCancellations.delete(cancellationMessageId)
     return { status: 'claimed', slotIndex: pending.slotIndex, team }
   }
+
+  getRegisteredTeams() {
+    return this.slots
+      .map((team, index) =>
+        team
+          ? {
+              slotIndex: index,
+              slotCode: slotCode(index),
+              slotLetter: String.fromCharCode(65 + index),
+              tag: team.tag ?? '',
+              name: team.name ?? '',
+              key: team.key ?? '',
+            }
+          : null,
+      )
+      .filter(Boolean)
+  }
 }
 
 export function slotCode(index) {

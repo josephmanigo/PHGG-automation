@@ -1,4 +1,5 @@
 import { Events, PermissionFlagsBits } from 'discord.js'
+import { installTallyAutomation } from './tally-automation.js'
 import {
   isAdminNoteContent,
   isAvailableSlotsCommand,
@@ -419,6 +420,7 @@ export function installScrimAutomation(client, config, botConfig) {
   }
 
   const board = new ScrimBoard(config.maxSlots, config.fixedTeams)
+  installTallyAutomation(client, config, botConfig, () => board)
   const state = {
     registrationOpen: false,
     cycleStartedAt: null,
