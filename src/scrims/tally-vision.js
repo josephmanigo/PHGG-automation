@@ -72,10 +72,6 @@ export async function parseScreenshotWithGemini({
     .map((k) => k.trim())
     .filter(Boolean)
 
-  if (apiKeys.length === 0) {
-    throw new Error('GEMINI_API_KEY is not configured.')
-  }
-
   const imageList = images.length > 0
     ? images
     : (buffer ? [{ buffer, mimeType }] : [])
@@ -152,66 +148,127 @@ Rules:
 
   let lastError = null
 
-  keyLoop: for (const currentApiKey of apiKeys) {
-    let dynamicModelsFetched = false
+  if (apiKeys.length > 0) {
+    keyLoop: for (const currentApiKey of apiKeys) {
+      let dynamicModelsFetched = false
 
-    for (let i = 0; i < candidateModels.length; i++) {
-      const currentModel = candidateModels[i]
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${currentApiKey}`
+      for (let i = 0; i < candidateModels.length; i++) {
+        const currentModel = candidateModels[i]
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${currentApiKey}`
 
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            })
 
-          if (!response.ok) {
-            const errorText = await response.text()
-            console.warn(`Gemini API model "${currentModel}" key "...${currentApiKey.slice(-4)}" returned HTTP ${response.status} (attempt ${attempt}): ${errorText}`)
+            if (!response.ok) {
+              const errorText = await response.text()
+              console.warn(`Gemini API model "${currentModel}" key "...${currentApiKey.slice(-4)}" returned HTTP ${response.status} (attempt ${attempt}): ${errorText}`)
 
-            let errorMsg = `Gemini API error (${response.status}): ${errorText}`
-            if (response.status === 429) {
-              errorMsg = `Quota Depleted / Resource Exhausted (HTTP 429). Please generate a new free API key at https://aistudio.google.com/app/apikey (or separate multiple keys with commas in GEMINI_API_KEY).`
-            }
-            lastError = new Error(errorMsg)
+              let errorMsg = `Gemini API error (${response.status}): ${errorText}`
+              if (response.status === 429) {
+                errorMsg = `Quota Depleted / Resource Exhausted (HTTP 429). Please generate a new free API key at https://aistudio.google.com/app/apikey (or separate multiple keys with commas in GEMINI_API_KEY).`
+              }
+              lastError = new Error(errorMsg)
 
-            // If 429 (quota depleted), immediately skip to the next API key in apiKeys!
-            if (response.status === 429) {
-              continue keyLoop
-            }
+              // If 429 (quota depleted), skip directly to next key
+              if (response.status === 429) {
+                continue keyLoop
+              }
 
-            // If 404, dynamically query Google API for active model names supported by this API key
-            if (response.status === 404 && !dynamicModelsFetched) {
-              dynamicModelsFetched = true
-              const liveModels = await getAvailableGeminiModels(currentApiKey)
-              if (liveModels.length > 0) {
-                console.log(`[TALLY] Dynamically discovered active models for key: ${liveModels.join(', ')}`)
-                for (const lm of liveModels) {
-                  if (!candidateModels.includes(lm)) {
-                    candidateModels.push(lm)
+              // If 404, dynamically query Google API for active model names supported by this API key
+              if (response.status === 404 && !dynamicModelsFetched) {
+                dynamicModelsFetched = true
+                const liveModels = await getAvailableGeminiModels(currentApiKey)
+                if (liveModels.length > 0) {
+                  console.log(`[TALLY] Dynamically discovered active models for key: ${liveModels.join(', ')}`)
+                  for (const lm of liveModels) {
+                    if (!candidateModels.includes(lm)) {
+                      candidateModels.push(lm)
+                    }
                   }
                 }
               }
+
+              if ((response.status === 503 || response.status === 500) && attempt < 2) {
+                await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+                continue
+              }
+              break
             }
 
-            if ((response.status === 503 || response.status === 500) && attempt < 2) {
-              await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
-              continue
+            const data = await response.json()
+            const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
+            if (!textResponse) {
+              throw new Error('Gemini API returned an empty response.')
             }
-            break
+
+            const cleanJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+            const parsed = JSON.parse(cleanJson)
+
+            const roundNumber = Number(parsed.roundNumber || 1)
+            const entries = (parsed.teams || [])
+              .map((t) => ({
+                rank: Number(t.rank || 0),
+                slotCode: String(t.slotCode || t.slot || '').trim(),
+                teamQuery: String(t.slotCode || t.teamName || t.tag || '').trim(),
+                kills: Math.max(0, Number(t.kills || 0)),
+              }))
+              .filter((e) => e.rank > 0 && (e.slotCode || e.teamQuery))
+
+            return { roundNumber, entries }
+          } catch (err) {
+            console.warn(`Attempt ${attempt} for model "${currentModel}" failed: ${err.message}`)
+            lastError = err
           }
+        }
+      }
+    }
+  }
 
-          const data = await response.json()
-          const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
-          if (!textResponse) {
-            throw new Error('Gemini API returned an empty response.')
-          }
+  // Fallback to OpenAI GPT-4o Vision if OPENAI_API_KEY is configured
+  const openaiApiKey = process.env.OPENAI_API_KEY
+  if (openaiApiKey) {
+    try {
+      console.log('[TALLY] Gemini API keys unavailable/depleted. Falling back to OpenAI GPT-4o Vision API...')
+      const openaiPayload = {
+        model: 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert esports tournament scorekeeper. Extract endgame scores from the provided screenshot. Return a JSON object with: { "roundNumber": 1, "teams": [ { "rank": 1, "slotCode": "01A", "teamName": "NAME", "kills": 10 } ] }`,
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Extract score table from this endgame screenshot.' },
+              ...imageList.map((img) => ({
+                type: 'image_url',
+                image_url: { url: `data:${img.mimeType || 'image/png'};base64,${img.base64 || (img.buffer ? img.buffer.toString('base64') : '')}` },
+              })),
+            ],
+          },
+        ],
+      }
 
-          const cleanJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-          const parsed = JSON.parse(cleanJson)
+      const oaResp = await fetch('https://api.openai.com/v1.chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify(openaiPayload),
+      })
 
+      if (oaResp.ok) {
+        const oaData = await oaResp.json()
+        const textContent = oaData.choices?.[0]?.message?.content
+        if (textContent) {
+          const parsed = JSON.parse(textContent)
           const roundNumber = Number(parsed.roundNumber || 1)
           const entries = (parsed.teams || [])
             .map((t) => ({
@@ -223,13 +280,15 @@ Rules:
             .filter((e) => e.rank > 0 && (e.slotCode || e.teamQuery))
 
           return { roundNumber, entries }
-        } catch (err) {
-          console.warn(`Attempt ${attempt} for model "${currentModel}" failed: ${err.message}`)
-          lastError = err
         }
+      } else {
+        const oaErrText = await oaResp.text()
+        console.warn(`[TALLY] OpenAI Vision HTTP ${oaResp.status}: ${oaErrText}`)
       }
+    } catch (oaErr) {
+      console.warn('[TALLY] OpenAI Vision fallback error:', oaErr.message)
     }
   }
 
-  throw lastError || new Error('All Gemini Vision model endpoints failed after retries.')
+  throw lastError || new Error('All Vision model endpoints (Gemini / OpenAI) failed after retries.')
 }
