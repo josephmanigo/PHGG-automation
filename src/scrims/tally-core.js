@@ -58,13 +58,29 @@ function levenshteinDistance(a, b) {
   return row[b.length]
 }
 
-export function findMatchingTeam(query, registeredTeams = []) {
-  if (!query || registeredTeams.length === 0) return null
+export function findMatchingTeam(query, registeredTeams = [], explicitSlot = null) {
+  if (registeredTeams.length === 0) return null
+
+  // 1. Explicit slot parameter matching (e.g. '23W', 'W', '23-W')
+  if (explicitSlot) {
+    const expTarget = normalizeIdentifier(String(explicitSlot).trim())
+    if (expTarget) {
+      const explicitMatch = registeredTeams.find((t) => {
+        const sLetter = normalizeIdentifier(t.slotLetter)
+        const sCode = normalizeIdentifier(t.slotCode)
+        const sNumLetter = normalizeIdentifier(`${t.slotIndex + 1}${t.slotLetter}`)
+        return expTarget === sLetter || expTarget === sCode || expTarget === sNumLetter
+      })
+      if (explicitMatch) return explicitMatch
+    }
+  }
+
+  if (!query) return null
   const rawStr = String(query).trim()
   const target = normalizeIdentifier(rawStr)
   if (!target) return null
 
-  // 1. Exact match by slot letter (A, B, C...) or slot code (01A, 02B...) or slot alternate formats (1A, 1-A)
+  // 2. Exact match by slot letter (A, B, C... W) or slot code (01A, 23W...) or alternate formats (23W, 23-W)
   const slotMatch = registeredTeams.find((t) => {
     const sLetter = normalizeIdentifier(t.slotLetter)
     const sCode = normalizeIdentifier(t.slotCode)
@@ -73,7 +89,7 @@ export function findMatchingTeam(query, registeredTeams = []) {
   })
   if (slotMatch) return slotMatch
 
-  // 2. Numeric slot index match (e.g. query "1" or "01" maps to slotIndex 0)
+  // 3. Numeric slot index match (e.g. query "23" maps to slotIndex 22)
   const numMatch = target.match(/^(\d{1,2})$/)
   if (numMatch) {
     const slotIdx = Number(numMatch[1]) - 1
@@ -81,7 +97,7 @@ export function findMatchingTeam(query, registeredTeams = []) {
     if (teamBySlot) return teamBySlot
   }
 
-  // 3. Exact match by tag or name or combined tag+name
+  // 4. Exact match by tag or name or combined tag+name
   const exactMatch = registeredTeams.find(
     (t) =>
       normalizeIdentifier(t.tag) === target ||
@@ -90,7 +106,7 @@ export function findMatchingTeam(query, registeredTeams = []) {
   )
   if (exactMatch) return exactMatch
 
-  // 4. Partial match (starts with or includes tag or name)
+  // 5. Partial match (starts with or includes tag or name)
   const partialMatch = registeredTeams.find(
     (t) =>
       (normalizeIdentifier(t.tag) && (normalizeIdentifier(t.tag).startsWith(target) || target.startsWith(normalizeIdentifier(t.tag)))) ||
@@ -98,7 +114,7 @@ export function findMatchingTeam(query, registeredTeams = []) {
   )
   if (partialMatch) return partialMatch
 
-  // 5. Fuzzy Levenshtein match
+  // 6. Fuzzy Levenshtein match
   let bestTeam = null
   let bestDistance = Infinity
   for (const team of registeredTeams) {
@@ -136,8 +152,9 @@ export class TallyBoard {
       const rank = Number(entry.rank || 0)
       const kills = Math.max(0, Number(entry.kills || 0))
       const matched = findMatchingTeam(
-        entry.teamQuery || entry.tag || entry.name || entry.slotCode,
+        entry.slotCode || entry.teamQuery || entry.tag || entry.name,
         registeredTeams,
+        entry.slotCode,
       )
 
       const tag = matched ? matched.tag : (entry.tag || entry.teamQuery || 'UNK')
