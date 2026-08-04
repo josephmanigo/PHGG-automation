@@ -287,7 +287,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (action === 'confirm') {
-      await interaction.deferUpdate().catch(() => {})
+      try {
+        await interaction.deferUpdate()
+      } catch (deferErr) {
+        console.error('Failed to defer button update:', deferErr.message)
+        try {
+          await interaction.reply({ content: '⚠️ Button interaction expired. Please send the screenshot again.', ephemeral: true })
+        } catch { /* already replied */ }
+        return
+      }
+
       const reviewData = pendingReviews.get(reviewId)
       let roundNumInt = Number(roundStr || 1)
       let syncResult = null
@@ -295,6 +304,8 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
       if (reviewData) {
         roundNumInt = reviewData.roundNumber
+        console.log(`[TALLY] Confirm pressed for Round ${roundNumInt} with ${reviewData.entries.length} entries`)
+
         tallyBoard.setRound(
           reviewData.roundNumber,
           reviewData.entries,
@@ -308,10 +319,15 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             registeredTeams,
             actorUserId: interaction.user.id,
           })
+          console.log(`[TALLY] Sheet sync success:`, syncResult)
         } catch (err) {
-          console.error('Google Sheets sync error:', err)
+          console.error('[TALLY] Google Sheets sync error:', err)
           syncError = err.message
         }
+
+        pendingReviews.delete(reviewId)
+      } else {
+        console.warn(`[TALLY] No pending review found for reviewId=${reviewId}`)
       }
 
       const standingsText = tallyBoard.formatStandingsMarkdown(
@@ -320,15 +336,19 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       )
 
       const statusNotice = syncError
-        ? `⚠️ **Sheet Write Notice**: ${syncError}`
+        ? `⚠️ **Sheet Write Error**: ${syncError}`
         : (syncResult && syncResult.success
-            ? `📊 *Scores written & verified in Google Sheet! (Audit ID: \`${syncResult.auditId}\`)*`
+            ? `📊 *Scores written & verified in Google Sheet! (${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`
             : `📊 *Scores saved to leaderboard!*`)
 
-      await interaction.editReply({
-        content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED!**\n${statusNotice}\n\n${standingsText}`,
-        components: [],
-      }).catch(() => {})
+      try {
+        await interaction.editReply({
+          content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED!**\n${statusNotice}\n\n${standingsText}`,
+          components: [],
+        })
+      } catch (editErr) {
+        console.error('[TALLY] Failed to edit reply after confirm:', editErr.message)
+      }
       return
     }
 

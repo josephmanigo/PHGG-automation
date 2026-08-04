@@ -22,11 +22,19 @@ export function resolveGoogleCredentials() {
   }
 
   const cwd = process.cwd()
+  const thisDir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1'))
+  const projectRoot = path.resolve(thisDir, '..', '..')
+  const credFileName = 'phgg-504518-2bd2b9666931.json'
+
   const candidateFiles = [
     process.env.GOOGLE_APPLICATION_CREDENTIALS,
     process.env.GOOGLE_CREDENTIALS_PATH,
-    path.join(cwd, 'phgg-504518-2bd2b9666931.json'),
-    path.join(cwd, '..', 'phgg-504518-2bd2b9666931.json'),
+    path.join(cwd, credFileName),
+    path.join(cwd, '..', credFileName),
+    path.join(projectRoot, credFileName),
+    path.join(projectRoot, '..', credFileName),
+    path.join(thisDir, credFileName),
+    path.join(thisDir, '..', credFileName),
   ].filter(Boolean)
 
   for (const filePath of candidateFiles) {
@@ -35,6 +43,7 @@ export function resolveGoogleCredentials() {
         const fileContent = fs.readFileSync(filePath, 'utf8')
         const parsed = JSON.parse(fileContent)
         if (parsed.client_email && parsed.private_key) {
+          console.log(`[TALLY] Google credentials loaded from: ${filePath}`)
           return { email: parsed.client_email, privateKey: parsed.private_key }
         }
       }
@@ -43,6 +52,7 @@ export function resolveGoogleCredentials() {
     }
   }
 
+  console.warn(`[TALLY] Could not find Google credentials file (${credFileName}). Searched: ${candidateFiles.join(', ')}`)
   return { email: null, privateKey: null }
 }
 
@@ -249,13 +259,15 @@ export async function syncScoresToGoogleSheet({
       writePlanTargets.push({ cell: `J${row}`, role: 'team_name', value: officialTeamName })
     }
 
-    // 2. Find participating entry for this slot
-    const entry = entries.find((e) =>
-      e.slotCode === slotCode ||
-      e.slotCode === altSlotCode ||
-      e.slotCode === slotLetter ||
-      e.rank === i + 1,
-    )
+    // 2. Find participating entry for this slot (match by slot code ONLY, never by rank)
+    const entry = entries.find((e) => {
+      if (!e.slotCode || e.slotCode === '??') return false
+      const eCode = String(e.slotCode).toUpperCase().replace(/[\s\-]/g, '')
+      const matchSlotCode = slotCode.replace(/[\s\-]/g, '').toUpperCase()
+      const matchAltSlotCode = altSlotCode.toUpperCase()
+      const matchSlotLetter = slotLetter.toUpperCase()
+      return eCode === matchSlotCode || eCode === matchAltSlotCode || eCode === matchSlotLetter
+    })
 
     if (entry) {
       const placeVal = entry.rank
