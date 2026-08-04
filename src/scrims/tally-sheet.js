@@ -259,7 +259,7 @@ export async function syncScoresToGoogleSheet({
       return eCode === matchSlotCode || eCode === matchAltSlotCode || eCode === matchSlotLetter
     })
 
-    if (entry) {
+    if (entry && registered) {
       const placeVal = entry.rank
       const killsVal = Math.max(0, Number(entry.kills || 0))
 
@@ -275,6 +275,8 @@ export async function syncScoresToGoogleSheet({
       writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: placeVal })
       writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: killsVal })
       teamsTalliedCount++
+    } else if (entry && !registered) {
+      console.warn(`[TALLY] Skipped tallying entry for slot ${slotCode} (Team ${entry.teamQuery}) because they are NOT registered in the PC slots.`)
     }
   }
 

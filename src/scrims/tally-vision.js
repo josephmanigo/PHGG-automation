@@ -126,7 +126,10 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
   const candidateModels = [
     normalizedModel,
     'gemini-2.0-flash',
+    'gemini-1.5-flash-latest',
     'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-pro-latest'
   ]
     .filter(Boolean)
     .filter((m, i, arr) => arr.indexOf(m) === i)
