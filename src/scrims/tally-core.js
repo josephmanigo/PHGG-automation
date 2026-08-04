@@ -298,15 +298,15 @@ export class TallyBoard {
       `🏆 **${title}**`,
       `*Active Rounds: ${activeRounds.length > 0 ? activeRounds.join(', ') : 'None'} | Total Teams: ${standings.length}*`,
       '```',
-      `RK  SLOT  TEAM                       KILLS  WWCD  PTS`,
-      `───────────────────────────────────────────────────────`,
+      `RK  SLOT  TEAM                              KILLS  WWCD  PTS`,
+      `──────────────────────────────────────────────────────────────`,
     ]
 
     for (const team of standings) {
       const rk = String(team.overallRank).padStart(2, ' ')
       const slot = String(team.slotCode).padEnd(4, ' ')
       const displayName = team.tag ? `[${team.tag}] ${team.name}` : team.name
-      const nameCol = displayName.slice(0, 25).padEnd(25, ' ')
+      const nameCol = displayName.slice(0, 32).padEnd(32, ' ')
       const kills = String(team.totalKills).padStart(5, ' ')
       const wwcdCount = Object.values(team.rounds).filter((r) => r.rank === 1).length
       const wwcd = String(wwcdCount).padStart(4, ' ')

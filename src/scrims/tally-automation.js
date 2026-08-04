@@ -35,15 +35,15 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
     `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
     `*Please verify extracted team ranks and kills before confirming.*`,
     '```',
-    `RK  SLOT  TAG / TEAM                 KILLS  PTS`,
-    `───────────────────────────────────────────────`,
+    `RK  SLOT  TAG / TEAM                        KILLS  PTS`,
+    `───────────────────────────────────────────────────────`,
   ]
 
   entries.forEach((e, idx) => {
     const rk = String(e.rank || idx + 1).padStart(2, ' ')
     const slot = String(e.slotCode || '??').padEnd(4, ' ')
     const nameStr = e.tag ? `[${e.tag}] ${e.name}` : (e.teamQuery || 'Unknown')
-    const nameCol = nameStr.slice(0, 22).padEnd(22, ' ')
+    const nameCol = nameStr.slice(0, 32).padEnd(32, ' ')
     const kills = String(e.kills || 0).padStart(5, ' ')
     const pts = String(e.totalPoints || 0).padStart(4, ' ')
     lines.push(`${rk}  ${slot}  ${nameCol}  ${kills}  ${pts}`)
@@ -287,6 +287,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (action === 'confirm') {
+      await interaction.deferUpdate().catch(() => {})
       const reviewData = pendingReviews.get(reviewId)
       let syncResult = null
       if (reviewData) {
@@ -305,7 +306,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           })
         } catch (err) {
           console.error('Failed to sync scores to Google Sheet:', err)
-          await interaction.reply({ content: `❌ **Scoresheet Write / Verification Error**: ${err.message}`, ephemeral: true }).catch(() => {})
+          await interaction.followUp({ content: `❌ **Scoresheet Write / Verification Error**: ${err.message}`, ephemeral: true }).catch(() => {})
           return
         }
       }
@@ -319,7 +320,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         ? `\`\`\`\nROUND ${roundStr} TALLY CONFIRMED\n\nTeams tallied: ${syncResult.teamsTallied}\nMissing-slot markers added: ${syncResult.missingMarkersAdded}\nFormula cells changed: 0\nPenalty cells changed: 0\nVerification: ${syncResult.verificationStatus}\nWorksheet: ${syncResult.worksheetName}\nAudit ID: ${syncResult.auditId}\n\`\`\``
         : `✅ **ROUND ${roundStr} SCORES CONFIRMED & SAVED!**`
 
-      await interaction.update({
+      await interaction.editReply({
         content: `${successBlock}\n\n${standingsText}`,
         components: [],
       }).catch(() => {})
