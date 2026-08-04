@@ -157,15 +157,11 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
     // Process Screenshot or Text score in tally channel
     if (isTallyChannel) {
-      const hasImage = [...message.attachments.values()].some((att) =>
+      const imageAttachments = [...message.attachments.values()].filter((att) =>
         (att.contentType ?? '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(att.name),
       )
 
-      if (hasImage) {
-        const imageAttachment = [...message.attachments.values()].find((att) =>
-          (att.contentType ?? '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(att.name),
-        )
-
+      if (imageAttachments.length > 0) {
         try {
           const apiKey = globalConfig.geminiApiKey || process.env.GEMINI_API_KEY
           if (!apiKey) {
@@ -173,12 +169,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             return
           }
 
-          const response = await fetch(imageAttachment.url)
-          const buffer = Buffer.from(await response.arrayBuffer())
+          const downloadedImages = await Promise.all(
+            imageAttachments.map(async (att) => {
+              const resp = await fetch(att.url)
+              const buf = Buffer.from(await resp.arrayBuffer())
+              return { buffer: buf, mimeType: att.contentType || 'image/png' }
+            }),
+          )
 
           const parsed = await parseScreenshotWithGemini({
-            buffer,
-            mimeType: imageAttachment.contentType || 'image/png',
+            images: downloadedImages,
             apiKey,
           })
 

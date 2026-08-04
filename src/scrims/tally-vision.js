@@ -45,6 +45,7 @@ export function parseTextScoreInput(text) {
 export async function parseScreenshotWithGemini({
   buffer,
   mimeType = 'image/png',
+  images = [],
   apiKey = process.env.GEMINI_API_KEY,
   modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash',
 }) {
@@ -52,13 +53,29 @@ export async function parseScreenshotWithGemini({
     throw new Error('GEMINI_API_KEY is not configured.')
   }
 
-  const base64Data = buffer.toString('base64')
+  const imageList = images.length > 0
+    ? images
+    : (buffer ? [{ buffer, mimeType }] : [])
+
+  if (imageList.length === 0) {
+    throw new Error('No image buffers provided for Gemini Vision parsing.')
+  }
+
+  const imageParts = imageList.map((item) => ({
+    inlineData: {
+      mimeType: item.mimeType || 'image/png',
+      data: item.buffer.toString('base64'),
+    },
+  }))
+
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`
 
   const promptText = `
 You are an expert esports tournament scorekeeper.
-Analyze this endgame scoreboard screenshot (PUBG / PUBG Mobile / BGMI / Mobile Legends / Farlight).
-Extract all teams shown in the scoreboard ordered by rank (Rank 1, 2, 3, etc.).
+Analyze these endgame scoreboard screenshots (PUBG / PUBG Mobile / BGMI / Mobile Legends / Farlight / Bloodstrike).
+These screenshots may be multi-part images of the same endgame leaderboard (e.g. Image 1 shows ranks 1-10, Image 2 shows ranks 11-20, Image 3 shows ranks 21-25).
+
+Extract ALL teams shown across ALL provided screenshots, ordered by rank (Rank 1, 2, 3... up to 25).
 Extract:
 - roundNumber: integer (default to 1 if not explicitly shown as Round 1, Round 2, Round 3, Round 4, etc.)
 - teams: array of objects with:
@@ -81,12 +98,7 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
       {
         parts: [
           { text: promptText },
-          {
-            inlineData: {
-              mimeType,
-              data: base64Data,
-            },
-          },
+          ...imageParts,
         ],
       },
     ],
