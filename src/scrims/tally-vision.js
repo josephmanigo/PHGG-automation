@@ -42,6 +42,24 @@ export function parseTextScoreInput(text) {
   return { roundNumber, entries }
 }
 
+async function getAvailableGeminiModels(apiKey) {
+  try {
+    const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+    const res = await fetch(listUrl)
+    if (!res.ok) return []
+    const data = await res.json()
+    if (!Array.isArray(data.models)) return []
+
+    return data.models
+      .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map((m) => String(m.name || '').replace(/^models\//, ''))
+      .filter(Boolean)
+  } catch (err) {
+    console.warn('[TALLY] Failed to query dynamic model list:', err.message)
+    return []
+  }
+}
+
 export async function parseScreenshotWithGemini({
   buffer,
   mimeType = 'image/png',
@@ -58,59 +76,56 @@ export async function parseScreenshotWithGemini({
     : (buffer ? [{ buffer, mimeType }] : [])
 
   if (imageList.length === 0) {
-    throw new Error('No image buffers provided for Gemini Vision parsing.')
+    throw new Error('No image buffer or base64 images provided for Gemini vision parsing.')
   }
 
-  const imageParts = imageList.map((item) => ({
-    inlineData: {
-      mimeType: item.mimeType || 'image/png',
-      data: item.buffer.toString('base64'),
-    },
-  }))
+  const contentsParts = [
+    {
+      text: `You are an expert esports tournament scorekeeper. Extract the endgame score data from the provided Bloodstrike / Mobile / PC battle royale endgame screenshot.
 
-  const promptText = `
-You are an expert esports tournament scorekeeper analyzing Bloodstrike / PUBG / PC Battle Royale endgame scoreboard screenshots.
-These screenshots may be multi-part images of the same endgame leaderboard (e.g. Image 1 shows ranks 1-10, Image 2 shows ranks 11-20, Image 3 shows ranks 21-25).
-
-EXACT VISUAL MAPPING INSTRUCTIONS:
-1. TEAM PLACE (RANK): The placement number "1" to "25" at the start of each row.
-2. TEAM SLOT CODE / LETTER: The slot code or slot letter (e.g. "01A", "02B", "03C"... or "1-A", "2-B"... or single letters "A", "B", "C"..."Y").
-3. TEAM KILLS: The number displayed next to the SKULL ICON (💀) or under the KILLS/ELIMS header.
-   - DO NOT extract Total Score, Points, or Damage as Kills!
-   - Kills is strictly the number next to the SKULL ICON (💀) or ELIMS column.
-4. STRICT NO-DUPLICATE RULE:
-   - Extract each team/slot AT MOST ONCE.
-   - Once a team/slot or rank is extracted from an image, DO NOT extract it again if it appears in another overlapping photo.
-5. NO HALLUCINATIONS:
-   - Extract only the exact visible slot code/letter, placement rank, and skull icon kill count.
-
-Extract:
-- roundNumber: integer (default to 1 if not explicitly shown as Round 1, Round 2, Round 3, Round 4, etc.)
-- teams: array of objects with:
-  - rank: integer (1 to 25)
-  - slotCode: string (e.g. "01A", "02B", "1-A", "2-B", or "A", "B", "C")
-  - teamName: string (team tag or name if shown on screen)
-  - kills: integer (the number next to the SKULL ICON 💀 or KILLS column)
-
-Respond ONLY with valid JSON in this format, without markdown wrapping:
+Return ONLY a valid JSON object (no markdown, no explanatory text) with this exact schema:
 {
   "roundNumber": 1,
   "teams": [
-    { "rank": 1, "slotCode": "01A", "teamName": "NR NIGHTRAID", "kills": 12 },
-    { "rank": 2, "slotCode": "02B", "teamName": "SS RAMPAGE", "kills": 8 }
+    {
+      "rank": 1,
+      "slotCode": "01A",
+      "teamName": "TEAM NAME",
+      "kills": 12
+    }
   ]
 }
-`
+
+Rules:
+1. "roundNumber": Integer (default to 1 if not explicitly shown on the screenshot).
+2. "rank": Placement integer (1 for #1 / Victory, 2 for #2, etc.).
+3. "slotCode": Look for team slot codes if visible (e.g., "1-A", "01A", "2-B", "02B", "25-Y"). If not visible, return empty string "".
+4. "teamName": The team name or clan tag displayed.
+5. "kills": Total team kills integer.
+6. Extract ALL teams visible in the endgame results list.`,
+    },
+  ]
+
+  for (const img of imageList) {
+    let base64Data = img.base64
+    let imgMime = img.mimeType || mimeType
+
+    if (!base64Data && img.buffer) {
+      base64Data = img.buffer.toString('base64')
+    }
+
+    if (base64Data) {
+      contentsParts.push({
+        inlineData: {
+          mimeType: imgMime,
+          data: base64Data,
+        },
+      })
+    }
+  }
 
   const payload = {
-    contents: [
-      {
-        parts: [
-          { text: promptText },
-          ...imageParts,
-        ],
-      },
-    ],
+    contents: [{ parts: contentsParts }],
     generationConfig: {
       temperature: 0.1,
       responseMimeType: 'application/json',
@@ -121,19 +136,20 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
 
   const candidateModels = [
     requestedModel,
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
-    'gemini-1.5-flash-latest',
     'gemini-1.5-flash',
+    'gemini-1.5-flash-latest',
     'gemini-1.5-pro',
-    'gemini-1.5-pro-latest'
+    'gemini-1.5-pro-latest',
   ]
     .filter(Boolean)
     .filter((m, i, arr) => arr.indexOf(m) === i)
 
   let lastError = null
+  let dynamicModelsFetched = false
 
-  for (const currentModel of candidateModels) {
+  for (let i = 0; i < candidateModels.length; i++) {
+    const currentModel = candidateModels[i]
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`
@@ -149,7 +165,20 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
           console.warn(`Gemini API model "${currentModel}" returned HTTP ${response.status} (attempt ${attempt}): ${errorText}`)
           lastError = new Error(`Gemini API error (${response.status}): ${errorText}`)
 
-          // For temporary 503/429/500 errors, retry once; for 404/400, skip directly to next candidate model
+          // If 404, dynamically query Google API for active model names supported by this API key
+          if (response.status === 404 && !dynamicModelsFetched) {
+            dynamicModelsFetched = true
+            const liveModels = await getAvailableGeminiModels(apiKey)
+            if (liveModels.length > 0) {
+              console.log(`[TALLY] Dynamically discovered active models for this API key: ${liveModels.join(', ')}`)
+              for (const lm of liveModels) {
+                if (!candidateModels.includes(lm)) {
+                  candidateModels.push(lm)
+                }
+              }
+            }
+          }
+
           if ((response.status === 503 || response.status === 429 || response.status === 500) && attempt < 2) {
             await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
             continue
