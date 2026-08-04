@@ -275,8 +275,30 @@ export async function syncScoresToGoogleSheet({
       writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: placeVal })
       writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: killsVal })
       teamsTalliedCount++
-    } else if (entry && !registered) {
-      console.warn(`[TALLY] Skipped tallying entry for slot ${slotCode} (Team ${entry.teamQuery}) because they are NOT registered in the PC slots.`)
+    } else {
+      // Empty slot or team did not participate/score in this round:
+      // Write 'X' to PLACE, PLACEMENT POINTS, and KILLS to replace #N/A without touching total score/rank columns
+      updateData.push({
+        range: `'${sheetName}'!${roundCols.place}${row}`,
+        values: [['X']],
+      })
+      updateData.push({
+        range: `'${sheetName}'!${roundCols.placementPoints}${row}`,
+        values: [['X']],
+      })
+      updateData.push({
+        range: `'${sheetName}'!${roundCols.kills}${row}`,
+        values: [['X']],
+      })
+
+      writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: 'X' })
+      writePlanTargets.push({ cell: `${roundCols.placementPoints}${row}`, role: 'placementPoints', value: 'X' })
+      writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: 'X' })
+      missingMarkersAddedCount++
+
+      if (entry && !registered) {
+        console.warn(`[TALLY] Marked slot ${slotCode} as 'X' because team "${entry.teamQuery}" is NOT registered in team slots.`)
+      }
     }
   }
 
