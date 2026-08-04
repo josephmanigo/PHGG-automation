@@ -148,35 +148,42 @@ export class TallyBoard {
 
   setRound(roundNumber, entries, registeredTeams = [], sourceMessageId = null) {
     const roundNum = Number(roundNumber)
-    const rawProcessed = entries.map((entry) => {
-      const rank = Number(entry.rank || 0)
-      const kills = Math.max(0, Number(entry.kills || 0))
-      const matched = findMatchingTeam(
-        entry.slotCode || entry.teamQuery || entry.tag || entry.name,
-        registeredTeams,
-        entry.slotCode,
-      )
+    const rawProcessed = entries
+      .map((entry) => {
+        const rank = Number(entry.rank || 0)
+        const kills = Math.max(0, Number(entry.kills || 0))
+        const matched = findMatchingTeam(
+          entry.slotCode || entry.teamQuery || entry.tag || entry.name,
+          registeredTeams,
+          entry.slotCode,
+        )
 
-      const tag = matched ? matched.tag : (entry.tag || entry.teamQuery || 'UNK')
-      const name = matched ? matched.name : (entry.name || entry.teamQuery || 'Unknown Team')
-      const slotCode = matched ? matched.slotCode : (entry.slotCode || '??')
+        // Strict non-negotiable rule: Discard any entry not registered on the team slot board
+        if (registeredTeams.length > 0 && !matched) {
+          return null
+        }
 
-      const placementPts = getPlacementPoints(rank, this.placementPoints)
-      const totalPts = placementPts + kills
+        const tag = matched ? matched.tag : (entry.tag || entry.teamQuery || 'UNK')
+        const name = matched ? matched.name : (entry.name || entry.teamQuery || 'Unknown Team')
+        const slotCode = matched ? matched.slotCode : (entry.slotCode || '??')
 
-      return {
-        rank,
-        teamQuery: entry.teamQuery || `${tag} ${name}`,
-        slotCode,
-        tag,
-        name,
-        kills,
-        placementPoints: placementPts,
-        killPoints: kills,
-        totalPoints: totalPts,
-        sourceMessageId,
-      }
-    })
+        const placementPts = getPlacementPoints(rank, this.placementPoints)
+        const totalPts = placementPts + kills
+
+        return {
+          rank,
+          teamQuery: entry.teamQuery || `${tag} ${name}`,
+          slotCode,
+          tag,
+          name,
+          kills,
+          placementPoints: placementPts,
+          killPoints: kills,
+          totalPoints: totalPts,
+          sourceMessageId,
+        }
+      })
+      .filter(Boolean)
 
     // Deduplicate entries by matched slotCode / team identity
     const seenSlots = new Map()
