@@ -78,99 +78,13 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return
+    const hasRoundKeyword = /\b(?:ROUND|R)\s*#?(\d+)\b/i.test(content) || content.toLowerCase().startsWith('!tally') || content.toLowerCase().startsWith('!score')
     const isTallyChannel = Boolean(
       (tallyChannelId && message.channel.id === tallyChannelId) ||
       (globalConfig?.tallyChannelId && message.channel.id === globalConfig.tallyChannelId) ||
-      Object.values(scrimConfig.channels || {}).includes(message.channel.id)
+      Object.values(scrimConfig.channels || {}).includes(message.channel.id) ||
+      (hasRoundKeyword && message.attachments.size > 0)
     )
-    const isScrimChannel = isTallyChannel || Object.values(scrimConfig.channels || {}).includes(message.channel.id)
-    const content = message.content.trim()
-
-    // Handle Commands: !standings, !correctscore, !cleartally
-    if (content.toLowerCase().startsWith('!standings')) {
-      const parts = content.split(/\s+/)
-      const targetScope = parts[1]?.toUpperCase()
-      if (targetScope && targetScope !== scrimConfig.label.toUpperCase()) return
-      if (!targetScope && !isScrimChannel) return
-
-      const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
-      const standingsOutput = tallyBoard.formatStandingsMarkdown(
-        registeredTeams,
-        `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
-      )
-      await message.reply({ content: standingsOutput }).catch(() => {})
-      return
-    }
-
-    if (content.toLowerCase().startsWith('!refreshteams')) {
-      const parts = content.split(/\s+/)
-      const targetScope = parts[1]?.toUpperCase()
-      if (targetScope && targetScope !== scrimConfig.label.toUpperCase()) return
-      if (!targetScope && !isScrimChannel) return
-
-      const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
-      const teamListStr = registeredTeams.length > 0
-        ? registeredTeams.map((t) => `${t.slotCode}: ${t.tag ? `[${t.tag}] ` : ''}${t.name}`).join('\n')
-        : '*No teams registered on the board yet.*'
-
-      await message.reply(`🔄 **${scrimConfig.label} SCRIM REGISTERED TEAMS REFRESHED** (${registeredTeams.length} Teams):\n\`\`\`\n${teamListStr}\n\`\`\``).catch(() => {})
-      return
-    }
-
-    if (content.toLowerCase().startsWith('!cleartally')) {
-      const parts = content.split(/\s+/)
-      const targetScope = parts[1]?.toUpperCase()
-      if (targetScope && targetScope !== scrimConfig.label.toUpperCase()) return
-      if (!targetScope && !isScrimChannel) return
-
-      if (!canManageTally(message.member, allowedRoleIds)) {
-        await message.reply('❌ You do not have permission to clear score tallies.').catch(() => {})
-        return
-      }
-      tallyBoard.clear()
-      await message.reply(`✅ Score tally board cleared for ${scrimConfig.label} session.`).catch(() => {})
-      return
-    }
-
-    if (content.toLowerCase().startsWith('!correctscore')) {
-      if (!canManageTally(message.member, allowedRoleIds)) {
-        await message.reply('❌ You do not have permission to correct scores.').catch(() => {})
-        return
-      }
-      const match = /^!correctscore\s+(\d+)\s+(.+?)\s+(\d+)\s+(\d+)$/i.exec(content)
-      if (!match) {
-        await message.reply('❌ **Format**: `!correctscore <roundNumber> <teamTagOrSlot> <placement> <kills>`\nExample: `!correctscore 1 NR 1 12`').catch(() => {})
-        return
-      }
-
-      const [, roundNumStr, teamQuery, placementStr, killsStr] = match
-      const roundNum = Number(roundNumStr)
-      const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
-      const updated = tallyBoard.correctScore(
-        roundNum,
-        teamQuery,
-        Number(placementStr),
-        Number(killsStr),
-        registeredTeams,
-      )
-
-      // Sync pendingReviews entries if a review is active
-      for (const reviewData of pendingReviews.values()) {
-        if (reviewData.roundNumber === roundNum && reviewData.scrimLabel === scrimConfig.label) {
-          const idx = reviewData.entries.findIndex((e) => e.slotCode === updated.slotCode || e.tag === updated.tag)
-          if (idx !== -1) {
-            reviewData.entries[idx] = updated
-          } else {
-            reviewData.entries.push(updated)
-          }
-        }
-      }
-
-      await message.reply(
-        `✅ Updated Round ${roundNumStr} score for **${updated.tag} ${updated.name}** (Slot ${updated.slotCode}): Rank #${updated.rank}, ${updated.kills} Kills (${updated.totalPoints} PTS)`,
-      ).catch(() => {})
-      return
-    }
 
     // Process Screenshot or Text score in tally channel
     if (isTallyChannel) {
@@ -190,23 +104,30 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         return 1
       }
 
-      const imageAttachments = [...message.attachments.values()].filter((att) => {
+      const allAttachments = [...message.attachments.values()]
+      const imageAttachments = allAttachments.filter((att) => {
         const contentType = att.contentType ?? ''
         const name = att.name ?? ''
-        return contentType.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(name) || (att.width && att.height)
+        const isImageExt = /\.(png|jpe?g|webp|gif|bmp)$/i.test(name)
+        const isImageMime = contentType.startsWith('image/')
+        const hasDimensions = Boolean(att.width || att.height)
+        return isImageMime || isImageExt || hasDimensions || allAttachments.length > 0
       })
 
       if (imageAttachments.length > 0) {
         try {
           const apiKey = globalConfig.geminiApiKey || process.env.GEMINI_API_KEY
           if (!apiKey) {
-            await message.reply('⚠️ `GEMINI_API_KEY` is not set. Please use text format score input: `ROUND 1\n1. NR 12 KILLS` or configure `GEMINI_API_KEY`.').catch(() => {})
+            await message.reply('⚠️ `GEMINI_API_KEY` is not set. Please set your Gemini API key in environment variables.').catch(() => {})
             return
           }
+
+          console.log(`[TALLY] Processing ${imageAttachments.length} attached images for ${scrimConfig.label} scrim...`)
 
           const downloadedImages = await Promise.all(
             imageAttachments.map(async (att) => {
               const resp = await fetch(att.url)
+              if (!resp.ok) throw new Error(`Failed to download attachment ${att.name}: HTTP ${resp.status}`)
               const buf = Buffer.from(await resp.arrayBuffer())
               return { buffer: buf, mimeType: att.contentType || 'image/png' }
             }),
@@ -222,7 +143,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             ? userSpecifiedRound
             : (parsed.roundNumber && parsed.roundNumber !== 1 ? parsed.roundNumber : getNextRound())
 
-          console.log(`[TALLY] Screenshot parsed: Gemini says Round ${parsed.roundNumber}, user specified ${userSpecifiedRound ?? 'none'}, using Round ${effectiveRound}`)
+          console.log(`[TALLY] Screenshot parsed: Gemini returned ${parsed.entries.length} teams. Round: ${effectiveRound}`)
 
           const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
           const previewEntries = tallyBoard.setRound(
@@ -247,10 +168,12 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             scrimLabel: scrimConfig.label,
           })
 
-          await message.reply(reviewMsg).catch(() => {})
+          await message.reply(reviewMsg).catch((err) => {
+            console.error('[TALLY] Failed to send review reply:', err.message)
+          })
         } catch (err) {
-          console.error('Failed to parse screenshot with Gemini:', err)
-          await message.reply(`❌ Failed to parse screenshot: ${err.message}`).catch(() => {})
+          console.error('[TALLY] Failed to parse screenshot with Gemini:', err)
+          await message.reply(`❌ **Tally Error**: ${err.message}`).catch(() => {})
         }
         return
       }
