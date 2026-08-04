@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { createSign } from 'node:crypto'
 
 export const DEFAULT_SPREADSHEET_ID = '1ehK9etINJbB39pbEB9n9NI0Kt5sAKRA1IRX9L9JlRNk'
@@ -10,6 +12,39 @@ export const ROUND_COLUMNS = Object.freeze({
 })
 
 const auditStore = new Map()
+
+export function resolveGoogleCredentials() {
+  let email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SHEETS_PRIVATE_KEY
+
+  if (email && privateKey) {
+    return { email, privateKey }
+  }
+
+  const cwd = process.cwd()
+  const candidateFiles = [
+    process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    process.env.GOOGLE_CREDENTIALS_PATH,
+    path.join(cwd, 'phgg-504518-2bd2b9666931.json'),
+    path.join(cwd, '..', 'phgg-504518-2bd2b9666931.json'),
+  ].filter(Boolean)
+
+  for (const filePath of candidateFiles) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const fileContent = fs.readFileSync(filePath, 'utf8')
+        const parsed = JSON.parse(fileContent)
+        if (parsed.client_email && parsed.private_key) {
+          return { email: parsed.client_email, privateKey: parsed.private_key }
+        }
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  return { email: null, privateKey: null }
+}
 
 function base64url(input) {
   return Buffer.from(input)
@@ -94,8 +129,7 @@ export async function syncScoresToGoogleSheet({
   actorUserId = 'system',
 }) {
   const webhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL
-  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SHEETS_PRIVATE_KEY
+  const { email: clientEmail, privateKey } = resolveGoogleCredentials()
 
   const roundNum = Number(roundNumber)
   const roundCols = ROUND_COLUMNS[roundNum]
@@ -132,8 +166,7 @@ export async function syncScoresToGoogleSheet({
   }
 
   if (!clientEmail || !privateKey) {
-    console.warn('Google Sheets Service Account email/key or Webhook URL not provided. Skipping live spreadsheet write.')
-    return false
+    throw new Error('Google Sheets Service Account credentials (client_email / private_key) could not be loaded. Ensure phgg-504518-2bd2b9666931.json is present.')
   }
 
   const accessToken = await getGoogleAccessToken(clientEmail, privateKey)

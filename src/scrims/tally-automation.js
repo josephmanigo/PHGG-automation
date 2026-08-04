@@ -290,6 +290,9 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       await interaction.deferUpdate().catch(() => {})
       const reviewData = pendingReviews.get(reviewId)
       let roundNumInt = Number(roundStr || 1)
+      let syncResult = null
+      let syncError = null
+
       if (reviewData) {
         roundNumInt = reviewData.roundNumber
         tallyBoard.setRound(
@@ -298,15 +301,17 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           registeredTeams,
         )
 
-        // Execute live Google Sheets write in background with cached access token (instant Discord response!)
-        syncScoresToGoogleSheet({
-          roundNumber: reviewData.roundNumber,
-          entries: reviewData.entries,
-          registeredTeams,
-          actorUserId: interaction.user.id,
-        }).catch((err) => {
-          console.error('Background Google Sheets sync error:', err)
-        })
+        try {
+          syncResult = await syncScoresToGoogleSheet({
+            roundNumber: reviewData.roundNumber,
+            entries: reviewData.entries,
+            registeredTeams,
+            actorUserId: interaction.user.id,
+          })
+        } catch (err) {
+          console.error('Google Sheets sync error:', err)
+          syncError = err.message
+        }
       }
 
       const standingsText = tallyBoard.formatStandingsMarkdown(
@@ -314,8 +319,14 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
       )
 
+      const statusNotice = syncError
+        ? `⚠️ **Sheet Write Notice**: ${syncError}`
+        : (syncResult && syncResult.success
+            ? `📊 *Scores written & verified in Google Sheet! (Audit ID: \`${syncResult.auditId}\`)*`
+            : `📊 *Scores saved to leaderboard!*`)
+
       await interaction.editReply({
-        content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED & SAVED!**\n📊 *Scores synced to Google Sheet!*\n\n${standingsText}`,
+        content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED!**\n${statusNotice}\n\n${standingsText}`,
         components: [],
       }).catch(() => {})
       return
