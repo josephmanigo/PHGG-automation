@@ -140,14 +140,27 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       }
 
       const [, roundNumStr, teamQuery, placementStr, killsStr] = match
+      const roundNum = Number(roundNumStr)
       const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
       const updated = tallyBoard.correctScore(
-        Number(roundNumStr),
+        roundNum,
         teamQuery,
         Number(placementStr),
         Number(killsStr),
         registeredTeams,
       )
+
+      // Sync pendingReviews entries if a review is active
+      for (const reviewData of pendingReviews.values()) {
+        if (reviewData.roundNumber === roundNum && reviewData.scrimLabel === scrimConfig.label) {
+          const idx = reviewData.entries.findIndex((e) => e.slotCode === updated.slotCode || e.tag === updated.tag)
+          if (idx !== -1) {
+            reviewData.entries[idx] = updated
+          } else {
+            reviewData.entries.push(updated)
+          }
+        }
+      }
 
       await message.reply(
         `✅ Updated Round ${roundNumStr} score for **${updated.tag} ${updated.name}** (Slot ${updated.slotCode}): Rank #${updated.rank}, ${updated.kills} Kills (${updated.totalPoints} PTS)`,

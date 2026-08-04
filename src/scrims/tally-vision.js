@@ -71,18 +71,25 @@ export async function parseScreenshotWithGemini({
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`
 
   const promptText = `
-You are an expert esports tournament scorekeeper.
-Analyze these endgame scoreboard screenshots (PUBG / PUBG Mobile / BGMI / Mobile Legends / Farlight / Bloodstrike).
+You are an expert esports tournament scorekeeper for games like Bloodstrike, PUBG Mobile, BGMI, and PC Battle Royale tournaments.
+Analyze these endgame scoreboard screenshots.
 These screenshots may be multi-part images of the same endgame leaderboard (e.g. Image 1 shows ranks 1-10, Image 2 shows ranks 11-20, Image 3 shows ranks 21-25).
 
-Extract ALL teams shown across ALL provided screenshots, ordered by rank (Rank 1, 2, 3... up to 25).
-CRITICAL RULE: Each team appears ONLY ONCE on the official leaderboard. Do NOT extract or include duplicate entries for the same team or slot.
+CRITICAL INSTRUCTIONS FOR ACCURATE EXTRACTION:
+1. READ COLUMN HEADERS CAREFULLY:
+   - "RANK" / "#" / "POS": Placement position (1, 2, 3... 25).
+   - "TEAM" / "TAG" / "PLAYER": Team tag & name (e.g. "NR NIGHTRAID").
+   - "KILLS" / "ELIMS" / "ELIMINATIONS" / "K": Total kills scored by the team. This is usually a smaller number (e.g. 0 to 25).
+   - "POINTS" / "PTS" / "TOTAL SCORE" / "DAMAGE" / "DMG": DO NOT extract Total Score, Points, or Damage as Kills! Kills is strictly the Elimination/Kill count.
+2. DO NOT SKIP RANKS: Extract EVERY single visible team row in exact sequential order (Rank 1, 2, 3... 25).
+3. NO DUPLICATE TEAMS: Each team appears ONLY ONCE on the official leaderboard.
+
 Extract:
 - roundNumber: integer (default to 1 if not explicitly shown as Round 1, Round 2, Round 3, Round 4, etc.)
 - teams: array of objects with:
   - rank: integer (1, 2, 3...)
   - teamName: string (team tag and team name, e.g. "NR NIGHTRAID")
-  - kills: integer (total team kills or eliminations)
+  - kills: integer (elimination/kill count ONLY from the KILLS/ELIMS column)
 
 Respond ONLY with valid JSON in this format, without markdown wrapping:
 {
