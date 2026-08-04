@@ -113,11 +113,21 @@ export async function syncScoresToGoogleSheet({
 
   const updateData = []
 
-  // Update Header Date Cell (H11)
-  updateData.push({
-    range: `'${sheetName}'!H11`,
-    values: [[`PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • MOBILE/PC ${dateFormatted}   |   4 ROUNDS SLOT`]],
-  })
+  // Update Header Date Cells (H11, H12, H13)
+  updateData.push(
+    {
+      range: `'${sheetName}'!H11`,
+      values: [[`PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • MOBILE/PC ${dateFormatted}   |   4 ROUNDS SLOT`]],
+    },
+    {
+      range: `'${sheetName}'!H12`,
+      values: [[`PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • FINAL RESULT   |   ${dateFormatted}`]],
+    },
+    {
+      range: `'${sheetName}'!H13`,
+      values: [[`PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • MOST VALUABLE PLAYER  |   ${dateFormatted}`]],
+    },
+  )
 
   // Map registered teams to Column I (Row 14 to 38)
   for (let i = 0; i < 25; i++) {

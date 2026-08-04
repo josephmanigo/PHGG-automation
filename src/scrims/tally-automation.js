@@ -98,6 +98,21 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       return
     }
 
+    if (content.toLowerCase().startsWith('!refreshteams')) {
+      const parts = content.split(/\s+/)
+      const targetScope = parts[1]?.toUpperCase()
+      if (targetScope && targetScope !== scrimConfig.label.toUpperCase()) return
+      if (!targetScope && !isScrimChannel) return
+
+      const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
+      const teamListStr = registeredTeams.length > 0
+        ? registeredTeams.map((t) => `${t.slotCode}: ${t.tag ? `[${t.tag}] ` : ''}${t.name}`).join('\n')
+        : '*No teams registered on the board yet.*'
+
+      await message.reply(`🔄 **${scrimConfig.label} SCRIM REGISTERED TEAMS REFRESHED** (${registeredTeams.length} Teams):\n\`\`\`\n${teamListStr}\n\`\`\``).catch(() => {})
+      return
+    }
+
     if (content.toLowerCase().startsWith('!cleartally')) {
       const parts = content.split(/\s+/)
       const targetScope = parts[1]?.toUpperCase()
