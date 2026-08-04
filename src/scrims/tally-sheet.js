@@ -131,7 +131,7 @@ export function getAllAudits() {
 
 export async function syncScoresToGoogleSheet({
   spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID,
-  sheetName = process.env.GOOGLE_SHEETS_WORKSHEET_NAME || 'Copy of New',
+  sheetName = process.env.GOOGLE_SHEETS_WORKSHEET_NAME || '4 Rounds - 25 Teams (Do Not Edit)',
   roundNumber,
   entries,
   registeredTeams = [],
@@ -217,21 +217,11 @@ export async function syncScoresToGoogleSheet({
   let teamsTalliedCount = 0
   let missingMarkersAddedCount = 0
 
-  // Update Header Date Cells (H11, H12, H13)
-  updateData.push(
-    {
-      range: `'${sheetName}'!H11`,
-      values: [[`PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • MOBILE/PC ${dateFormatted}   |   4 ROUNDS SLOT`]],
-    },
-    {
-      range: `'${sheetName}'!H12`,
-      values: [[`PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • FINAL RESULT   |   ${dateFormatted}`]],
-    },
-    {
-      range: `'${sheetName}'!H13`,
-      values: [[`PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • MOST VALUABLE PLAYER  |   ${dateFormatted}`]],
-    },
-  )
+  // Update Header Date Cell (H5 contains the date/time label)
+  updateData.push({
+    range: `'${sheetName}'!H5`,
+    values: [[`${dateFormatted}   |   10:00 PM   |   4 ROUNDS`]],
+  })
 
   // Process rows 8 through 32
   for (let i = 0; i < totalSlots; i++) {
@@ -390,7 +380,7 @@ export async function syncScoresToGoogleSheet({
 
 export async function fetchLiveStandingsFromSheet({
   spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID,
-  sheetName = process.env.GOOGLE_SHEETS_WORKSHEET_NAME || 'Copy of New',
+  sheetName = process.env.GOOGLE_SHEETS_WORKSHEET_NAME || '4 Rounds - 25 Teams (Do Not Edit)',
 }) {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL
   const privateKey = process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SHEETS_PRIVATE_KEY
