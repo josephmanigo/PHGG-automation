@@ -78,6 +78,9 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return
+    if (message._tallyProcessing) return
+    message._tallyProcessing = true
+
     const content = (message.content || '').trim()
     const hasRoundKeyword = /\b(?:ROUND|R)\s*#?(\d+)\b/i.test(content) || content.toLowerCase().startsWith('!tally') || content.toLowerCase().startsWith('!score')
     const isTallyChannel = Boolean(
