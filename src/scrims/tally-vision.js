@@ -152,7 +152,7 @@ Rules:
 
   let lastError = null
 
-  for (const currentApiKey of apiKeys) {
+  keyLoop: for (const currentApiKey of apiKeys) {
     let dynamicModelsFetched = false
 
     for (let i = 0; i < candidateModels.length; i++) {
@@ -177,9 +177,9 @@ Rules:
             }
             lastError = new Error(errorMsg)
 
-            // If 429 (quota depleted), break to try next key in list if available
-            if (response.status === 429 && apiKeys.length > 1) {
-              break
+            // If 429 (quota depleted), immediately skip to the next API key in apiKeys!
+            if (response.status === 429) {
+              continue keyLoop
             }
 
             // If 404, dynamically query Google API for active model names supported by this API key
