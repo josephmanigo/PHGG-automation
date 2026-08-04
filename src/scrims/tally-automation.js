@@ -70,7 +70,7 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
 
 export function installTallyAutomation(client, scrimConfig, globalConfig, getScrimBoard) {
   const tallyBoard = getOrCreateTallyBoard(scrimConfig.label, scrimConfig.placementPoints)
-  const tallyChannelId = scrimConfig.channels?.tally || globalConfig.tallyChannelId || scrimConfig.channels?.registration
+  const tallyChannelId = scrimConfig.tallyChannelId || scrimConfig.channels?.tally
   const allowedRoleIds = new Set([
     ...(scrimConfig.scorekeeperRoleIds || []),
     ...(globalConfig.scorekeeperRoleIds || []),
@@ -78,11 +78,17 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return
-    const isTallyChannel = tallyChannelId && message.channel.id === tallyChannelId
+    const isTallyChannel = Boolean(tallyChannelId && message.channel.id === tallyChannelId)
+    const isScrimChannel = isTallyChannel || Object.values(scrimConfig.channels || {}).includes(message.channel.id)
     const content = message.content.trim()
 
     // Handle Commands: !standings, !correctscore, !cleartally
     if (content.toLowerCase().startsWith('!standings')) {
+      const parts = content.split(/\s+/)
+      const targetScope = parts[1]?.toUpperCase()
+      if (targetScope && targetScope !== scrimConfig.label.toUpperCase()) return
+      if (!targetScope && !isScrimChannel) return
+
       const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
       const standingsOutput = tallyBoard.formatStandingsMarkdown(
         registeredTeams,
@@ -93,12 +99,17 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (content.toLowerCase().startsWith('!cleartally')) {
+      const parts = content.split(/\s+/)
+      const targetScope = parts[1]?.toUpperCase()
+      if (targetScope && targetScope !== scrimConfig.label.toUpperCase()) return
+      if (!targetScope && !isScrimChannel) return
+
       if (!canManageTally(message.member, allowedRoleIds)) {
         await message.reply('❌ You do not have permission to clear score tallies.').catch(() => {})
         return
       }
       tallyBoard.clear()
-      await message.reply('✅ Score tally board cleared for current session.').catch(() => {})
+      await message.reply(`✅ Score tally board cleared for ${scrimConfig.label} session.`).catch(() => {})
       return
     }
 

@@ -183,7 +183,10 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     label: scope,
     enabled: suppliedChannels.length === 3,
     channels,
-    tallyChannelId: read('TALLY_CHANNEL_ID', defaults.channels?.tally || value('GAME_RESULTS_CHANNEL_ID', DEFAULT_TALLY_CHANNEL_ID)),
+    tallyChannelId: read(
+      'TALLY_CHANNEL_ID',
+      defaults.channels?.tally || (scope === 'PC' ? value('GAME_RESULTS_CHANNEL_ID', DEFAULT_TALLY_CHANNEL_ID) : ''),
+    ),
     scorekeeperRoleIds: idSet(
       read('SCOREKEEPER_ROLE_IDS', value('GAME_RESULTS_SCOREKEEPER_ROLE_IDS', '')),
     ),
