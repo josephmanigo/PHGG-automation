@@ -513,8 +513,9 @@ export async function clearGoogleSheetScores({
 
   try {
     const accessToken = await getGoogleAccessToken(clientEmail, privateKey)
-    const batchClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`
 
+    // 1. Clear cell values
+    const batchClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`
     const response = await fetch(batchClearUrl, {
       method: 'POST',
       headers: {
@@ -523,21 +524,57 @@ export async function clearGoogleSheetScores({
       },
       body: JSON.stringify({
         ranges: [
-          `'${sheetName}'!H3`,       // Device title (BLOODSTRIKE SCRIMMAGE • PC)
-          `'${sheetName}'!H5`,       // Date/time header
-          `'${sheetName}'!J8:J32`,   // Team names
-          `'${sheetName}'!K8:V32`,   // All round scores (Place, Pts, Kills × 4 rounds)
+          `'${sheetName}'!H3`,
+          `'${sheetName}'!H5`,
+          `'${sheetName}'!J8:J32`,
+          `'${sheetName}'!K8:V32`,
         ],
       }),
     })
 
-    if (response.ok) {
-      console.log(`[TALLY] Successfully cleared teams, date, and scores on '${sheetName}'`)
-      return true
+    if (!response.ok) {
+      const errText = await response.text()
+      console.warn('[TALLY] Failed to clear Google Sheet:', errText)
+      return false
     }
-    const errText = await response.text()
-    console.warn('[TALLY] Failed to clear Google Sheet:', errText)
-    return false
+
+    // 2. Remove all conditional formatting rules (yellow highlight)
+    try {
+      const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties,sheets.conditionalFormats`
+      const metaResp = await fetch(metaUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (metaResp.ok) {
+        const metaData = await metaResp.json()
+        const targetSheet = (metaData.sheets || []).find(
+          (s) => s.properties?.title === sheetName,
+        ) || metaData.sheets?.[0]
+
+        if (targetSheet?.conditionalFormats?.length > 0) {
+          const deleteRequests = targetSheet.conditionalFormats.map((_, idx) => ({
+            deleteConditionalFormatRule: {
+              sheetId: targetSheet.properties.sheetId,
+              index: 0,
+            },
+          }))
+
+          await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ requests: deleteRequests }),
+          })
+          console.log(`[TALLY] Removed ${targetSheet.conditionalFormats.length} conditional format rule(s)`)
+        }
+      }
+    } catch (fmtErr) {
+      console.warn('[TALLY] Could not remove conditional formatting:', fmtErr.message)
+    }
+
+    console.log(`[TALLY] Successfully cleared teams, date, scores, and highlights on '${sheetName}'`)
+    return true
   } catch (err) {
     console.warn('[TALLY] Exception clearing Google Sheet:', err.message)
     return false
