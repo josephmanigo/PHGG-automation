@@ -287,28 +287,25 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (action === 'confirm') {
-      await interaction.deferUpdate().catch(() => {})
       const reviewData = pendingReviews.get(reviewId)
-      let syncResult = null
+      let roundNumInt = Number(roundStr || 1)
       if (reviewData) {
+        roundNumInt = reviewData.roundNumber
         tallyBoard.setRound(
           reviewData.roundNumber,
           reviewData.entries,
           registeredTeams,
         )
 
-        try {
-          syncResult = await syncScoresToGoogleSheet({
-            roundNumber: reviewData.roundNumber,
-            entries: reviewData.entries,
-            registeredTeams,
-            actorUserId: interaction.user.id,
-          })
-        } catch (err) {
-          console.error('Failed to sync scores to Google Sheet:', err)
-          await interaction.followUp({ content: `❌ **Scoresheet Write / Verification Error**: ${err.message}`, ephemeral: true }).catch(() => {})
-          return
-        }
+        // Execute live Google Sheets write in background with cached access token (instant Discord response!)
+        syncScoresToGoogleSheet({
+          roundNumber: reviewData.roundNumber,
+          entries: reviewData.entries,
+          registeredTeams,
+          actorUserId: interaction.user.id,
+        }).catch((err) => {
+          console.error('Background Google Sheets sync error:', err)
+        })
       }
 
       const standingsText = tallyBoard.formatStandingsMarkdown(
@@ -316,12 +313,8 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
       )
 
-      const successBlock = syncResult && syncResult.success
-        ? `\`\`\`\nROUND ${roundStr} TALLY CONFIRMED\n\nTeams tallied: ${syncResult.teamsTallied}\nMissing-slot markers added: ${syncResult.missingMarkersAdded}\nFormula cells changed: 0\nPenalty cells changed: 0\nVerification: ${syncResult.verificationStatus}\nWorksheet: ${syncResult.worksheetName}\nAudit ID: ${syncResult.auditId}\n\`\`\``
-        : `✅ **ROUND ${roundStr} SCORES CONFIRMED & SAVED!**`
-
-      await interaction.editReply({
-        content: `${successBlock}\n\n${standingsText}`,
+      await interaction.update({
+        content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED & SAVED!**\n📊 *Scores synced to Google Sheet!*\n\n${standingsText}`,
         components: [],
       }).catch(() => {})
       return

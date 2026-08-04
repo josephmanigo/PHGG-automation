@@ -19,9 +19,16 @@ function base64url(input) {
     .replace(/\//g, '_')
 }
 
+let cachedToken = null
+let tokenExpiry = 0
+
 export async function getGoogleAccessToken(email, privateKey) {
-  const cleanPrivateKey = privateKey.replace(/\\n/g, '\n')
   const now = Math.floor(Date.now() / 1000)
+  if (cachedToken && now < tokenExpiry - 60) {
+    return cachedToken
+  }
+
+  const cleanPrivateKey = privateKey.replace(/\\n/g, '\n')
 
   const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
   const claim = base64url(
@@ -55,7 +62,9 @@ export async function getGoogleAccessToken(email, privateKey) {
   }
 
   const data = await response.json()
-  return data.access_token
+  cachedToken = data.access_token
+  tokenExpiry = now + 3500
+  return cachedToken
 }
 
 function sanitizeSheetText(text) {
