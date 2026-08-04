@@ -76,6 +76,7 @@ Analyze these endgame scoreboard screenshots (PUBG / PUBG Mobile / BGMI / Mobile
 These screenshots may be multi-part images of the same endgame leaderboard (e.g. Image 1 shows ranks 1-10, Image 2 shows ranks 11-20, Image 3 shows ranks 21-25).
 
 Extract ALL teams shown across ALL provided screenshots, ordered by rank (Rank 1, 2, 3... up to 25).
+CRITICAL RULE: Each team appears ONLY ONCE on the official leaderboard. Do NOT extract or include duplicate entries for the same team or slot.
 Extract:
 - roundNumber: integer (default to 1 if not explicitly shown as Round 1, Round 2, Round 3, Round 4, etc.)
 - teams: array of objects with:

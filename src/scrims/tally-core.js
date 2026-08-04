@@ -132,7 +132,7 @@ export class TallyBoard {
 
   setRound(roundNumber, entries, registeredTeams = [], sourceMessageId = null) {
     const roundNum = Number(roundNumber)
-    const processedEntries = entries.map((entry) => {
+    const rawProcessed = entries.map((entry) => {
       const rank = Number(entry.rank || 0)
       const kills = Math.max(0, Number(entry.kills || 0))
       const matched = findMatchingTeam(
@@ -161,8 +161,29 @@ export class TallyBoard {
       }
     })
 
-    this.rounds.set(roundNum, processedEntries)
-    return processedEntries
+    // Deduplicate entries by matched slotCode / team identity
+    const seenSlots = new Map()
+    const seenRanks = new Set()
+    const deduplicated = []
+
+    // Sort by rank ascending first so best placement comes first
+    rawProcessed.sort((a, b) => a.rank - b.rank)
+
+    for (const item of rawProcessed) {
+      const key = item.slotCode !== '??' ? item.slotCode : `${item.tag}:${item.name}`
+      
+      // If we already saw this slot/team, keep the one with better (lower) rank
+      if (seenSlots.has(key)) {
+        continue
+      }
+
+      // If another team was already assigned this exact rank, re-assign rank if unmapped
+      seenSlots.set(key, item)
+      deduplicated.push(item)
+    }
+
+    this.rounds.set(roundNum, deduplicated)
+    return deduplicated
   }
 
   correctScore(roundNumber, teamQuery, newPlacement, newKills, registeredTeams = []) {
