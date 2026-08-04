@@ -513,22 +513,33 @@ export async function clearGoogleSheetScores({
 
   try {
     const accessToken = await getGoogleAccessToken(clientEmail, privateKey)
-    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(sheetName)}'!K8:V32:clear`
+    const batchClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`
 
-    const response = await fetch(clearUrl, {
+    const response = await fetch(batchClearUrl, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ranges: [
+          `'${sheetName}'!H3`,       // Device title (BLOODSTRIKE SCRIMMAGE • PC)
+          `'${sheetName}'!H5`,       // Date/time header
+          `'${sheetName}'!J8:J32`,   // Team names
+          `'${sheetName}'!K8:V32`,   // All round scores (Place, Pts, Kills × 4 rounds)
+        ],
+      }),
     })
 
     if (response.ok) {
-      console.log(`[TALLY] Successfully cleared score range K8:V32 on '${sheetName}'`)
+      console.log(`[TALLY] Successfully cleared teams, date, and scores on '${sheetName}'`)
       return true
     }
     const errText = await response.text()
-    console.warn('[TALLY] Failed to clear Google Sheet scores:', errText)
+    console.warn('[TALLY] Failed to clear Google Sheet:', errText)
     return false
   } catch (err) {
-    console.warn('[TALLY] Exception clearing Google Sheet scores:', err.message)
+    console.warn('[TALLY] Exception clearing Google Sheet:', err.message)
     return false
   }
 }
