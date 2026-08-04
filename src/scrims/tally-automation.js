@@ -371,7 +371,8 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
   // Handle Discord Button & Slash Command Interactions
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (interaction.isChatInputCommand()) {
+    // Only the PC listener handles slash commands (they are registered once by PC)
+    if (interaction.isChatInputCommand() && scrimConfig.label.toUpperCase() === 'PC') {
       const cmdName = interaction.commandName
       if (cmdName === 'clear' || cmdName === 'clearsheet') {
         if (!canManageTally(interaction.member, allowedRoleIds)) {
@@ -381,14 +382,14 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         await interaction.deferReply().catch(() => {})
         tallyBoard.clear()
         await clearGoogleSheetScores()
-        await interaction.editReply(`✅ Score tally board and Google Sheet reset to blank for **${scrimConfig.label} SCRIM**.`).catch(() => {})
+        await interaction.editReply(`✅ Score tally board and Google Sheet reset to blank for **PC SCRIM**.`).catch(() => {})
         return
       }
       if (cmdName === 'standings') {
         const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
         const standingsText = tallyBoard.formatStandingsMarkdown(
           registeredTeams,
-          `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
+          `${globalConfig.brandName} PC SCRIM STANDINGS`,
         )
         await interaction.reply({ content: standingsText }).catch(() => {})
         return
@@ -398,7 +399,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         const teamListStr = registeredTeams.length > 0
           ? registeredTeams.map((t) => `${t.slotCode}: ${t.tag ? `[${t.tag}] ` : ''}${t.name}`).join('\n')
           : '*No teams registered on the board yet.*'
-        await interaction.reply({ content: `🔄 **${scrimConfig.label} SCRIM REGISTERED TEAMS REFRESHED** (${registeredTeams.length} Teams):\n\`\`\`\n${teamListStr}\n\`\`\`` }).catch(() => {})
+        await interaction.reply({ content: `🔄 **PC SCRIM REGISTERED TEAMS REFRESHED** (${registeredTeams.length} Teams):\n\`\`\`\n${teamListStr}\n\`\`\`` }).catch(() => {})
         return
       }
     }

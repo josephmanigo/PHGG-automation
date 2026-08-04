@@ -391,7 +391,7 @@ export async function syncScoresToGoogleSheet({
                       values: [
                         {
                           userEnteredValue:
-                            '=OR($AD8=1,$AD8=2,$AD8=3,$AC8=1,$AC8=2,$AC8=3,$AB8=1,$AB8=2,$AB8=3)',
+                            '=AND(OR($AD8=1,$AD8=2,$AD8=3,$AC8=1,$AC8=2,$AC8=3,$AB8=1,$AB8=2,$AB8=3),ISNUMBER($K8))',
                         },
                       ],
                     },
