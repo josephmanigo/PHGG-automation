@@ -78,10 +78,40 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return
+    const content = (message.content || '').trim()
+    const upperContent = content.toUpperCase()
+    const currentLabel = scrimConfig.label.toUpperCase()
+
+    // 1. Text Scope Check: "ROUND 1 PC", "!tally PC", "ROUND 1 MOBILE"
+    const specifiesPC = /\bPC\b/.test(upperContent)
+    const specifiesMobile = /\bMOBILE\b/.test(upperContent)
+    if (specifiesPC && currentLabel !== 'PC') return
+    if (specifiesMobile && currentLabel !== 'MOBILE') return
+
+    // 2. Exclusive Channel Scope Check
+    const isThisScrimChannel = Object.values(scrimConfig.channels || {}).includes(message.channel.id) ||
+      (scrimConfig.tallyChannelId && message.channel.id === scrimConfig.tallyChannelId)
+
+    const allScrims = globalConfig.scrims || []
+    const isOtherScrimExclusiveChannel = allScrims.some((other) => {
+      if (other.label.toUpperCase() === currentLabel) return false
+      return Object.values(other.channels || {}).includes(message.channel.id) ||
+        (other.tallyChannelId && message.channel.id === other.tallyChannelId)
+    })
+
+    if (isOtherScrimExclusiveChannel && !isThisScrimChannel) return
+
+    // 3. Shared Tally Channel: if user didn't specify PC or MOBILE in text,
+    //    and this channel is NOT exclusive to this scrim, only let PC handle it
+    //    (PC is the default scrim scope for shared tally channels).
+    if (!specifiesPC && !specifiesMobile && !isThisScrimChannel) {
+      // In a shared channel, only the PC listener processes by default
+      if (currentLabel !== 'PC') return
+    }
+
     if (message._tallyProcessing) return
     message._tallyProcessing = true
 
-    const content = (message.content || '').trim()
     const hasRoundKeyword = /\b(?:ROUND|R)\s*#?(\d+)\b/i.test(content) || content.toLowerCase().startsWith('!tally') || content.toLowerCase().startsWith('!score')
     const isTallyChannel = Boolean(
       (tallyChannelId && message.channel.id === tallyChannelId) ||
