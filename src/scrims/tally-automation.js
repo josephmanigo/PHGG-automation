@@ -70,7 +70,7 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
 
 export function installTallyAutomation(client, scrimConfig, globalConfig, getScrimBoard) {
   const tallyBoard = getOrCreateTallyBoard(scrimConfig.label, scrimConfig.placementPoints)
-  const tallyChannelId = scrimConfig.tallyChannelId || scrimConfig.channels?.tally
+  const tallyChannelId = scrimConfig.tallyChannelId || scrimConfig.channels?.tally || globalConfig?.tallyChannelId
   const allowedRoleIds = new Set([
     ...(scrimConfig.scorekeeperRoleIds || []),
     ...(globalConfig.scorekeeperRoleIds || []),
@@ -78,7 +78,11 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return
-    const isTallyChannel = Boolean(tallyChannelId && message.channel.id === tallyChannelId)
+    const isTallyChannel = Boolean(
+      (tallyChannelId && message.channel.id === tallyChannelId) ||
+      (globalConfig?.tallyChannelId && message.channel.id === globalConfig.tallyChannelId) ||
+      Object.values(scrimConfig.channels || {}).includes(message.channel.id)
+    )
     const isScrimChannel = isTallyChannel || Object.values(scrimConfig.channels || {}).includes(message.channel.id)
     const content = message.content.trim()
 
@@ -186,9 +190,11 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         return 1
       }
 
-      const imageAttachments = [...message.attachments.values()].filter((att) =>
-        (att.contentType ?? '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(att.name),
-      )
+      const imageAttachments = [...message.attachments.values()].filter((att) => {
+        const contentType = att.contentType ?? ''
+        const name = att.name ?? ''
+        return contentType.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(name) || (att.width && att.height)
+      })
 
       if (imageAttachments.length > 0) {
         try {
