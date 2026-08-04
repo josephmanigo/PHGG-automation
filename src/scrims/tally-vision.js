@@ -47,7 +47,7 @@ export async function parseScreenshotWithGemini({
   mimeType = 'image/png',
   images = [],
   apiKey = process.env.GEMINI_API_KEY,
-  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.0-flash',
+  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-3.5-flash',
 }) {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured.')
@@ -119,16 +119,17 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
 
   const candidateModels = [
     modelName,
+    'gemini-3.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
     'gemini-1.5-pro',
   ]
-    .filter((m) => Boolean(m) && !m.includes('2.5') && !m.includes('3.5'))
+    .filter((m) => Boolean(m))
     .filter((m, i, arr) => arr.indexOf(m) === i)
 
   // Ensure primary model is first
   if (candidateModels.length === 0) {
-    candidateModels.push('gemini-2.0-flash', 'gemini-1.5-flash')
+    candidateModels.push('gemini-3.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash')
   }
 
   let lastError = null
