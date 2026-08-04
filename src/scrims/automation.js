@@ -414,13 +414,13 @@ async function findLiveBoard(
 }
 
 export function installScrimAutomation(client, config, botConfig) {
-  if (!config.enabled) {
-    console.log(`${config.label} scrim automation is disabled (three channels are not configured).`)
-    return
-  }
-
   const board = new ScrimBoard(config.maxSlots, config.fixedTeams)
   installTallyAutomation(client, config, botConfig, () => board)
+
+  if (!config.enabled) {
+    console.log(`${config.label} scrim slot registration automation is disabled (three channels are not configured), but score tally automation is ACTIVE.`)
+    return
+  }
   const state = {
     registrationOpen: false,
     cycleStartedAt: null,
