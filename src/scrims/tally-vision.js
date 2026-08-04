@@ -47,7 +47,7 @@ export async function parseScreenshotWithGemini({
   mimeType = 'image/png',
   images = [],
   apiKey = process.env.GEMINI_API_KEY,
-  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-3.5-flash',
+  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.0-flash',
 }) {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured.')
@@ -117,20 +117,19 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
     },
   }
 
+  // Normalize any non-standard model aliases to active Google Gemini Flash models
+  const requestedModel = String(modelName || '').trim()
+  const normalizedModel = /3\.5|2\.5/i.test(requestedModel)
+    ? 'gemini-2.0-flash'
+    : requestedModel
+
   const candidateModels = [
-    modelName,
-    'gemini-3.5-flash',
+    normalizedModel,
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-1.5-pro',
   ]
-    .filter((m) => Boolean(m))
+    .filter(Boolean)
     .filter((m, i, arr) => arr.indexOf(m) === i)
-
-  // Ensure primary model is first
-  if (candidateModels.length === 0) {
-    candidateModels.push('gemini-3.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash')
-  }
 
   let lastError = null
 
