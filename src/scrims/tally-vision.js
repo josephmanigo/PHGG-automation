@@ -47,7 +47,7 @@ export async function parseScreenshotWithGemini({
   mimeType = 'image/png',
   images = [],
   apiKey = process.env.GEMINI_API_KEY,
-  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-3.5-flash',
+  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.0-flash',
 }) {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured.')
@@ -67,8 +67,6 @@ export async function parseScreenshotWithGemini({
       data: item.buffer.toString('base64'),
     },
   }))
-
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`
 
   const promptText = `
 You are an expert esports tournament scorekeeper analyzing Bloodstrike / PUBG / PC Battle Royale endgame scoreboard screenshots.
@@ -121,11 +119,17 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
 
   const candidateModels = [
     modelName,
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-  ].filter((m, i, arr) => arr.indexOf(m) === i)
+    'gemini-1.5-pro',
+  ]
+    .filter((m) => Boolean(m) && !m.includes('2.5') && !m.includes('3.5'))
+    .filter((m, i, arr) => arr.indexOf(m) === i)
+
+  // Ensure primary model is first
+  if (candidateModels.length === 0) {
+    candidateModels.push('gemini-2.0-flash', 'gemini-1.5-flash')
+  }
 
   let lastError = null
 
@@ -142,13 +146,15 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
 
         if (!response.ok) {
           const errorText = await response.text()
-          if (response.status === 503 || response.status === 429 || response.status === 500) {
-            console.warn(`Gemini API ${currentModel} returned ${response.status} (attempt ${attempt}): ${errorText}`)
-            lastError = new Error(`Gemini API error (${response.status}): ${errorText}`)
+          console.warn(`Gemini API model "${currentModel}" returned HTTP ${response.status} (attempt ${attempt}): ${errorText}`)
+          lastError = new Error(`Gemini API error (${response.status}): ${errorText}`)
+
+          // For temporary 503/429/500 errors, retry once; for 404/400, skip directly to next candidate model
+          if ((response.status === 503 || response.status === 429 || response.status === 500) && attempt < 2) {
             await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
             continue
           }
-          throw new Error(`Gemini API error (${response.status}): ${errorText}`)
+          break
         }
 
         const data = await response.json()
@@ -172,10 +178,8 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
 
         return { roundNumber, entries }
       } catch (err) {
+        console.warn(`Attempt ${attempt} for model "${currentModel}" failed: ${err.message}`)
         lastError = err
-        if (!err.message.includes('503') && !err.message.includes('429') && !err.message.includes('500')) {
-          throw err
-        }
       }
     }
   }
