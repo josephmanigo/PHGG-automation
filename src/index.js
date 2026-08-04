@@ -17,6 +17,7 @@ const client = new Client({
   ],
   partials: [Partials.Channel, Partials.Message],
 })
+client.rest.setToken(config.token)
 
 installNicknameAutomation(client, config.nickname)
 installRulesAutomation(client, config.rules, config)
