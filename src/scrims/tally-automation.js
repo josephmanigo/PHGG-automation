@@ -170,6 +170,22 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
     // Process Screenshot or Text score in tally channel
     if (isTallyChannel) {
+      // Detect round number from user message text (e.g. "ROUND 2", "R3", "ROUND4")
+      const roundOverrideMatch = content.match(/\b(?:ROUND|R)\s*#?(\d+)\b/i)
+      const userSpecifiedRound = roundOverrideMatch ? Number(roundOverrideMatch[1]) : null
+
+      // Auto-detect next round: find the next unfilled round (1-4)
+      function getNextRound() {
+        if (userSpecifiedRound && userSpecifiedRound >= 1 && userSpecifiedRound <= 4) {
+          return userSpecifiedRound
+        }
+        for (let r = 1; r <= 4; r++) {
+          if (tallyBoard.getRound(r).length === 0) return r
+        }
+        // All 4 rounds filled, default to 1 (overwrite)
+        return 1
+      }
+
       const imageAttachments = [...message.attachments.values()].filter((att) =>
         (att.contentType ?? '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(att.name),
       )
@@ -195,9 +211,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             apiKey,
           })
 
+          // Use user-specified round, auto-detected next round, or Gemini's parsed round
+          const effectiveRound = userSpecifiedRound
+            ? userSpecifiedRound
+            : (parsed.roundNumber && parsed.roundNumber !== 1 ? parsed.roundNumber : getNextRound())
+
+          console.log(`[TALLY] Screenshot parsed: Gemini says Round ${parsed.roundNumber}, user specified ${userSpecifiedRound ?? 'none'}, using Round ${effectiveRound}`)
+
           const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
           const previewEntries = tallyBoard.setRound(
-            parsed.roundNumber,
+            effectiveRound,
             parsed.entries,
             registeredTeams,
             message.id,
@@ -205,13 +228,13 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
           const reviewId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
           pendingReviews.set(reviewId, {
-            roundNumber: parsed.roundNumber,
+            roundNumber: effectiveRound,
             entries: previewEntries,
             scrimLabel: scrimConfig.label,
           })
 
           const reviewMsg = buildReviewMessage({
-            roundNumber: parsed.roundNumber,
+            roundNumber: effectiveRound,
             entries: previewEntries,
             registeredTeams,
             reviewId,
@@ -230,9 +253,14 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       if (content.toLowerCase().startsWith('round') || /^#?\d+[.\s\-]/m.test(content)) {
         const parsed = parseTextScoreInput(content)
         if (parsed.entries.length > 0) {
+          // Use explicit round from text, or auto-detect
+          const effectiveRound = parsed.roundNumber !== 1
+            ? parsed.roundNumber
+            : getNextRound()
+
           const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
           const previewEntries = tallyBoard.setRound(
-            parsed.roundNumber,
+            effectiveRound,
             parsed.entries,
             registeredTeams,
             message.id,
@@ -240,13 +268,13 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
           const reviewId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
           pendingReviews.set(reviewId, {
-            roundNumber: parsed.roundNumber,
+            roundNumber: effectiveRound,
             entries: previewEntries,
             scrimLabel: scrimConfig.label,
           })
 
           const reviewMsg = buildReviewMessage({
-            roundNumber: parsed.roundNumber,
+            roundNumber: effectiveRound,
             entries: previewEntries,
             registeredTeams,
             reviewId,
