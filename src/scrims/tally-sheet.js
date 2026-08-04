@@ -275,31 +275,6 @@ export async function syncScoresToGoogleSheet({
       writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: placeVal })
       writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: killsVal })
       teamsTalliedCount++
-    } else {
-      // 3. Mark Missing Round Entries with 'X' if empty
-      const placeColIdx = roundNum === 1 ? 3 : roundNum === 2 ? 6 : roundNum === 3 ? 9 : 12
-      const killsColIdx = roundNum === 1 ? 5 : roundNum === 2 ? 8 : roundNum === 3 ? 11 : 14
-
-      const currentPlace = existingRowValues[placeColIdx]
-      const currentKills = existingRowValues[killsColIdx]
-
-      if (!currentPlace || String(currentPlace).trim() === '') {
-        updateData.push({
-          range: `'${sheetName}'!${roundCols.place}${row}`,
-          values: [['X']],
-        })
-        writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: 'X' })
-        missingMarkersAddedCount++
-      }
-
-      if (!currentKills || String(currentKills).trim() === '') {
-        updateData.push({
-          range: `'${sheetName}'!${roundCols.kills}${row}`,
-          values: [['X']],
-        })
-        writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: 'X' })
-        missingMarkersAddedCount++
-      }
     }
   }
 

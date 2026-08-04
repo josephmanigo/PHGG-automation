@@ -311,7 +311,10 @@ export class TallyBoard {
   }
 
   formatStandingsMarkdown(registeredTeams = [], title = 'PHGG SCRIM OVERALL STANDINGS') {
-    const standings = this.getOverallStandings(registeredTeams)
+    const rawStandings = this.getOverallStandings(registeredTeams)
+    const standings = rawStandings
+      .filter((t) => Object.keys(t.rounds).length > 0)
+      .map((item, index) => ({ ...item, overallRank: index + 1 }))
     const activeRounds = [...this.rounds.keys()].sort((a, b) => a - b)
 
     if (standings.length === 0) {
