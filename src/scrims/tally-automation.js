@@ -287,6 +287,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (action === 'confirm') {
+      await interaction.deferUpdate().catch(() => {})
       const reviewData = pendingReviews.get(reviewId)
       let roundNumInt = Number(roundStr || 1)
       if (reviewData) {
@@ -313,7 +314,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
       )
 
-      await interaction.update({
+      await interaction.editReply({
         content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED & SAVED!**\n📊 *Scores synced to Google Sheet!*\n\n${standingsText}`,
         components: [],
       }).catch(() => {})
@@ -321,8 +322,9 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (action === 'reject') {
+      await interaction.deferUpdate().catch(() => {})
       pendingReviews.delete(reviewId)
-      await interaction.update({
+      await interaction.editReply({
         content: `❌ **ROUND ${roundStr} TALLY REJECTED & DISCARDED.**`,
         components: [],
       }).catch(() => {})
