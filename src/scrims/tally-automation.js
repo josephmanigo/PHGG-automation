@@ -395,6 +395,9 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             roundNumber: reviewData.roundNumber,
             entries: reviewData.entries,
             registeredTeams,
+            device: scrimConfig.label || 'PC',
+            timeLabel: scrimConfig.timeLabel || '10:00 PM',
+            roundsLabel: scrimConfig.roundsLabel || '4 ROUNDS',
             actorUserId: interaction.user.id,
           })
           console.log(`[TALLY] Sheet sync success:`, syncResult)

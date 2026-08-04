@@ -135,6 +135,9 @@ export async function syncScoresToGoogleSheet({
   roundNumber,
   entries,
   registeredTeams = [],
+  device = 'PC',
+  timeLabel = '10:00 PM',
+  roundsLabel = '4 ROUNDS',
   submissionId = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
   actorUserId = 'system',
 }) {
@@ -163,6 +166,9 @@ export async function syncScoresToGoogleSheet({
     roundNumber: roundNum,
     entries,
     registeredTeams,
+    device,
+    timeLabel,
+    roundsLabel,
   }
 
   // Support Webhook endpoint if configured
@@ -182,14 +188,14 @@ export async function syncScoresToGoogleSheet({
   const accessToken = await getGoogleAccessToken(clientEmail, privateKey)
   const auditId = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
-  // Format current date in PH Time (e.g. 05-Aug-2026)
+  // Format current date in PH Time in CAPITAL LETTERS (e.g. 21-JUL-2026 or 05-AUG-2026)
   const now = new Date()
   const dateFormatted = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Manila',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(now).replace(/ /g, '-')
+  }).format(now).replace(/ /g, '-').toUpperCase()
 
   // Determine starting row: standard NIGHTRAID scoresheet is Row 8 to 32
   const startRow = 8
@@ -217,10 +223,18 @@ export async function syncScoresToGoogleSheet({
   let teamsTalliedCount = 0
   let missingMarkersAddedCount = 0
 
-  // Update Header Date Cell (H5 contains the date/time label)
+  // Update Header Title Cell (H3) with Device PC/MOBILE
+  const deviceLabel = String(device || 'PC').toUpperCase()
+  updateData.push({
+    range: `'${sheetName}'!H3`,
+    values: [[`BLOODSTRIKE SCRIMMAGE • ${deviceLabel}`]],
+  })
+
+  // Update Header Date Cell (H5 contains capital date, time, and rounds label)
+  const formattedRoundsLabel = String(roundsLabel || '4 ROUNDS').toUpperCase()
   updateData.push({
     range: `'${sheetName}'!H5`,
-    values: [[`${dateFormatted}   |   10:00 PM   |   4 ROUNDS`]],
+    values: [[`${dateFormatted}   |   ${timeLabel}   |   ${formattedRoundsLabel}`]],
   })
 
   // Process rows 8 through 32
