@@ -490,6 +490,17 @@ test('keeps a duplicate registration on the board only once', () => {
   assert.equal(board.waitlist.length, 0)
 })
 
+test('allows registration with same team name if clan tags differ', () => {
+  const board = new ScrimBoard(5)
+  assert.equal(board.register(makeTeam('TAG1', 'ALPHA TEAM')).status, 'slot')
+  assert.equal(board.register(makeTeam('TAG2', 'ALPHA TEAM')).status, 'slot')
+  assert.equal(board.register(makeTeam('TAG1', 'ALPHA TEAM')).status, 'duplicate')
+  assert.equal(board.slots[0].tag, 'TAG1')
+  assert.equal(board.slots[0].name, 'ALPHA TEAM')
+  assert.equal(board.slots[1].tag, 'TAG2')
+  assert.equal(board.slots[1].name, 'ALPHA TEAM')
+})
+
 test('seeds the first three PC slots and allows their cancellation', () => {
   const fixedTeams = [
     {

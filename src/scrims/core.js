@@ -100,13 +100,22 @@ export function parseAvailableSlotsContent(content) {
   return [...new Set(numbers)].map((number) => number - 1)
 }
 
+export function isSameTeam(a, b) {
+  if (!a || !b) return false
+  const tagA = normalize(a.tag ?? '')
+  const nameA = normalize(a.name ?? '')
+  const tagB = normalize(b.tag ?? '')
+  const nameB = normalize(b.name ?? '')
+  return tagA === tagB && nameA === nameB
+}
+
 function teamMatches(team, query) {
   const target = normalize(query)
   if (!target) return false
   const variants = [normalize(team.name), normalize(`${team.tag} ${team.name}`), team.key]
   return variants.some(
     (variant) =>
-      variant === target || variant.endsWith(` ${target}`) || target.endsWith(` ${variant}`),
+      variant === target || variant.endsWith(` ${target}`),
   )
 }
 
@@ -150,6 +159,19 @@ export class ScrimBoard {
     this.mineOnlySlots = new Set()
   }
 
+  findDuplicate(team) {
+    if (!team) return null
+    const slotIndex = this.slots.findIndex((entry) => entry && isSameTeam(entry, team))
+    if (slotIndex >= 0) {
+      return { location: 'slot', index: slotIndex, team: this.slots[slotIndex] }
+    }
+    const waitIndex = this.waitlist.findIndex((entry) => entry && isSameTeam(entry, team))
+    if (waitIndex >= 0) {
+      return { location: 'waitlist', index: waitIndex, team: this.waitlist[waitIndex] }
+    }
+    return null
+  }
+
   find(query) {
     const slotIndex = this.slots.findIndex((team) => team && teamMatches(team, query))
     if (slotIndex >= 0) {
@@ -164,7 +186,7 @@ export class ScrimBoard {
 
   register(team, messageId = null, sourceType = 'registration') {
     const storedTeam = messageId ? { ...team, sourceMessageId: messageId, sourceType } : team
-    if (this.find(`${storedTeam.tag} ${storedTeam.name}`)) {
+    if (this.findDuplicate(storedTeam)) {
       return { status: 'duplicate', team: storedTeam }
     }
     const slotIndex = this.slots.findIndex(
@@ -275,7 +297,7 @@ export class ScrimBoard {
       ? { ...parsed, sourceMessageId: claimMessageId, sourceType: 'mine' }
       : parsed
 
-    const existing = this.find(`${team.tag} ${team.name}`)
+    const existing = this.findDuplicate(team)
     if (pendingAvailable) {
       const slotIndex = pendingAvailable.slotIndexes.find(
         (index) => this.mineOnlySlots.has(index) && !this.slots[index],
