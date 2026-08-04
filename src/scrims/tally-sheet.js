@@ -341,6 +341,72 @@ export async function syncScoresToGoogleSheet({
 
   auditRecord.status = 'written'
 
+  // 4. Ensure Rank 1, 2, 3 Yellow Highlight Conditional Format Rule is active
+  try {
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`
+    const metaResp = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (metaResp.ok) {
+      const metaData = await metaResp.json()
+      const targetSheet = (metaData.sheets || []).find(
+        (s) => s.properties?.title === sheetName,
+      ) || metaData.sheets?.[0]
+
+      if (targetSheet && targetSheet.properties?.sheetId !== undefined) {
+        const numericSheetId = targetSheet.properties.sheetId
+        const formatEndpoint = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`
+
+        const formatPayload = {
+          requests: [
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [
+                    {
+                      sheetId: numericSheetId,
+                      startRowIndex: 7,   // Row 8
+                      endRowIndex: 32,    // Row 32 inclusive
+                      startColumnIndex: 7, // Column H (index 7)
+                      endColumnIndex: 30,  // Column AD (index 30)
+                    },
+                  ],
+                  booleanRule: {
+                    condition: {
+                      type: 'CUSTOM_FORMULA',
+                      values: [
+                        {
+                          userEnteredValue:
+                            '=OR($AD8=1,$AD8=2,$AD8=3,$AC8=1,$AC8=2,$AC8=3,$AB8=1,$AB8=2,$AB8=3)',
+                        },
+                      ],
+                    },
+                    format: {
+                      backgroundColor: { red: 1.0, green: 1.0, blue: 0.0 }, // Bright Yellow #FFFF00
+                      textFormat: { bold: true },
+                    },
+                  },
+                },
+                index: 0,
+              },
+            },
+          ],
+        }
+
+        await fetch(formatEndpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formatPayload),
+        }).catch((err) => console.warn('[TALLY] Rank highlight format warning:', err.message))
+      }
+    }
+  } catch (err) {
+    console.warn('[TALLY] Could not apply rank highlight conditional formatting:', err.message)
+  }
+
   // 4. Post-Write Re-read & Verification Loop
   let verifySuccess = false
   try {
