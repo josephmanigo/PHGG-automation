@@ -119,33 +119,64 @@ Respond ONLY with valid JSON in this format, without markdown wrapping:
     },
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  const candidateModels = [
+    modelName,
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+  ].filter((m, i, arr) => arr.indexOf(m) === i)
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Gemini API error (${response.status}): ${errorText}`)
+  let lastError = null
+
+  for (const currentModel of candidateModels) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          if (response.status === 503 || response.status === 429 || response.status === 500) {
+            console.warn(`Gemini API ${currentModel} returned ${response.status} (attempt ${attempt}): ${errorText}`)
+            lastError = new Error(`Gemini API error (${response.status}): ${errorText}`)
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+            continue
+          }
+          throw new Error(`Gemini API error (${response.status}): ${errorText}`)
+        }
+
+        const data = await response.json()
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!textResponse) {
+          throw new Error('Gemini API returned an empty response.')
+        }
+
+        const cleanJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+        const parsed = JSON.parse(cleanJson)
+
+        const roundNumber = Number(parsed.roundNumber || 1)
+        const entries = (parsed.teams || [])
+          .map((t) => ({
+            rank: Number(t.rank || 0),
+            slotCode: String(t.slotCode || t.slot || '').trim(),
+            teamQuery: String(t.slotCode || t.teamName || t.tag || '').trim(),
+            kills: Math.max(0, Number(t.kills || 0)),
+          }))
+          .filter((e) => e.rank > 0 && (e.slotCode || e.teamQuery))
+
+        return { roundNumber, entries }
+      } catch (err) {
+        lastError = err
+        if (!err.message.includes('503') && !err.message.includes('429') && !err.message.includes('500')) {
+          throw err
+        }
+      }
+    }
   }
 
-  const data = await response.json()
-  const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!textResponse) {
-    throw new Error('Gemini API returned an empty response.')
-  }
-
-  const cleanJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-  const parsed = JSON.parse(cleanJson)
-
-  const roundNumber = Number(parsed.roundNumber || 1)
-  const entries = (parsed.teams || []).map((t) => ({
-    rank: Number(t.rank || 0),
-    slotCode: String(t.slotCode || t.slot || '').trim(),
-    teamQuery: String(t.slotCode || t.teamName || t.tag || '').trim(),
-    kills: Math.max(0, Number(t.kills || 0)),
-  })).filter((e) => e.rank > 0 && (e.slotCode || e.teamQuery))
-
-  return { roundNumber, entries }
+  throw lastError || new Error('All Gemini Vision model endpoints failed after retries.')
 }
