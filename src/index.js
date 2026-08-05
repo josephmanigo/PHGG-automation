@@ -48,6 +48,21 @@ client.once(Events.ClientReady, (readyClient) => {
       `tally-score=${config.geminiApiKey ? 'ai-vision' : 'text-fallback'}`,
     ].join(', '),
   )
+
+  // Both keys accept a comma-separated list and are rotated on quota errors.
+  // Print the counts so a mistyped list is obvious at boot rather than at 429.
+  const countKeys = (value) =>
+    String(value || '')
+      .split(',')
+      .map((key) => key.trim())
+      .filter(Boolean).length
+
+  const geminiKeys = countKeys(config.geminiApiKey || process.env.GEMINI_API_KEY)
+  const openaiKeys = countKeys(process.env.OPENAI_API_KEY)
+  console.log(
+    `vision providers: ${geminiKeys} Gemini key(s), ${openaiKeys} OpenAI key(s), ` +
+      `reader=${String(process.env.TALLY_VISION_PROVIDER || 'gemini').toLowerCase()}`,
+  )
 })
 
 client.on(Events.Error, (reason) => {
