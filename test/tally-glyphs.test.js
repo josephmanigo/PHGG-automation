@@ -6,7 +6,7 @@ import { Jimp } from 'jimp'
 import { readCapture, resolveMedalRanks } from '../src/scrims/tally-glyphs.js'
 import { parseScreenshotWithGlyphs } from '../src/scrims/tally-ocr.js'
 import atlas from '../src/scrims/glyph-atlas.json' with { type: 'json' }
-import { ROUNDS } from './fixtures/scoreboard-ground-truth.js'
+import { ALL_ROUNDS, MOBILE_ROUND_A, ROUNDS } from './fixtures/scoreboard-ground-truth.js'
 
 const SHOT_DIR = path.join(process.cwd(), 'test', 'fixtures', 'screenshots')
 const expectedRows = (capture) => [
@@ -14,7 +14,7 @@ const expectedRows = (capture) => [
   ...capture.rows,
 ]
 
-const captures = ROUNDS.flatMap((round) => round.captures).filter((c) =>
+const captures = ALL_ROUNDS.flatMap((round) => round.captures).filter((c) =>
   fs.existsSync(path.join(SHOT_DIR, c.file)),
 )
 
@@ -37,6 +37,8 @@ test('every fixture capture reads exactly, with nothing guessed', needsCaptures,
 
     assert.equal(got.length, expected.length, `${capture.file}: row count`)
     for (let i = 0; i < expected.length; i++) {
+      // Rows cut off by the capture edge have no values to assert against.
+      if (expected[i].skip) continue
       assert.equal(got[i].rank, expected[i].rank, `${capture.file} row ${i}: rank`)
       assert.equal(got[i].slotLetter, expected[i].slotLetter, `${capture.file} row ${i}: slot`)
       assert.equal(got[i].kills, expected[i].kills, `${capture.file} row ${i}: kills`)
@@ -86,19 +88,26 @@ test('overlapping captures merge into one round without duplicate ranks', needsC
  * size: it may decline to answer, but it must never answer wrongly.
  */
 test('reads at any capture size, and never answers wrongly at any of them', needsCaptures, async () => {
+  // Rescaling the 1919px phone captures to 2.5x is slow and adds nothing here;
+  // they already cover the large end at their native size.
+  const scalable = ROUNDS.flatMap((r) => r.captures).filter((c) =>
+    fs.existsSync(path.join(SHOT_DIR, c.file)),
+  )
+
   for (const scale of [0.7, 0.95, 1, 1.43, 1.69, 2.5]) {
     let wrong = 0
     let read = 0
     let cells = 0
 
-    for (const capture of captures) {
+    for (const capture of scalable) {
       const image = await Jimp.read(path.join(SHOT_DIR, capture.file))
       if (scale !== 1) image.scale(scale)
-      const got = readCapture(image.bitmap, image.bitmap && atlas)
+      const got = readCapture(image.bitmap, atlas)
       const expected = expectedRows(capture)
       assert.equal(got.length, expected.length, `${capture.file} @${scale}x: row count`)
 
       for (let i = 0; i < expected.length; i++) {
+        if (expected[i].skip) continue
         cells += 2
         for (const field of ['slotLetter', 'kills']) {
           if (got[i][field] === expected[i][field]) read++
@@ -113,6 +122,35 @@ test('reads at any capture size, and never answers wrongly at any of them', need
       assert.ok(read / cells > 0.95, `@${scale}x only read ${read}/${cells}`)
     }
   }
+})
+
+/**
+ * The real phone round that exposed all of this: five 1919x1079 JPEGs, scrolled
+ * so they overlap and each repeats rank 1. Every placement from 1 to 19 must
+ * come out exactly once, with nothing dropped and nothing guessed — placements
+ * 2 to 5 previously vanished with no message at all.
+ */
+test('a full phone round reads every placement with none dropped', needsCaptures, async () => {
+  const files = MOBILE_ROUND_A.captures.map((c) => path.join(SHOT_DIR, c.file))
+  if (!files.every((f) => fs.existsSync(f))) return
+
+  const images = files.map((f) => ({ buffer: fs.readFileSync(f), mimeType: 'image/jpeg' }))
+  const parsed = await parseScreenshotWithGlyphs({ images })
+
+  assert.deepEqual(parsed.uncertain, [], 'no row should be left unread')
+  assert.deepEqual(parsed.missingRanks, [], 'no placement should be missing')
+  assert.deepEqual(
+    parsed.entries.map((e) => e.rank),
+    Array.from({ length: 19 }, (_, i) => i + 1),
+    'placements 1..19 must each appear exactly once',
+  )
+
+  // Slots P, R and S appear only in this round and had no template until it was
+  // added; P was being confidently misread as F.
+  const bySlot = new Map(parsed.entries.map((e) => [e.rank, e.teamQuery]))
+  assert.equal(bySlot.get(2), 'R')
+  assert.equal(bySlot.get(17), 'S')
+  assert.equal(bySlot.get(18), 'P')
 })
 
 test('a scrolled capture keeps its sticky header at rank 1 instead of extrapolating', () => {

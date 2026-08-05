@@ -118,7 +118,83 @@ export const ROUND_B = {
   ],
 }
 
+/**
+ * A real phone round: 1919x1079 JPEGs, the same UI at ~1.63x the scale of the
+ * PNG captures above. These are what proved the reader had to stop deriving
+ * scale from image width, and they carry slot letters P, R and S, which appear
+ * in none of the earlier captures.
+ *
+ * `skip: true` marks a row the reader does detect — its skull is visible — but
+ * whose own values are cut off by the top or bottom edge of the capture, so it
+ * cannot be scored or harvested. It still occupies a position in the sequence.
+ */
+export const MOBILE_ROUND_A = {
+  label: 'mobile-round-a',
+  captures: [
+    {
+      file: 'mobile-round-a-1.jpg',
+      rows: [
+        { rank: 1, slotLetter: 'A', kills: 44 },
+        { rank: 2, slotLetter: 'R', kills: 40 },
+        { rank: 3, slotLetter: 'D', kills: 15 },
+        { rank: 4, slotLetter: 'J', kills: 22 },
+        { rank: 5, slotLetter: 'Q', kills: 18 },
+      ],
+    },
+    {
+      file: 'mobile-round-a-2.jpg',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
+      rows: [
+        { rank: 6, slotLetter: 'B', kills: 14 },
+        { rank: 7, slotLetter: 'M', kills: 19 },
+        { rank: 8, slotLetter: 'T', kills: 1 },
+        { rank: 9, slotLetter: 'H', kills: 14 },
+      ],
+    },
+    {
+      file: 'mobile-round-a-3.jpg',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
+      rows: [
+        { rank: 10, slotLetter: 'I', kills: 20 },
+        { rank: 11, slotLetter: 'L', kills: 13 },
+        { rank: 12, slotLetter: 'E', kills: 39 },
+        { rank: 13, slotLetter: 'K', kills: 5 },
+      ],
+    },
+    {
+      file: 'mobile-round-a-4.jpg',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
+      rows: [
+        { rank: 14, slotLetter: 'G', kills: 38 },
+        { rank: 15, slotLetter: 'C', kills: 12 },
+        { rank: 16, slotLetter: 'N', kills: 5 },
+        { rank: 17, slotLetter: 'S', kills: 18 },
+        // Bottom edge cuts this row's kill total off.
+        { rank: 18, slotLetter: 'P', kills: null, skip: true },
+      ],
+    },
+    {
+      file: 'mobile-round-a-5.jpg',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
+      rows: [
+        // Top edge cuts this row's slot letter and rank off.
+        { rank: 15, slotLetter: 'C', kills: 12, skip: true },
+        { rank: 16, slotLetter: 'N', kills: 5 },
+        { rank: 17, slotLetter: 'S', kills: 18 },
+        { rank: 18, slotLetter: 'P', kills: 9 },
+        { rank: 19, slotLetter: 'F', kills: 18 },
+      ],
+    },
+  ],
+}
+
 export const ROUNDS = [ROUND_A, ROUND_B]
+
+/** Captures from a phone, kept separate: different scale, different encoding. */
+export const MOBILE_ROUNDS = [MOBILE_ROUND_A]
+
+/** Everything the atlas is harvested from and calibrated against. */
+export const ALL_ROUNDS = [...ROUNDS, ...MOBILE_ROUNDS]
 
 /** Every distinct row of a round, de-duplicated by rank across its captures. */
 export function expectedRoundRows(round) {

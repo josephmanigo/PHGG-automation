@@ -31,7 +31,7 @@ import {
   scaleFactor,
   segmentGlyphs,
 } from '../src/scrims/tally-glyphs.js'
-import { ROUNDS } from '../test/fixtures/scoreboard-ground-truth.js'
+import { ALL_ROUNDS } from '../test/fixtures/scoreboard-ground-truth.js'
 
 const SHOT_DIR = path.join(process.cwd(), 'test', 'fixtures', 'screenshots')
 const OUT = path.join(process.cwd(), 'src', 'scrims', 'glyph-atlas.json')
@@ -89,7 +89,7 @@ let letterKept = 0
 let killsKept = 0
 let rankKept = 0
 
-for (const round of ROUNDS) {
+for (const round of ALL_ROUNDS) {
   for (const capture of round.captures) {
     const file = path.join(SHOT_DIR, capture.file)
     if (!fs.existsSync(file)) {
@@ -129,6 +129,9 @@ async function harvest(image, capture, scale) {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
       const truth = expected[i]
+      // Cut off by the capture edge: detected, but its values are not on screen
+      // to be labelled with.
+      if (truth.skip) continue
       rowsSeen++
 
       const lMask = cellMask(bitmap, letterCell(row, k), 'otsu')

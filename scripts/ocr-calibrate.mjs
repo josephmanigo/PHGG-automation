@@ -38,7 +38,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Jimp } from 'jimp'
 import { readCapture } from '../src/scrims/tally-glyphs.js'
-import { ROUNDS } from '../test/fixtures/scoreboard-ground-truth.js'
+import { ALL_ROUNDS } from '../test/fixtures/scoreboard-ground-truth.js'
 
 const SHOT_DIR = path.join(process.cwd(), 'test', 'fixtures', 'screenshots')
 const ATLAS = path.join(process.cwd(), 'src', 'scrims', 'glyph-atlas.json')
@@ -59,7 +59,7 @@ let wrongSlot = 0
 let wrongKills = 0
 let rowMismatch = 0
 
-for (const round of ROUNDS) {
+for (const round of ALL_ROUNDS) {
   for (const capture of round.captures) {
     const file = path.join(SHOT_DIR, capture.file)
     if (!fs.existsSync(file)) {
@@ -76,9 +76,13 @@ for (const round of ROUNDS) {
     let r = 0
     let s = 0
     let kk = 0
+    let scored = 0
     for (let i = 0; i < expected.length && i < got.length; i++) {
       const g = got[i]
       const e = expected[i]
+      // Rows cut off by the capture edge cannot be scored against anything.
+      if (e.skip) continue
+      scored++
       if (g.rank === e.rank) r++
       if (g.slotLetter !== null) {
         slotAnswered++
@@ -94,7 +98,7 @@ for (const round of ROUNDS) {
     rankHits += r
     slotHits += s
     killHits += kk
-    total += expected.length
+    total += scored
 
     const flagged = got.filter((g) => !g.certain).length
     console.log(

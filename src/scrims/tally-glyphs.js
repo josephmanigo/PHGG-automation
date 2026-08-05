@@ -633,12 +633,23 @@ export function resolveMedalRanks(rows) {
   if (lead > 0) {
     const firstReadable = rows[lead].rank
     const contiguous = firstReadable === lead + 1
-    for (let i = 0; i < lead; i++) {
-      rows[i].rank = contiguous ? i + 1 : 1
-    }
-    // A scrolled capture repeats only rank 1, so anything above it is header.
-    if (!contiguous && lead > 1) {
-      for (let i = 0; i < lead; i++) rows[i].certain = false
+
+    if (contiguous) {
+      // Top of the board: the leading rows are the medal ranks 1, 2, 3.
+      for (let i = 0; i < lead; i++) rows[i].rank = i + 1
+    } else {
+      // Scrolled: row 0 is the sticky rank-1 header. Anything between it and
+      // the first readable rank is a real row whose own rank was cut off or
+      // unreadable, so it counts backwards from that rank — it is NOT another
+      // copy of rank 1. Giving them all rank 1 collapsed genuine rows onto the
+      // header and lost them.
+      rows[0].rank = 1
+      for (let i = 1; i < lead; i++) {
+        const inferred = firstReadable - (lead - i)
+        rows[i].rank = inferred >= 2 ? inferred : null
+        // Its own rank was never read, so it is worth a second look.
+        rows[i].certain = false
+      }
     }
   }
 
