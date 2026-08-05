@@ -756,3 +756,40 @@ test('the confirmation renders roster-resolved entries, never the raw input', as
   // The sheet write must use the same resolved entries.
   assert.match(source, /entries: confirmedEntries,/)
 })
+
+test('centred columns split the padding around the value', () => {
+  const table = renderAlignedTable(
+    [
+      { key: 'place', label: 'PLACE', align: 'center' },
+      { key: 'pts', label: 'PTS', align: 'center' },
+    ],
+    [{ place: 1, pts: 76 }, { place: 21, pts: 0 }],
+  )
+  const cells = table.split('\n').map((l) => l.slice(1, -1))
+
+  // PLACE is 5 wide and PTS is 3. Odd slack leans left, so "1" sits at 2/2 and
+  // "21" at 1/2; in PTS, "76" is 0/1 and "0" is 1/1.
+  assert.equal(cells[0], 'PLACE  PTS')
+  assert.equal(cells[1], '  1    76 ')
+  assert.equal(cells[2], ' 21     0 ')
+
+  // Every row stays the same width, so the columns still line up.
+  const widths = new Set(cells.map((c) => c.length))
+  assert.equal(widths.size, 1)
+})
+
+test('the round table centres its values and keeps four columns', () => {
+  const table = buildRoundScoreTable([
+    { rank: 1, slotCode: '01A', kills: 56, totalPoints: 76 },
+    { rank: 21, slotCode: '07G', kills: 0, totalPoints: 0 },
+  ])
+  const rows = table.split('\n').map((l) => l.slice(1, -1))
+
+  assert.match(rows[0], /PLACE\s+SLOT\s+KILLS\s+PTS/)
+  for (const row of rows) {
+    assert.equal(row.length, rows[0].length, `row width drifted: "${row}"`)
+    assert.equal(row.trim().split(/\s+/).length, 4)
+  }
+  // A single-digit place is not flush left any more.
+  assert.ok(rows[1].startsWith(' '), 'value is not centred')
+})

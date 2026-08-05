@@ -192,10 +192,17 @@ export function renderAlignedTable(columns, rows, { fenced = false } = {}) {
   const widths = columns.map((col) =>
     Math.max(col.label.length, ...rows.map((row) => String(row[col.key] ?? '').length)),
   )
-  const pad = (value, i) =>
-    columns[i].align === 'right'
-      ? String(value ?? '').padStart(widths[i])
-      : String(value ?? '').padEnd(widths[i])
+  const pad = (value, i) => {
+    const text = String(value ?? '')
+    const { align } = columns[i]
+    if (align === 'right') return text.padStart(widths[i])
+    if (align !== 'center') return text.padEnd(widths[i])
+    // Split the slack, leaving the extra space on the right for odd widths so a
+    // column reads as one block rather than drifting.
+    const slack = widths[i] - text.length
+    const left = Math.floor(slack / 2)
+    return ' '.repeat(left) + text + ' '.repeat(slack - left)
+  }
 
   const header = columns.map((col, i) => pad(col.label, i)).join('  ')
   const body = rows.map((row) => columns.map((col, i) => pad(row[col.key], i)).join('  '))
@@ -414,11 +421,11 @@ export class TallyBoard {
       `*Active Rounds: ${activeRounds.length > 0 ? activeRounds.join(', ') : 'None'} | Total Teams: ${standings.length}*`,
       renderAlignedTable(
         [
-          { key: 'rk', label: 'PLACE', align: 'right' },
-          { key: 'slot', label: 'SLOT' },
+          { key: 'rk', label: 'PLACE', align: 'center' },
+          { key: 'slot', label: 'SLOT', align: 'center' },
           { key: 'team', label: 'TEAM' },
-          { key: 'kills', label: 'KILLS', align: 'right' },
-          { key: 'pts', label: 'PTS', align: 'right' },
+          { key: 'kills', label: 'KILLS', align: 'center' },
+          { key: 'pts', label: 'PTS', align: 'center' },
         ],
         standings.map((team) => ({
           rk: team.overallRank,

@@ -138,10 +138,10 @@ export function buildRoundScoreTable(entries = []) {
   // TEAM column is left out here.
   return renderAlignedTable(
     [
-      { key: 'rk', label: 'PLACE', align: 'right' },
-      { key: 'slot', label: 'SLOT' },
-      { key: 'kills', label: 'KILLS', align: 'right' },
-      { key: 'pts', label: 'PTS', align: 'right' },
+      { key: 'rk', label: 'PLACE', align: 'center' },
+      { key: 'slot', label: 'SLOT', align: 'center' },
+      { key: 'kills', label: 'KILLS', align: 'center' },
+      { key: 'pts', label: 'PTS', align: 'center' },
     ],
     entries.map((e, idx) => {
       const rank = e.rank || idx + 1
