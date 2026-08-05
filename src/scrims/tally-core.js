@@ -58,6 +58,19 @@ function levenshteinDistance(a, b) {
   return row[b.length]
 }
 
+/**
+ * True when a normalized string is a lobby slot reference — a letter ("W"),
+ * a slot code ("23W"), or a slot number ("23") — rather than a team name.
+ */
+export function isSlotDesignator(normalized) {
+  const value = String(normalized || '')
+  if (/^[A-Y]$/.test(value)) return true
+  const numbered = /^(\d{1,2})([A-Y])?$/.exec(value)
+  if (!numbered) return false
+  const index = Number(numbered[1])
+  return index >= 1 && index <= 25
+}
+
 export function findMatchingTeam(query, registeredTeams = [], explicitSlot = null) {
   if (registeredTeams.length === 0) return null
 
@@ -72,6 +85,12 @@ export function findMatchingTeam(query, registeredTeams = [], explicitSlot = nul
         return expTarget === sLetter || expTarget === sCode || expTarget === sNumLetter
       })
       if (explicitMatch) return explicitMatch
+
+      // The slot code is authoritative. If it names a real lobby slot that no
+      // registered team holds, this row belongs to nobody — falling through to
+      // fuzzy name matching is how an empty slot's score gets written onto an
+      // unrelated team.
+      if (isSlotDesignator(expTarget)) return null
     }
   }
 

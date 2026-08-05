@@ -312,3 +312,46 @@ test('clear restores the header placeholders and the placement formulas', () => 
     assert.equal(block.values[rowCount - 1][0], `=VLOOKUP(${place}32,$B$8:$C$32,2,0)`)
   }
 })
+
+test('a score for an unregistered slot is discarded, not moved to another team', () => {
+  // Reproduces a live mis-tally: round A showed a team in lobby slot W with
+  // 1 kill, but slot 23-W had nobody registered. Fuzzy name matching then put
+  // that score on ASCEND WONDERPETS at 11-K.
+  const roster = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID ESPORTS' },
+    { slotIndex: 10, slotCode: '11K', slotLetter: 'K', tag: 'ASCE', name: 'ASCEND WONDERPETS' },
+  ]
+
+  // Slot W is a real lobby slot that nobody holds -> no team, no guess.
+  assert.equal(findMatchingTeam('W', roster, 'W'), null)
+  assert.equal(findMatchingTeam('23-W', roster, '23-W'), null)
+  assert.equal(findMatchingTeam('ASCEND WONDERPETS', roster, 'W'), null)
+
+  // A registered slot still resolves normally.
+  assert.equal(findMatchingTeam('K', roster, 'K')?.name, 'ASCEND WONDERPETS')
+  assert.equal(findMatchingTeam('A', roster, '1-A')?.tag, 'NR')
+
+  // An unreadable slot code still falls back to name matching.
+  assert.equal(findMatchingTeam('NIGHTRAID ESPORTS', roster, '??')?.tag, 'NR')
+})
+
+test('the board drops an unregistered-slot row instead of scoring it', () => {
+  const roster = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID ESPORTS' },
+    { slotIndex: 10, slotCode: '11K', slotLetter: 'K', tag: 'ASCE', name: 'ASCEND WONDERPETS' },
+  ]
+  const board = new TallyBoard()
+  const entries = board.setRound(
+    1,
+    [
+      { rank: 1, slotCode: '1-A', teamQuery: 'A', kills: 58 },
+      { rank: 20, slotCode: 'W', teamQuery: 'W', kills: 1 },
+    ],
+    roster,
+  )
+
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].slotCode, '01A')
+  // ASCEND WONDERPETS must not have inherited the slot-W score.
+  assert.ok(!entries.some((e) => e.name === 'ASCEND WONDERPETS'))
+})
