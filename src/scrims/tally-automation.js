@@ -703,7 +703,11 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       // like it had changed on confirm. Overall standings are still one click
       // away on the View Standings button, or via !standings.
       // reviewData is guaranteed here — the branch above returns without it.
-      const confirmedTable = `📋 **ROUND ${roundNumInt} RESULTS**\n${buildRoundScoreTable(reviewData.entries)}`
+      // Must be confirmedEntries, not reviewData.entries: a round recovered
+      // from its review message carries only slot codes and kills, so rendering
+      // the input showed the slot code as the team name and 0 points. setRound
+      // resolves the roster and computes the placement points.
+      const confirmedTable = `📋 **ROUND ${roundNumInt} RESULTS**\n${buildRoundScoreTable(confirmedEntries)}`
 
       const statusNotice = syncError
         ? `⚠️ **Sheet Write Error**: ${syncError}`

@@ -723,3 +723,20 @@ test('the rank highlight forces black text on the yellow fill', async () => {
   assert.deepEqual(textFormat.foregroundColor, { red: 0, green: 0, blue: 0 })
   assert.equal(textFormat.bold, true)
 })
+
+test('the confirmation renders roster-resolved entries, never the raw input', async () => {
+  // A guard on the source itself. The previous version of this fix was applied
+  // by a string replacement that silently missed this line, so the confirmation
+  // kept rendering reviewData.entries — slot codes as team names, 0 points —
+  // while the tests all passed.
+  const { readFile } = await import('node:fs/promises')
+  const source = await readFile(new URL('../src/scrims/tally-automation.js', import.meta.url), 'utf8')
+
+  assert.ok(
+    !/buildRoundScoreTable\(\s*reviewData\.entries\s*\)/.test(source),
+    'the confirmation must not render reviewData.entries directly',
+  )
+  assert.match(source, /const confirmedTable = .*buildRoundScoreTable\(confirmedEntries\)/)
+  // The sheet write must use the same resolved entries.
+  assert.match(source, /entries: confirmedEntries,/)
+})
