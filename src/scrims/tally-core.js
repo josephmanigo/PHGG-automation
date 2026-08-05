@@ -152,30 +152,6 @@ export function findMatchingTeam(query, registeredTeams = [], explicitSlot = nul
 }
 
 /**
- * Screenshot rows that resolve to no registered team, and so will not be
- * scored. Returned as readable labels for the review message, because a row
- * silently vanishing between the screenshot and the sheet looks like a bug.
- */
-export function findUnmatchedEntries(entries = [], registeredTeams = []) {
-  if (!Array.isArray(entries) || registeredTeams.length === 0) return []
-  return entries
-    .filter(
-      (entry) =>
-        !findMatchingTeam(
-          entry.slotCode || entry.teamQuery || entry.tag || entry.name,
-          registeredTeams,
-          entry.slotCode,
-        ),
-    )
-    .map((entry) => {
-      const slot = String(entry.slotCode || '').trim()
-      const label = String(entry.teamQuery || entry.name || entry.tag || '').trim()
-      if (slot && slot !== '??') return `slot ${slot}${label && label !== slot ? ` (${label})` : ''}`
-      return label || 'unreadable row'
-    })
-}
-
-/**
  * Custom server emoji used in the tally messages.
  *
  * A `<:name:id>` tag only renders if the BOT shares a server with that emoji.
@@ -438,7 +414,7 @@ export class TallyBoard {
       `*Active Rounds: ${activeRounds.length > 0 ? activeRounds.join(', ') : 'None'} | Total Teams: ${standings.length}*`,
       renderAlignedTable(
         [
-          { key: 'rk', label: 'RK', align: 'right' },
+          { key: 'rk', label: 'RANK', align: 'right' },
           { key: 'slot', label: 'SLOT' },
           { key: 'team', label: 'TEAM' },
           { key: 'kills', label: 'KILLS', align: 'right' },

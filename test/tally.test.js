@@ -572,7 +572,7 @@ test('tables have no WWCD column and fit their contents', () => {
   const out = board.formatStandingsMarkdown(roster, 'PHGG PC SCRIM STANDINGS')
 
   assert.ok(!out.includes('WWCD'))
-  assert.match(out, /RK\s+SLOT\s+TEAM\s+KILLS\s+PTS/)
+  assert.match(out, /RANK\s+SLOT\s+TEAM\s+KILLS\s+PTS/)
 
   // Every table row is the same width as the header, and no wider than the
   // longest cell needs — the old fixed padding forced 61 characters.

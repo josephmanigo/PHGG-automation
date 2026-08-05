@@ -114,7 +114,7 @@ function canManageTally(member, allowedRoleIds = new Set()) {
 export function buildRoundScoreTable(entries = []) {
   return renderAlignedTable(
     [
-      { key: 'rk', label: 'RK', align: 'right' },
+      { key: 'rk', label: 'RANK', align: 'right' },
       { key: 'slot', label: 'SLOT' },
       { key: 'team', label: 'TEAM' },
       { key: 'kills', label: 'KILLS', align: 'right' },
@@ -142,7 +142,7 @@ export function parseRoundTableFromMessage(content) {
   const entries = []
   for (const raw of String(content || '').split('\n')) {
     const line = raw.trim().replace(/^`+/, '').replace(/`+$/, '').trim()
-    if (!line || /^RK\b/.test(line) || /^[─-]+$/.test(line)) continue
+    if (!line || /^(RK|RANK)\b/.test(line) || /^[─-]+$/.test(line)) continue
 
     // "<rank> <slot> <team name…> <kills> <pts>" — the team name may contain
     // spaces, so anchor on the two numeric columns at the end.

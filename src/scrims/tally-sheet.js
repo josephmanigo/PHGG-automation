@@ -397,12 +397,17 @@ export async function syncScoresToGoogleSheet({
     )
   }
 
-  // 1. Duplicate Write Protection check
-  const existingAudit = [...auditStore.values()].find(
+  // Re-confirming the same round is allowed. Every write targets that round's
+  // own cells with the same values, so repeating it is idempotent — and
+  // blocking it stopped a legitimate retry after the review had to be
+  // recovered. Earlier attempts are still recorded in the audit log below.
+  const previousAttempt = [...auditStore.values()].find(
     (a) => a.submissionId === submissionId && a.roundNumber === roundNum && a.status === 'verified',
   )
-  if (existingAudit) {
-    throw new Error(`Duplicate write rejected: Submission ${submissionId} for Round ${roundNum} has already been verified and tallied (Audit ID: ${existingAudit.auditId}).`)
+  if (previousAttempt) {
+    console.log(
+      `[TALLY] Re-writing round ${roundNum} for submission ${submissionId} (previous audit ${previousAttempt.auditId}).`,
+    )
   }
 
   const payload = {
