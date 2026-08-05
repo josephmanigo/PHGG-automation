@@ -5,7 +5,6 @@ import {
   findMatchingTeam,
   getPlacementPoints,
   TallyBoard,
-  findUnmatchedEntries,
   TALLY_EMOJI,
   renderAlignedTable,
 } from '../src/scrims/tally-core.js'
@@ -27,7 +26,7 @@ import {
   DATE_HEADER_TEMPLATE,
   getSpreadsheetUrl,
 } from '../src/scrims/tally-sheet.js'
-import { formatAccuracyNotices, buildReviewMessage, buildRoundScoreTable, formatClearReply } from '../src/scrims/tally-automation.js'
+import { buildReviewMessage, buildRoundScoreTable, formatClearReply } from '../src/scrims/tally-automation.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -211,27 +210,6 @@ test('slot codes resolve to the right row, and junk resolves to nothing', () => 
   assert.equal(slotIndexFromCode('25-A'), -1)
 })
 
-test('accuracy notices name what was deliberately not scored', () => {
-  const notices = formatAccuracyNotices({
-    registeredNotInScreenshot: ['3-C APXS • SYNDICATE'],
-    unmatchedScreenshotEntries: ['SOME RANDOM TEAM'],
-  })
-
-  // Only unmatched screenshot rows are reported. A registered team that did not
-  // play is left off the sheet entirely, so it is not announced either.
-  assert.equal(notices.length, 1)
-  assert.match(notices[0], /Skipped/)
-  assert.match(notices[0], /SOME RANDOM TEAM/)
-  assert.ok(!notices.some((n) => n.includes('SYNDICATE')))
-
-  // A clean round says nothing at all.
-  assert.deepEqual(formatAccuracyNotices({}), [])
-  assert.deepEqual(
-    formatAccuracyNotices({ registeredNotInScreenshot: [], unmatchedScreenshotEntries: [] }),
-    [],
-  )
-})
-
 test('unregistered screenshot teams are discarded, not scored', () => {
   const board = new TallyBoard()
   const entries = board.setRound(
@@ -366,47 +344,28 @@ test('the board drops an unregistered-slot row instead of scoring it', () => {
   assert.ok(!entries.some((e) => e.name === 'ASCEND WONDERPETS'))
 })
 
-test('the review names what will not be scored, before confirming', () => {
+test('the review is just the heading and the table, with no notices', () => {
   const roster = [
-    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID ESPORTS' },
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
     { slotIndex: 10, slotCode: '11K', slotLetter: 'K', tag: 'ASCE', name: 'ASCEND WONDERPETS' },
   ]
-
-  // Slot W is a real lobby slot nobody holds, so it is reported, not scored.
-  const skipped = findUnmatchedEntries(
-    [
-      { rank: 1, slotCode: '1-A', teamQuery: 'A', kills: 58 },
-      { rank: 20, slotCode: 'W', teamQuery: 'W', kills: 1 },
-    ],
-    roster,
-  )
-  assert.deepEqual(skipped, ['slot W'])
-
-  const msg = buildReviewMessage({
-    roundNumber: 1,
-    entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID ESPORTS', kills: 58, totalPoints: 78 }],
-    registeredTeams: roster,
-    reviewId: 'rev_test',
-    skippedEntries: skipped,
-  })
-
-  assert.match(msg.content, /Not on the team slot board/)
-  assert.match(msg.content, /slot W/)
-  // ASCEND WONDERPETS holds a slot but did not play, so it is not shown at all.
-  assert.ok(!msg.content.includes('ASCEND WONDERPETS'))
-})
-
-test('a clean round adds no notices to the review', () => {
-  const roster = [{ slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' }]
   const msg = buildReviewMessage({
     roundNumber: 1,
     entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID', kills: 58, totalPoints: 78 }],
     registeredTeams: roster,
     reviewId: 'rev_test',
-    skippedEntries: [],
   })
+
+  // Neither skipped rows nor absent teams are called out any more.
   assert.doesNotMatch(msg.content, /Not on the team slot board/)
-  assert.doesNotMatch(msg.content, /marked \*\*X\*\*/)
+  assert.doesNotMatch(msg.content, /left blank/)
+  assert.doesNotMatch(msg.content, /🚫/)
+  assert.ok(!msg.content.includes('ASCEND WONDERPETS'))
+
+  // Heading, subtitle, then the fenced table — nothing after it.
+  const lines = msg.content.split('\n')
+  assert.match(lines[0], /SCORE TALLY REVIEW — ROUND 1/)
+  assert.equal(lines[lines.length - 1], '```')
 })
 
 test('teams that never played are left off the standings', () => {

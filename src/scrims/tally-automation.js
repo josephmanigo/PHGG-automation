@@ -6,7 +6,7 @@ import {
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
-import { TallyBoard, findUnmatchedEntries, TALLY_EMOJI, renderAlignedTable } from './tally-core.js'
+import { TallyBoard, TALLY_EMOJI, renderAlignedTable } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotWithOcr } from './tally-ocr.js'
 import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName, getSpreadsheetUrl } from './tally-sheet.js'
@@ -48,29 +48,9 @@ async function clearTallyAndSheet() {
   return clearGoogleSheetScores()
 }
 
-const MAX_LISTED_TEAMS = 8
-
-function summariseTeams(list) {
-  if (list.length <= MAX_LISTED_TEAMS) return list.join(', ')
-  return `${list.slice(0, MAX_LISTED_TEAMS).join(', ')} +${list.length - MAX_LISTED_TEAMS} more`
-}
-
-/**
- * Spell out what was deliberately NOT scored, so a misread screenshot is
- * obvious at a glance instead of silently landing in the sheet.
- */
-export function formatAccuracyNotices(syncResult = {}) {
-  const notices = []
-  const unmatched = syncResult.unmatchedScreenshotEntries || []
-
-  // Only rows that were in the screenshot but matched no registered team are
-  // reported. A registered team that did not play is left off the sheet and off
-  // this message alike, so an absent team is never surfaced as a participant.
-  if (unmatched.length > 0) {
-    notices.push(`🚫 *Skipped (not on the team slot board): ${summariseTeams(unmatched)}*`)
-  }
-  return notices
-}
+// Rows that match no registered team are dropped silently in Discord. They are
+// still reported on syncScoresToGoogleSheet's result and in the logs, so a
+// misread can be traced without cluttering the scorekeeper's message.
 
 export function formatClearReply(scrimLabel, result) {
   if (result?.success) {
@@ -138,24 +118,12 @@ export function buildRoundScoreTable(entries = []) {
   )
 }
 
-export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC', skippedEntries = [] }) {
+export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC' }) {
   const lines = [
     `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
     `*Please verify extracted team ranks and kills before confirming.*`,
     buildRoundScoreTable(entries),
   ]
-
-  // Rows the screenshot showed but that belong to no registered team. Worth
-  // saying, because they leave a visible gap in the RK column that would
-  // otherwise read as a fetch error.
-  //
-  // Registered teams that simply did not play are NOT listed: an absent team
-  // should not appear anywhere, here or on the sheet.
-  if (skippedEntries.length > 0) {
-    lines.push(
-      `🚫 *Not on the team slot board, so **not** scored: ${summariseTeams(skippedEntries)}*`,
-    )
-  }
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -417,7 +385,6 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             registeredTeams,
             reviewId,
             scrimLabel: scrimConfig.label,
-            skippedEntries: findUnmatchedEntries(parsed.entries, registeredTeams),
           })
 
           await respond(reviewMsg)
@@ -458,7 +425,6 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             registeredTeams,
             reviewId,
             scrimLabel: scrimConfig.label,
-            skippedEntries: findUnmatchedEntries(parsed.entries, registeredTeams),
           })
 
           await message.reply(reviewMsg).catch(() => {})
@@ -630,7 +596,6 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         : (syncResult && syncResult.success
             ? [
                 `*(Scores written & verified in Google Sheet — ${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`,
-                ...formatAccuracyNotices(syncResult),
               ].join('\n')
             : `*(Scores saved to leaderboard)*`)
 
