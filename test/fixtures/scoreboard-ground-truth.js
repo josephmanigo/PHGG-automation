@@ -132,7 +132,7 @@ export const MOBILE_ROUND_A = {
   label: 'mobile-round-a',
   captures: [
     {
-      file: 'mobile-round-a-1.jpg',
+      file: 'round4-1.jpg',
       rows: [
         { rank: 1, slotLetter: 'A', kills: 44 },
         { rank: 2, slotLetter: 'R', kills: 40 },
@@ -142,7 +142,7 @@ export const MOBILE_ROUND_A = {
       ],
     },
     {
-      file: 'mobile-round-a-2.jpg',
+      file: 'round4-2.jpg',
       stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
       rows: [
         { rank: 6, slotLetter: 'B', kills: 14 },
@@ -152,7 +152,7 @@ export const MOBILE_ROUND_A = {
       ],
     },
     {
-      file: 'mobile-round-a-3.jpg',
+      file: 'round4-3.jpg',
       stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
       rows: [
         { rank: 10, slotLetter: 'I', kills: 20 },
@@ -162,7 +162,7 @@ export const MOBILE_ROUND_A = {
       ],
     },
     {
-      file: 'mobile-round-a-4.jpg',
+      file: 'round4-4.jpg',
       stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
       rows: [
         { rank: 14, slotLetter: 'G', kills: 38 },
@@ -174,7 +174,7 @@ export const MOBILE_ROUND_A = {
       ],
     },
     {
-      file: 'mobile-round-a-5.jpg',
+      file: 'round4-5.jpg',
       stickyRank1: { rank: 1, slotLetter: 'A', kills: 44 },
       rows: [
         // Top edge cuts this row's slot letter and rank off.
