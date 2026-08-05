@@ -72,9 +72,9 @@ export function formatAccuracyNotices(syncResult = {}) {
   return notices
 }
 
-function formatClearReply(scrimLabel, result) {
+export function formatClearReply(scrimLabel, result) {
   if (result?.success) {
-    return `✅ Score tally board and Google Sheet reset to blank for **${scrimLabel} SCRIM**.\n*Team names, all four rounds, penalties and the rank 1-2-3 highlight were removed.*`
+    return `${TALLY_EMOJI.confirmed} Score tally board and Google Sheet reset to blank for **${scrimLabel} SCRIM**.`
   }
   return `⚠️ Tally board reset for **${scrimLabel} SCRIM**, but the Google Sheet could not be cleared: ${result?.error || 'unknown error'}`
 }

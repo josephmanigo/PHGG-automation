@@ -26,7 +26,7 @@ import {
   DATE_HEADER_TEMPLATE,
   getSpreadsheetUrl,
 } from '../src/scrims/tally-sheet.js'
-import { formatAccuracyNotices, buildReviewMessage, buildRoundScoreTable } from '../src/scrims/tally-automation.js'
+import { formatAccuracyNotices, buildReviewMessage, buildRoundScoreTable, formatClearReply } from '../src/scrims/tally-automation.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -574,4 +574,20 @@ test('the sheet link follows the spreadsheet the bot actually writes to', () => 
     if (original === undefined) delete process.env.GOOGLE_SHEETS_SPREADSHEET_ID
     else process.env.GOOGLE_SHEETS_SPREADSHEET_ID = original
   }
+})
+
+test('the /clear reply is one line with the custom check emoji', () => {
+  const ok = formatClearReply('PC', { success: true })
+
+  assert.ok(ok.startsWith(TALLY_EMOJI.confirmed))
+  assert.ok(!ok.includes('✅'))
+  assert.match(ok, /reset to blank for \*\*PC SCRIM\*\*\./)
+
+  // Single line, and the old breakdown sentence is gone.
+  assert.ok(!ok.includes('\n'))
+  assert.ok(!ok.includes('Team names, all four rounds'))
+
+  // A failed clear still reports the reason rather than claiming success.
+  const failed = formatClearReply('PC', { success: false, error: 'permission denied' })
+  assert.match(failed, /permission denied/)
 })
