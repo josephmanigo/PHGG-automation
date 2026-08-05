@@ -6,6 +6,15 @@ import {
   TallyBoard,
 } from '../src/scrims/tally-core.js'
 import { parseTextScoreInput } from '../src/scrims/tally-vision.js'
+import {
+  ROUND_COLUMNS,
+  SCORE_START_ROW,
+  SCORE_END_ROW,
+  buildClearRanges,
+  buildPlacementFormulaRestore,
+  buildRankHighlightFormula,
+  placementPointsFormula,
+} from '../src/scrims/tally-sheet.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -118,4 +127,84 @@ ROUND 1
   assert.equal(result.entries[1].kills, 8)
   assert.equal(result.entries[2].rank, 3)
   assert.equal(result.entries[2].kills, 5)
+})
+
+test('rank highlight reads the RANK column, not the penalties table', () => {
+  const formula = buildRankHighlightFormula()
+
+  // AA is the RANK column (=RANK(Z8,$Z$8:$Z$32,0)).
+  assert.match(formula, /\$AA8<=3/)
+  assert.match(formula, /ISNUMBER\(\$AA8\)/)
+
+  // The old rule matched $AB/$AC/$AD, which hold the penalties table's slot
+  // numbers 1..25 — so it always painted rows 8, 9 and 10 regardless of rank.
+  assert.doesNotMatch(formula, /\$AB8/)
+  assert.doesNotMatch(formula, /\$AC8/)
+  assert.doesNotMatch(formula, /\$AD8/)
+
+  // A blank sheet ranks every row 1 (all scores are 0), so the rule also
+  // requires a team name and a positive final score.
+  assert.match(formula, /\$J8<>""/)
+  assert.match(formula, /\$Z8>0/)
+
+  // Marker so repeat syncs replace this rule instead of stacking duplicates.
+  assert.match(formula, /PHGG_RANK_TOP3/)
+})
+
+test('placement points stay a live VLOOKUP and never yield #N/A', () => {
+  assert.equal(
+    placementPointsFormula('K', 8),
+    '=IF(K8="","",IFERROR(VLOOKUP(K8,$B$8:$C$32,2,0),"X"))',
+  )
+  assert.equal(
+    placementPointsFormula('T', 32),
+    '=IF(T32="","",IFERROR(VLOOKUP(T32,$B$8:$C$32,2,0),"X"))',
+  )
+
+  // A bare VLOOKUP returns #N/A for an unplayed round, and X=SUM(...) turns
+  // that into #N/A for TOTAL, FINAL SCORE and RANK alike — which is what left
+  // the sheet with no ranking to highlight.
+  for (const round of [1, 2, 3, 4]) {
+    const { place } = ROUND_COLUMNS[round]
+    assert.match(placementPointsFormula(place, 8), /^=IF\(/)
+  }
+})
+
+test('clear wipes scrim data but leaves the sheet template intact', () => {
+  const ranges = buildClearRanges('SHEET').join(' ')
+
+  // Team names, every round, penalties and the bot-written header lines.
+  assert.match(ranges, /'SHEET'!J8:J32/)
+  assert.match(ranges, /'SHEET'!K8:V32/)
+  assert.match(ranges, /'SHEET'!Y8:Y32/)
+  assert.match(ranges, /'SHEET'!AD8:AG32/)
+  assert.match(ranges, /'SHEET'!H3/)
+  assert.match(ranges, /'SHEET'!H5/)
+
+  // Columns the sheet computes for itself must survive a clear.
+  assert.doesNotMatch(ranges, /!X\d/) // TOTAL POINTS EARNED
+  assert.doesNotMatch(ranges, /!Z\d/) // FINAL SCORE
+  assert.doesNotMatch(ranges, /!AA\d/) // RANK
+  assert.doesNotMatch(ranges, /!B\d/) // B8:C32 points lookup table
+  assert.doesNotMatch(ranges, /!AC\d/) // penalties slot numbering (template)
+})
+
+test('clear puts the placement-points formulas back after wiping K:V', () => {
+  const restore = buildPlacementFormulaRestore('SHEET')
+  const rowCount = SCORE_END_ROW - SCORE_START_ROW + 1
+
+  assert.equal(restore.length, 4) // one column per round
+  assert.equal(rowCount, 25)
+
+  for (const round of [1, 2, 3, 4]) {
+    const { place, placementPoints } = ROUND_COLUMNS[round]
+    const block = restore.find((d) => d.range.includes(`!${placementPoints}${SCORE_START_ROW}:`))
+    assert.ok(block, `round ${round} placement column missing`)
+    assert.equal(block.values.length, rowCount)
+    assert.equal(block.values[0][0], `=IF(${place}8="","",IFERROR(VLOOKUP(${place}8,$B$8:$C$32,2,0),"X"))`)
+    assert.equal(
+      block.values[rowCount - 1][0],
+      `=IF(${place}32="","",IFERROR(VLOOKUP(${place}32,$B$8:$C$32,2,0),"X"))`,
+    )
+  }
 })

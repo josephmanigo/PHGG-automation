@@ -11,7 +11,175 @@ export const ROUND_COLUMNS = Object.freeze({
   4: { place: 'T', placementPoints: 'U', kills: 'V' },
 })
 
+// Scoresheet geometry — teams occupy rows 8..32 (25 slots).
+export const SCORE_START_ROW = 8
+export const SCORE_TOTAL_SLOTS = 25
+export const SCORE_END_ROW = SCORE_START_ROW + SCORE_TOTAL_SLOTS - 1 // 32
+
+// Verified live column layout of '4 Rounds - 25 Teams (Do Not Edit)':
+// H=SLOT  I=SLOT NO.  J=TEAM  K..V=rounds 1-4  X=TOTAL EARNED  Y=TOTAL DEDUCTED
+// Z=FINAL SCORE  AA=RANK  AC..AG=penalties table
+export const TEAM_COLUMN = 'J'
+export const FINAL_SCORE_COLUMN = 'Z'
+export const RANK_COLUMN = 'AA'
+const HIGHLIGHT_START_COLUMN_INDEX = 7 // H
+const HIGHLIGHT_END_COLUMN_INDEX = 27 // exclusive -> through AA
+
+// Marker embedded in the rule we own so repeat syncs replace it instead of
+// stacking a new copy. N("text") evaluates to 0, so it never affects the result.
+const RANK_HIGHLIGHT_MARKER = 'PHGG_RANK_TOP3'
+
+// Conditional-format rules that are "the rank 1/2/3 highlight" and are therefore
+// ours to replace or remove. Everything else on the sheet is left untouched.
+const RANK_HIGHLIGHT_SIGNATURES = [
+  RANK_HIGHLIGHT_MARKER,
+  '$AD8=1', // legacy rule that read the penalties table instead of the RANK column
+  'LARGE($Z$8:$Z$3', // older "top 3 by final score" variant
+]
+
 const auditStore = new Map()
+
+/**
+ * Placement points are a live VLOOKUP against the B8:C32 points table. The bot
+ * must never replace this formula with a literal, or the column stops
+ * recalculating for that row forever.
+ *
+ * The bare VLOOKUP returns #N/A for any round that has not been played yet,
+ * and X = SUM(L,M,O,P,...) propagates that error all the way through
+ * FINAL SCORE (Z) and RANK (AA) — which is why ranking, and therefore any
+ * rank-based highlight, could never work. Wrapping it makes every unplayed
+ * round contribute nothing instead of poisoning the row:
+ *   - place empty  -> "" (round not played yet)
+ *   - place 'X'    -> "X" (team sat this round out; matches the sheet styling)
+ *   - place 1..25  -> the placement points
+ * SUM ignores text, so the totals stay correct in all three cases.
+ */
+export function placementPointsFormula(placeColumn, row) {
+  const cell = `${placeColumn}${row}`
+  return `=IF(${cell}="","",IFERROR(VLOOKUP(${cell},$B$8:$C$32,2,0),"X"))`
+}
+
+export function buildRankHighlightFormula(startRow = SCORE_START_ROW) {
+  return (
+    `=AND(N("${RANK_HIGHLIGHT_MARKER}")=0,` +
+    `$${TEAM_COLUMN}${startRow}<>"",` +
+    `ISNUMBER($${RANK_COLUMN}${startRow}),` +
+    `$${RANK_COLUMN}${startRow}<=3,` +
+    `$${FINAL_SCORE_COLUMN}${startRow}>0)`
+  )
+}
+
+function isRankHighlightRule(rule) {
+  const formula = rule?.booleanRule?.condition?.values?.[0]?.userEnteredValue
+  if (typeof formula !== 'string') return false
+  return RANK_HIGHLIGHT_SIGNATURES.some((signature) => formula.includes(signature))
+}
+
+async function fetchSheetMeta({ spreadsheetId, sheetName, accessToken }) {
+  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties,sheets.conditionalFormats`
+  const metaResp = await fetch(metaUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!metaResp.ok) {
+    throw new Error(`Could not read spreadsheet metadata (${metaResp.status}): ${await metaResp.text()}`)
+  }
+  const metaData = await metaResp.json()
+  const targetSheet =
+    (metaData.sheets || []).find((s) => s.properties?.title === sheetName) || metaData.sheets?.[0]
+  if (!targetSheet || targetSheet.properties?.sheetId === undefined) {
+    throw new Error(`Worksheet "${sheetName}" was not found in the spreadsheet.`)
+  }
+  return {
+    sheetId: targetSheet.properties.sheetId,
+    conditionalFormats: targetSheet.conditionalFormats || [],
+  }
+}
+
+/**
+ * Delete requests for every rank-highlight rule on the sheet, highest index
+ * first so the remaining indexes stay valid while the batch is applied.
+ */
+function buildRankHighlightDeleteRequests(sheetId, conditionalFormats) {
+  return conditionalFormats
+    .map((rule, index) => ({ rule, index }))
+    .filter(({ rule }) => isRankHighlightRule(rule))
+    .sort((a, b) => b.index - a.index)
+    .map(({ index }) => ({
+      deleteConditionalFormatRule: { sheetId, index },
+    }))
+}
+
+/**
+ * Re-assert exactly one yellow "rank 1, 2, 3" rule for rows 8..32, columns H..AA.
+ * Any previous copy (including the broken legacy versions) is deleted first.
+ */
+export async function applyRankHighlight({ spreadsheetId, sheetName, accessToken }) {
+  const { sheetId, conditionalFormats } = await fetchSheetMeta({ spreadsheetId, sheetName, accessToken })
+
+  const requests = buildRankHighlightDeleteRequests(sheetId, conditionalFormats)
+  requests.push({
+    addConditionalFormatRule: {
+      rule: {
+        ranges: [
+          {
+            sheetId,
+            startRowIndex: SCORE_START_ROW - 1,
+            endRowIndex: SCORE_END_ROW,
+            startColumnIndex: HIGHLIGHT_START_COLUMN_INDEX,
+            endColumnIndex: HIGHLIGHT_END_COLUMN_INDEX,
+          },
+        ],
+        booleanRule: {
+          condition: {
+            type: 'CUSTOM_FORMULA',
+            values: [{ userEnteredValue: buildRankHighlightFormula() }],
+          },
+          format: {
+            backgroundColor: { red: 1.0, green: 1.0, blue: 0.0 }, // Bright Yellow #FFFF00
+            textFormat: { bold: true },
+          },
+        },
+      },
+      index: 0,
+    },
+  })
+
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requests }),
+  })
+  if (!response.ok) {
+    throw new Error(`Rank highlight update failed (${response.status}): ${await response.text()}`)
+  }
+  return { rulesReplaced: requests.length - 1 }
+}
+
+/**
+ * Remove the rank 1/2/3 highlight without disturbing the sheet's own
+ * conditional formatting (colour scales, the "x" marker styling, ...).
+ */
+export async function removeRankHighlight({ spreadsheetId, sheetName, accessToken }) {
+  const { sheetId, conditionalFormats } = await fetchSheetMeta({ spreadsheetId, sheetName, accessToken })
+  const requests = buildRankHighlightDeleteRequests(sheetId, conditionalFormats)
+  if (requests.length === 0) return { rulesRemoved: 0 }
+
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requests }),
+  })
+  if (!response.ok) {
+    throw new Error(`Rank highlight removal failed (${response.status}): ${await response.text()}`)
+  }
+  return { rulesRemoved: requests.length }
+}
 
 export function resolveGoogleCredentials() {
   let email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL
@@ -151,7 +319,6 @@ export async function syncScoresToGoogleSheet({
   }
 
   // 1. Duplicate Write Protection check
-  const auditKey = `${submissionId}:${roundNum}`
   const existingAudit = [...auditStore.values()].find(
     (a) => a.submissionId === submissionId && a.roundNumber === roundNum && a.status === 'verified',
   )
@@ -198,8 +365,8 @@ export async function syncScoresToGoogleSheet({
   }).format(now).replace(/ /g, '-').toUpperCase()
 
   // Determine starting row: standard NIGHTRAID scoresheet is Row 8 to 32
-  const startRow = 8
-  const totalSlots = 25
+  const startRow = SCORE_START_ROW
+  const totalSlots = SCORE_TOTAL_SLOTS
 
   // 2. Read Current Scoresheet State for Backup & Pre-Write Validation
   const readRange = `'${sheetName}'!H${startRow}:V${startRow + totalSlots - 1}`
@@ -257,10 +424,19 @@ export async function syncScoresToGoogleSheet({
       const officialTeamName = sanitizeSheetText(rawName)
 
       updateData.push({
-        range: `'${sheetName}'!J${row}`,
+        range: `'${sheetName}'!${TEAM_COLUMN}${row}`,
         values: [[officialTeamName]],
       })
-      writePlanTargets.push({ cell: `J${row}`, role: 'team_name', value: officialTeamName })
+      writePlanTargets.push({ cell: `${TEAM_COLUMN}${row}`, role: 'team_name', value: officialTeamName })
+    } else if (registeredTeams.length > 0) {
+      // Slot is unused this scrim — drop any team name left over from the last
+      // session so stale names never sit next to fresh scores. Skipped entirely
+      // when the board is empty, so a bot restart cannot wipe the roster.
+      updateData.push({
+        range: `'${sheetName}'!${TEAM_COLUMN}${row}`,
+        values: [['']],
+      })
+      writePlanTargets.push({ cell: `${TEAM_COLUMN}${row}`, role: 'team_name', value: '' })
     }
 
     // 2. Find participating entry for this slot (match by slot code ONLY, never by rank)
@@ -273,8 +449,26 @@ export async function syncScoresToGoogleSheet({
       return eCode === matchSlotCode || eCode === matchAltSlotCode || eCode === matchSlotLetter
     })
 
+    // Repair the PLACEMENT POINTS formula for all four rounds, not just the one
+    // being written. A single unplayed round left a #N/A that propagated into
+    // TOTAL / FINAL SCORE / RANK, so the whole row had no rank at all.
+    for (const cols of Object.values(ROUND_COLUMNS)) {
+      const pointsFormula = placementPointsFormula(cols.place, row)
+      updateData.push({
+        range: `'${sheetName}'!${cols.placementPoints}${row}`,
+        values: [[pointsFormula]],
+      })
+      writePlanTargets.push({
+        cell: `${cols.placementPoints}${row}`,
+        role: 'placementPoints',
+        value: pointsFormula,
+      })
+    }
+
     if (entry && registered) {
-      const placeVal = entry.rank
+      const parsedRank = Number(entry.rank)
+      const placeVal =
+        Number.isInteger(parsedRank) && parsedRank >= 1 && parsedRank <= totalSlots ? parsedRank : 'X'
       const killsVal = Math.max(0, Number(entry.kills || 0))
 
       updateData.push({
@@ -289,15 +483,15 @@ export async function syncScoresToGoogleSheet({
       writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: placeVal })
       writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: killsVal })
       teamsTalliedCount++
+
+      if (placeVal === 'X') {
+        console.warn(`[TALLY] Slot ${slotCode} had an out-of-range placement (${entry.rank}); wrote 'X' instead.`)
+      }
     } else {
       // Empty slot or team did not participate/score in this round:
-      // Write 'X' to PLACE, PLACEMENT POINTS, and KILLS to replace #N/A without touching total score/rank columns
+      // Write 'X' to PLACE and KILLS to replace #N/A without touching total score/rank columns
       updateData.push({
         range: `'${sheetName}'!${roundCols.place}${row}`,
-        values: [['X']],
-      })
-      updateData.push({
-        range: `'${sheetName}'!${roundCols.placementPoints}${row}`,
         values: [['X']],
       })
       updateData.push({
@@ -306,7 +500,6 @@ export async function syncScoresToGoogleSheet({
       })
 
       writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: 'X' })
-      writePlanTargets.push({ cell: `${roundCols.placementPoints}${row}`, role: 'placementPoints', value: 'X' })
       writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: 'X' })
       missingMarkersAddedCount++
 
@@ -355,73 +548,17 @@ export async function syncScoresToGoogleSheet({
 
   auditRecord.status = 'written'
 
-  // 4. Ensure Rank 1, 2, 3 Yellow Highlight Conditional Format Rule is active
+  // 4. Ensure exactly one Rank 1, 2, 3 yellow highlight rule is active
   try {
-    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`
-    const metaResp = await fetch(metaUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    if (metaResp.ok) {
-      const metaData = await metaResp.json()
-      const targetSheet = (metaData.sheets || []).find(
-        (s) => s.properties?.title === sheetName,
-      ) || metaData.sheets?.[0]
-
-      if (targetSheet && targetSheet.properties?.sheetId !== undefined) {
-        const numericSheetId = targetSheet.properties.sheetId
-        const formatEndpoint = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`
-
-        const formatPayload = {
-          requests: [
-            {
-              addConditionalFormatRule: {
-                rule: {
-                  ranges: [
-                    {
-                      sheetId: numericSheetId,
-                      startRowIndex: 7,   // Row 8
-                      endRowIndex: 32,    // Row 32 inclusive
-                      startColumnIndex: 7, // Column H (index 7)
-                      endColumnIndex: 30,  // Column AD (index 30)
-                    },
-                  ],
-                  booleanRule: {
-                    condition: {
-                      type: 'CUSTOM_FORMULA',
-                      values: [
-                        {
-                          userEnteredValue:
-                            '=AND(OR($AD8=1,$AD8=2,$AD8=3,$AC8=1,$AC8=2,$AC8=3,$AB8=1,$AB8=2,$AB8=3),ISNUMBER($K8))',
-                        },
-                      ],
-                    },
-                    format: {
-                      backgroundColor: { red: 1.0, green: 1.0, blue: 0.0 }, // Bright Yellow #FFFF00
-                      textFormat: { bold: true },
-                    },
-                  },
-                },
-                index: 0,
-              },
-            },
-          ],
-        }
-
-        await fetch(formatEndpoint, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formatPayload),
-        }).catch((err) => console.warn('[TALLY] Rank highlight format warning:', err.message))
-      }
+    const { rulesReplaced } = await applyRankHighlight({ spreadsheetId, sheetName, accessToken })
+    if (rulesReplaced > 0) {
+      console.log(`[TALLY] Replaced ${rulesReplaced} stale rank highlight rule(s).`)
     }
   } catch (err) {
     console.warn('[TALLY] Could not apply rank highlight conditional formatting:', err.message)
   }
 
-  // 4. Post-Write Re-read & Verification Loop
+  // 5. Post-Write Re-read & Verification Loop
   let verifySuccess = false
   try {
     const verifyResponse = await fetch(readUrl, {
@@ -461,14 +598,15 @@ export async function fetchLiveStandingsFromSheet({
   spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID,
   sheetName = process.env.GOOGLE_SHEETS_WORKSHEET_NAME || '4 Rounds - 25 Teams (Do Not Edit)',
 }) {
-  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SHEETS_PRIVATE_KEY
+  // Use the same resolver as every other call so the service-account JSON file
+  // works here too — the env-only lookup made this silently return null.
+  const { email: clientEmail, privateKey } = resolveGoogleCredentials()
 
   if (!clientEmail || !privateKey) return null
 
   const accessToken = await getGoogleAccessToken(clientEmail, privateKey)
   // Read H8:AA32 (H=Slot, J=Team, Z=Final Score, AA=Final Rank)
-  const range = `'${sheetName}'!H8:AA32`
+  const range = `'${sheetName}'!H${SCORE_START_ROW}:${RANK_COLUMN}${SCORE_END_ROW}`
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`
 
   const response = await fetch(url, {
@@ -494,7 +632,7 @@ export async function fetchLiveStandingsFromSheet({
         teamName,
         finalScore,
         finalRank,
-        rowNumber: 8 + idx,
+        rowNumber: SCORE_START_ROW + idx,
       })
     }
   })
@@ -504,17 +642,59 @@ export async function fetchLiveStandingsFromSheet({
   return standings
 }
 
+/**
+ * Ranges wiped by /clear. Deliberately excludes the columns the sheet computes
+ * for itself (X total earned, Z final score, AA rank) and the B8:C32 points
+ * table, which are template, not scrim data.
+ */
+export function buildClearRanges(sheetName) {
+  const first = SCORE_START_ROW
+  const last = SCORE_END_ROW
+  return [
+    `'${sheetName}'!H3`, // device title written by the bot
+    `'${sheetName}'!H5`, // date | time | rounds line written by the bot
+    `'${sheetName}'!${TEAM_COLUMN}${first}:${TEAM_COLUMN}${last}`, // team names
+    `'${sheetName}'!K${first}:V${last}`, // all four rounds: place / points / kills
+    `'${sheetName}'!Y${first}:Y${last}`, // total points deducted
+    `'${sheetName}'!AD${first}:AG${last}`, // penalties table entries
+  ]
+}
+
+/**
+ * K8:V32 is cleared wholesale above, which also removes the PLACEMENT POINTS
+ * VLOOKUPs in L/O/R/U. Put them back so a cleared sheet is a working template
+ * rather than a dead one. With every place cell blank the formula renders
+ * blank, so the sheet reads as fresh instead of showing #N/A on every row.
+ */
+export function buildPlacementFormulaRestore(sheetName) {
+  const data = []
+  for (const { place, placementPoints } of Object.values(ROUND_COLUMNS)) {
+    const values = []
+    for (let row = SCORE_START_ROW; row <= SCORE_END_ROW; row++) {
+      values.push([placementPointsFormula(place, row)])
+    }
+    data.push({
+      range: `'${sheetName}'!${placementPoints}${SCORE_START_ROW}:${placementPoints}${SCORE_END_ROW}`,
+      values,
+    })
+  }
+  return data
+}
+
 export async function clearGoogleSheetScores({
   spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID,
   sheetName = process.env.GOOGLE_SHEETS_WORKSHEET_NAME || '4 Rounds - 25 Teams (Do Not Edit)',
 } = {}) {
   const { email: clientEmail, privateKey } = resolveGoogleCredentials()
-  if (!clientEmail || !privateKey) return false
+  if (!clientEmail || !privateKey) {
+    console.warn('[TALLY] Cannot clear Google Sheet: service account credentials are not available.')
+    return { success: false, error: 'Google Sheets credentials are not configured.' }
+  }
 
   try {
     const accessToken = await getGoogleAccessToken(clientEmail, privateKey)
 
-    // 1. Clear cell values
+    // 1. Clear team names, scores, penalties and the bot-written header lines.
     const batchClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`
     const response = await fetch(batchClearUrl, {
       method: 'POST',
@@ -522,62 +702,53 @@ export async function clearGoogleSheetScores({
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        ranges: [
-          `'${sheetName}'!H3`,
-          `'${sheetName}'!H5`,
-          `'${sheetName}'!J8:J32`,
-          `'${sheetName}'!K8:V32`,
-        ],
-      }),
+      body: JSON.stringify({ ranges: buildClearRanges(sheetName) }),
     })
 
     if (!response.ok) {
       const errText = await response.text()
       console.warn('[TALLY] Failed to clear Google Sheet:', errText)
-      return false
+      return { success: false, error: `Sheet clear failed (${response.status}): ${errText}` }
     }
 
-    // 2. Remove all conditional formatting rules (yellow highlight)
+    // 2. Restore the placement-points VLOOKUPs the clear just removed.
+    const restoreResponse = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          valueInputOption: 'USER_ENTERED',
+          data: buildPlacementFormulaRestore(sheetName),
+        }),
+      },
+    )
+
+    if (!restoreResponse.ok) {
+      const errText = await restoreResponse.text()
+      console.warn('[TALLY] Cleared values but could not restore placement formulas:', errText)
+      return { success: false, error: `Placement formula restore failed (${restoreResponse.status}): ${errText}` }
+    }
+
+    // 3. Remove the rank 1/2/3 highlight — and only that. The sheet's own
+    //    conditional formatting (colour scales, 'x' marker styling) is kept.
+    let rulesRemoved = 0
     try {
-      const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties,sheets.conditionalFormats`
-      const metaResp = await fetch(metaUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      if (metaResp.ok) {
-        const metaData = await metaResp.json()
-        const targetSheet = (metaData.sheets || []).find(
-          (s) => s.properties?.title === sheetName,
-        ) || metaData.sheets?.[0]
-
-        if (targetSheet?.conditionalFormats?.length > 0) {
-          const deleteRequests = targetSheet.conditionalFormats.map((_, idx) => ({
-            deleteConditionalFormatRule: {
-              sheetId: targetSheet.properties.sheetId,
-              index: 0,
-            },
-          }))
-
-          await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ requests: deleteRequests }),
-          })
-          console.log(`[TALLY] Removed ${targetSheet.conditionalFormats.length} conditional format rule(s)`)
-        }
-      }
+      ;({ rulesRemoved } = await removeRankHighlight({ spreadsheetId, sheetName, accessToken }))
     } catch (fmtErr) {
-      console.warn('[TALLY] Could not remove conditional formatting:', fmtErr.message)
+      console.warn('[TALLY] Could not remove rank highlight:', fmtErr.message)
     }
 
-    console.log(`[TALLY] Successfully cleared teams, date, scores, and highlights on '${sheetName}'`)
-    return true
+    console.log(
+      `[TALLY] Cleared teams, header, scores, penalties and ${rulesRemoved} rank highlight rule(s) on '${sheetName}'`,
+    )
+    return { success: true, rulesRemoved, worksheetName: sheetName }
   } catch (err) {
     console.warn('[TALLY] Exception clearing Google Sheet:', err.message)
-    return false
+    return { success: false, error: err.message }
   }
 }
 

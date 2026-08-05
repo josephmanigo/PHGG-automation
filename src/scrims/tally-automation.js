@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   Events,
+  MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
 import { TallyBoard } from './tally-core.js'
@@ -12,12 +13,45 @@ import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetS
 const activeTallyBoards = new Map()
 const pendingReviews = new Map()
 
+const PENDING_REVIEW_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours — one scrim night
+
 export function getOrCreateTallyBoard(scrimLabel, customPlacementPoints) {
   const key = String(scrimLabel || 'DEFAULT').toUpperCase()
   if (!activeTallyBoards.has(key)) {
     activeTallyBoards.set(key, new TallyBoard(customPlacementPoints))
   }
   return activeTallyBoards.get(key)
+}
+
+function rememberReview(reviewId, data) {
+  // Drop reviews that were never confirmed or rejected, so the map cannot grow
+  // without bound across scrim nights.
+  const cutoff = Date.now() - PENDING_REVIEW_TTL_MS
+  for (const [id, entry] of pendingReviews) {
+    if ((entry.createdAt ?? 0) < cutoff) pendingReviews.delete(id)
+  }
+  pendingReviews.set(reviewId, { ...data, createdAt: Date.now() })
+}
+
+/**
+ * Every scrim scope writes to the same spreadsheet, so resetting the sheet has
+ * to reset every in-memory board too — otherwise the next /standings replays
+ * scores that are no longer on the sheet.
+ */
+function clearAllTallyBoards() {
+  for (const board of activeTallyBoards.values()) board.clear()
+}
+
+async function clearTallyAndSheet() {
+  clearAllTallyBoards()
+  return clearGoogleSheetScores()
+}
+
+function formatClearReply(scrimLabel, result) {
+  if (result?.success) {
+    return `✅ Score tally board and Google Sheet reset to blank for **${scrimLabel} SCRIM**.\n*Team names, all four rounds, penalties and the rank 1-2-3 highlight were removed.*`
+  }
+  return `⚠️ Tally board reset for **${scrimLabel} SCRIM**, but the Google Sheet could not be cleared: ${result?.error || 'unknown error'}`
 }
 
 function canManageTally(member, allowedRoleIds = new Set()) {
@@ -168,9 +202,8 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         await message.reply('❌ You do not have permission to clear score tallies.').catch(() => {})
         return
       }
-      tallyBoard.clear()
-      await clearGoogleSheetScores()
-      await message.reply(`✅ Score tally board and Google Sheet reset to blank for **${scrimConfig.label} SCRIM**.`).catch(() => {})
+      const clearResult = await clearTallyAndSheet()
+      await message.reply(formatClearReply(scrimConfig.label, clearResult)).catch(() => {})
       return
     }
 
@@ -282,7 +315,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           )
 
           const reviewId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-          pendingReviews.set(reviewId, {
+          rememberReview(reviewId, {
             roundNumber: effectiveRound,
             entries: previewEntries,
             scrimLabel: scrimConfig.label,
@@ -324,7 +357,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           )
 
           const reviewId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-          pendingReviews.set(reviewId, {
+          rememberReview(reviewId, {
             roundNumber: effectiveRound,
             entries: previewEntries,
             scrimLabel: scrimConfig.label,
@@ -376,13 +409,12 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       const cmdName = interaction.commandName
       if (cmdName === 'clear' || cmdName === 'clearsheet') {
         if (!canManageTally(interaction.member, allowedRoleIds)) {
-          await interaction.reply({ content: '❌ You do not have permission to clear score tallies.', ephemeral: true }).catch(() => {})
+          await interaction.reply({ content: '❌ You do not have permission to clear score tallies.', flags: MessageFlags.Ephemeral }).catch(() => {})
           return
         }
         await interaction.deferReply().catch(() => {})
-        tallyBoard.clear()
-        await clearGoogleSheetScores()
-        await interaction.editReply(`✅ Score tally board and Google Sheet reset to blank for **PC SCRIM**.`).catch(() => {})
+        const clearResult = await clearTallyAndSheet()
+        await interaction.editReply(formatClearReply('PC', clearResult)).catch(() => {})
         return
       }
       if (cmdName === 'standings') {
@@ -420,12 +452,12 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         registeredTeams,
         `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
       )
-      await interaction.reply({ content: standingsText, ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: standingsText, flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
 
     if (!canManageTally(interaction.member, allowedRoleIds)) {
-      await interaction.reply({ content: '❌ You do not have permission to modify tally scores.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: '❌ You do not have permission to modify tally scores.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
 
@@ -435,7 +467,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       } catch (deferErr) {
         console.error('Failed to defer button update:', deferErr.message)
         try {
-          await interaction.reply({ content: '⚠️ Button interaction expired. Please send the screenshot again.', ephemeral: true })
+          await interaction.reply({ content: '⚠️ Button interaction expired. Please send the screenshot again.', flags: MessageFlags.Ephemeral })
         } catch { /* already replied */ }
         return
       }
@@ -460,6 +492,10 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             roundNumber: reviewData.roundNumber,
             entries: reviewData.entries,
             registeredTeams,
+            // Stable per-review id, so the duplicate-write guard can actually
+            // fire. It defaulted to a fresh random value on every call, which
+            // meant no double-submit was ever detected.
+            submissionId: reviewId,
             device: scrimConfig.label || 'PC',
             timeLabel: scrimConfig.timeLabel || '10:00 PM',
             roundsLabel: scrimConfig.roundsLabel || '4 ROUNDS',
