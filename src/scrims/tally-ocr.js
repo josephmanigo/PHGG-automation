@@ -1,5 +1,7 @@
 import { Jimp } from 'jimp'
 import { createWorker, PSM } from 'tesseract.js'
+import { readCapture } from './tally-glyphs.js'
+import atlas from './glyph-atlas.json' with { type: 'json' }
 
 /**
  * Local scoreboard OCR. No API key, no quota, no per-request call to a model
@@ -296,5 +298,86 @@ export async function parseScreenshotWithOcr({
     )
   }
 
-  return { roundNumber: 1, entries, source: 'ocr' }
+  return { roundNumber: 1, entries, source: 'ocr', uncertain: [] }
+}
+
+/**
+ * Read captures with the glyph template matcher.
+ *
+ * Measured 60/60 on rank, slot letter and team kills across the six fixture
+ * captures, with nothing guessed: a cell that does not match a template
+ * outright is reported in `uncertain` instead of being resolved to a plausible
+ * value. That distinction is the whole point — a flagged row costs a
+ * scorekeeper a glance, a wrong row costs a team its placement.
+ */
+export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType = 'image/png' } = {}) {
+  const imageList = images.length > 0 ? images : buffer ? [{ buffer, mimeType }] : []
+  if (imageList.length === 0) {
+    throw new Error('No image provided for glyph parsing.')
+  }
+
+  const collected = []
+  for (const img of imageList) {
+    const source = img.buffer || (img.base64 ? Buffer.from(img.base64, 'base64') : null)
+    if (!source) continue
+    const image = await Jimp.fromBuffer(source)
+    collected.push(...readCapture(image.bitmap, atlas))
+  }
+
+  if (collected.length === 0) {
+    throw new Error(
+      'The scoreboard reader found no team rows in that screenshot. ' +
+        'It expects the Bloodstrike endgame results screen, uncropped on the left.',
+    )
+  }
+
+  // Scrolled captures overlap and each repeats rank 1 as a sticky header, so
+  // the same rank appears more than once. Keep the confident read of each.
+  const byRank = new Map()
+  for (const row of collected) {
+    if (!Number.isInteger(row.rank)) continue
+    const existing = byRank.get(row.rank)
+    if (!existing || (row.certain && !existing.certain)) byRank.set(row.rank, row)
+  }
+
+  const ordered = [...byRank.values()].sort((a, b) => a.rank - b.rank)
+  const entries = []
+  const uncertain = []
+
+  for (const row of ordered) {
+    if (!row.certain || !row.slotLetter || row.kills === null) {
+      uncertain.push({ rank: row.rank, slotLetter: row.slotLetter, kills: row.kills })
+      continue
+    }
+    entries.push({
+      rank: row.rank,
+      slotCode: slotCodeFromLetter(row.slotLetter),
+      teamQuery: row.slotLetter,
+      kills: row.kills,
+    })
+  }
+
+  if (entries.length === 0) {
+    throw new Error(
+      'The scoreboard reader could not confidently read any row. ' +
+        'Post a sharper or less cropped image, or type the scores instead (e.g. "ROUND 1" then "1. NR 12 KILLS").',
+    )
+  }
+
+  return { roundNumber: 1, entries, source: 'glyphs', uncertain }
+}
+
+/**
+ * Local reading, no API key and no quota: glyph templates first, Tesseract only
+ * if the templates cannot read the image at all (a UI restyle, an unexpected
+ * resolution). Tesseract's accuracy is far lower, so its result is marked
+ * `source: 'ocr'` for the caller to flag.
+ */
+export async function parseScreenshotLocally(options) {
+  try {
+    return await parseScreenshotWithGlyphs(options)
+  } catch (glyphErr) {
+    console.warn(`[TALLY] Glyph reader failed, falling back to Tesseract: ${glyphErr.message}`)
+    return parseScreenshotWithOcr(options)
+  }
 }

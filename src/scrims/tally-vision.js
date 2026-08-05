@@ -62,6 +62,14 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = VISION_REQUEST_TI
   }
 }
 
+/** Higher rank = cheaper per image, so it gets tried first. */
+function geminiCostRank(model) {
+  const name = String(model).toLowerCase()
+  if (name.includes('lite')) return 2
+  if (name.includes('flash')) return 1
+  return 0
+}
+
 async function getAvailableGeminiModels(apiKey) {
   if (discoveredModelCache.has(apiKey)) return discoveredModelCache.get(apiKey)
 
@@ -76,8 +84,9 @@ async function getAvailableGeminiModels(apiKey) {
           .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
           .map((m) => String(m.name || '').replace(/^models\//, ''))
           .filter(Boolean)
-          // Flash models first: this is OCR on a scoreboard, not reasoning.
-          .sort((a, b) => Number(b.includes('flash')) - Number(a.includes('flash')))
+          // Cheapest first: this is OCR on a scoreboard, not reasoning. Lite
+          // beats flash, flash beats everything else (pro, thinking, etc).
+          .sort((a, b) => geminiCostRank(b) - geminiCostRank(a))
       }
     }
   } catch (err) {
@@ -93,7 +102,9 @@ export async function parseScreenshotWithGemini({
   mimeType = 'image/png',
   images = [],
   apiKey = process.env.GEMINI_API_KEY,
-  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.0-flash',
+  // Cheapest vision-capable tier by default; override with GEMINI_VISION_MODEL
+  // if scoreboard reads come back wrong.
+  modelName = process.env.GEMINI_VISION_MODEL || 'gemini-2.0-flash-lite',
 }) {
   const apiKeys = String(apiKey || '')
     .split(',')
@@ -163,10 +174,10 @@ Rules:
 
   const requestedModel = String(modelName || '').trim()
 
-  // Only current models are tried up front. The retired gemini-1.5-* names that
-  // used to sit here always 404, and each one cost a full image upload before
-  // the request that actually works.
-  const candidateModels = [requestedModel, 'gemini-2.0-flash']
+  // Only current models are tried up front, cheapest first. The retired
+  // gemini-1.5-* names that used to sit here always 404, and each one cost a
+  // full image upload before the request that actually works.
+  const candidateModels = [requestedModel, 'gemini-2.0-flash-lite', 'gemini-2.0-flash']
     .filter(Boolean)
     .filter((m, i, arr) => arr.indexOf(m) === i)
 
@@ -279,7 +290,9 @@ Rules:
         `[TALLY] Gemini unavailable/depleted. Trying OpenAI vision with key ...${openaiApiKey.slice(-4)}`,
       )
       const openaiPayload = {
-        model: process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini',
+        // Cheapest vision-capable OpenAI tier; override with
+        // OPENAI_VISION_MODEL (e.g. gpt-4o-mini) if reads come back wrong.
+        model: process.env.OPENAI_VISION_MODEL || 'gpt-4.1-nano',
         response_format: { type: 'json_object' },
         messages: [
           {

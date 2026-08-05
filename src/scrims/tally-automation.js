@@ -8,7 +8,7 @@ import {
 } from 'discord.js'
 import { TallyBoard, TALLY_EMOJI, renderAlignedTable, getPlacementPoints } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
-import { parseScreenshotWithOcr } from './tally-ocr.js'
+import { parseScreenshotLocally } from './tally-ocr.js'
 import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName, getSpreadsheetUrl } from './tally-sheet.js'
 
 const activeTallyBoards = new Map()
@@ -96,24 +96,25 @@ export function formatClearReply(scrimLabel, result) {
 /**
  * Which reader parses screenshots.
  *
- * Local OCR is the goal — no API key, no quota — but measured against the six
- * real captures in test/fixtures it currently gets the slot letter right about
- * 60% of the time and the kill count about 55%. A wrong slot letter silently
- * awards points to another team, so it is NOT the default yet. See
- * scripts/ocr-calibrate.mjs for the harness and the remaining work.
+ * Local glyph template matching is the default: the endgame screen is a fixed
+ * grid in a fixed bitmap font, so reading it is a lookup with an exact answer.
+ * Measured against the six real captures in test/fixtures it gets 60/60 on
+ * rank, slot letter and kills, and — the part that matters for scoring — it
+ * reports a cell it cannot match instead of guessing. No API key, no quota.
+ * See scripts/ocr-calibrate.mjs for the harness.
  *
- * Set TALLY_VISION_PROVIDER=ocr to use it anyway; it falls back to OCR
- * automatically when no Gemini key is configured.
+ * Cloud vision is kept as the fallback for anything the templates cannot read,
+ * such as a Bloodstrike UI restyle. Set TALLY_VISION_PROVIDER=gemini to put it
+ * back in front.
  */
 function resolveVisionProvider(globalConfig) {
-  const configured = String(process.env.TALLY_VISION_PROVIDER || 'gemini').toLowerCase()
+  const configured = String(process.env.TALLY_VISION_PROVIDER || 'local').toLowerCase()
   const apiKey = globalConfig?.geminiApiKey || process.env.GEMINI_API_KEY
-  if (configured === 'ocr') return 'ocr'
-  if (!apiKey) {
-    console.warn('[TALLY] No Gemini API key configured; using local OCR (accuracy is not yet verified).')
-    return 'ocr'
+  if (configured === 'gemini' && apiKey) return 'gemini'
+  if (configured === 'gemini') {
+    console.warn('[TALLY] TALLY_VISION_PROVIDER=gemini but no API key configured; reading locally.')
   }
-  return 'gemini'
+  return 'local'
 }
 
 function canManageTally(member, allowedRoleIds = new Set()) {
@@ -191,10 +192,13 @@ export function parseRoundTableFromMessage(content) {
   return entries
 }
 
-export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC' }) {
+export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC', notice = '' }) {
   const lines = [
     `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
     `*Please verify extracted team ranks and kills before confirming.*`,
+    // Only set when the round was read by a degraded reader, so the scorekeeper
+    // knows this draft needs more than a glance.
+    ...(notice ? [notice] : []),
     buildRoundScoreTable(entries),
   ]
 
@@ -423,15 +427,52 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           )
           console.log(`[TALLY] Downloaded ${downloadedImages.length} image(s) in ${Date.now() - startedAt}ms`)
 
-          const parsed =
-            provider === 'gemini'
-              ? await parseScreenshotWithGemini({
-                  images: downloadedImages,
-                  apiKey: globalConfig.geminiApiKey || process.env.GEMINI_API_KEY,
-                })
-              : await parseScreenshotWithOcr({ images: downloadedImages })
+          let parsed
+          let degradedNotice = ''
+          // Tagged so the log and the review notice name the reader that
+          // actually produced the round, not the one that was tried first.
+          const callCloud = async () => ({
+            source: 'gemini',
+            ...(await parseScreenshotWithGemini({
+              images: downloadedImages,
+              apiKey: globalConfig.geminiApiKey || process.env.GEMINI_API_KEY,
+            })),
+          })
+
+          if (provider === 'local') {
+            try {
+              parsed = await parseScreenshotLocally({ images: downloadedImages })
+            } catch (localErr) {
+              // The templates only know the current Bloodstrike endgame layout.
+              // Anything else — a UI restyle, a cropped capture — is what cloud
+              // vision is kept around for.
+              console.warn(`[TALLY] Local reader failed, trying cloud vision: ${localErr.message}`)
+              try {
+                parsed = await callCloud()
+              } catch (visionErr) {
+                throw new Error(`${localErr.message}\n\nCloud vision fallback also failed: ${visionErr.message}`)
+              }
+            }
+          } else {
+            try {
+              parsed = await callCloud()
+            } catch (visionErr) {
+              console.warn(`[TALLY] Cloud vision failed, reading locally: ${visionErr.message}`)
+              parsed = await parseScreenshotLocally({ images: downloadedImages })
+            }
+          }
+
+          const usedProvider = parsed.source || provider
+          if (usedProvider === 'ocr') {
+            degradedNotice =
+              '⚠️ **Read with fallback OCR** — the glyph reader could not parse this layout, so slot letters and kill counts are frequently wrong here. **Check every row** before confirming.'
+          } else if (parsed.uncertain?.length) {
+            const ranks = parsed.uncertain.map((u) => `#${u.rank ?? '?'}`).join(', ')
+            degradedNotice = `⚠️ **${parsed.uncertain.length} row(s) could not be read confidently** (${ranks}) and were left out. Add them manually before confirming.`
+          }
+
           console.log(
-            `[TALLY] ${provider.toUpperCase()} parse finished ${Date.now() - startedAt}ms after the screenshot arrived (${parsed.entries.length} rows)`,
+            `[TALLY] ${usedProvider.toUpperCase()} parse finished ${Date.now() - startedAt}ms after the screenshot arrived (${parsed.entries.length} rows)`,
           )
 
           // Use user-specified round, auto-detected next round, or Gemini's parsed round
@@ -439,7 +480,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             ? userSpecifiedRound
             : (parsed.roundNumber && parsed.roundNumber !== 1 ? parsed.roundNumber : getNextRound())
 
-          console.log(`[TALLY] Screenshot parsed: Gemini returned ${parsed.entries.length} teams. Round: ${effectiveRound}`)
+          console.log(`[TALLY] Screenshot parsed: ${usedProvider} returned ${parsed.entries.length} teams. Round: ${effectiveRound}`)
 
           const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
           const previewEntries = tallyBoard.setRound(
@@ -462,11 +503,12 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             registeredTeams,
             reviewId,
             scrimLabel: scrimConfig.label,
+            notice: degradedNotice,
           })
 
           await respond(reviewMsg)
         } catch (err) {
-          console.error('[TALLY] Failed to parse screenshot with Gemini:', err)
+          console.error('[TALLY] Failed to parse screenshot:', err)
           await respond(`❌ **Tally Error**: ${err.message}`)
         }
         return
