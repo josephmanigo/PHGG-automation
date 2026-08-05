@@ -81,15 +81,23 @@ function formatClearReply(scrimLabel, result) {
 }
 
 /**
- * Screenshots are read locally by default. The hosted vision model is opt-in
- * via TALLY_VISION_PROVIDER=gemini, so no API LLM is involved unless asked for.
+ * Which reader parses screenshots.
+ *
+ * Local OCR is the goal — no API key, no quota — but measured against the six
+ * real captures in test/fixtures it currently gets the slot letter right about
+ * 60% of the time and the kill count about 55%. A wrong slot letter silently
+ * awards points to another team, so it is NOT the default yet. See
+ * scripts/ocr-calibrate.mjs for the harness and the remaining work.
+ *
+ * Set TALLY_VISION_PROVIDER=ocr to use it anyway; it falls back to OCR
+ * automatically when no Gemini key is configured.
  */
 function resolveVisionProvider(globalConfig) {
-  const configured = String(process.env.TALLY_VISION_PROVIDER || 'ocr').toLowerCase()
-  if (configured !== 'gemini') return 'ocr'
+  const configured = String(process.env.TALLY_VISION_PROVIDER || 'gemini').toLowerCase()
   const apiKey = globalConfig?.geminiApiKey || process.env.GEMINI_API_KEY
+  if (configured === 'ocr') return 'ocr'
   if (!apiKey) {
-    console.warn('[TALLY] TALLY_VISION_PROVIDER=gemini but no API key is set; falling back to local OCR.')
+    console.warn('[TALLY] No Gemini API key configured; using local OCR (accuracy is not yet verified).')
     return 'ocr'
   }
   return 'gemini'

@@ -10,3 +10,6 @@ phgg-504518-2bd2b9666931.json
 # Tesseract language data, fetched on first OCR run
 eng.traineddata
 *.traineddata
+
+# Calibration captures are large binaries; keep them local
+test/fixtures/screenshots/
