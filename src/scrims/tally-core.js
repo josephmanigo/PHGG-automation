@@ -178,18 +178,31 @@ export function findUnmatchedEntries(entries = [], registeredTeams = []) {
 /**
  * Custom server emoji used in the tally messages.
  *
- * Discord resolves these by ID, so the name between the colons is only a label
- * and does not have to match the emoji's real name. If any of these are
- * ANIMATED, its prefix must be `a:` instead of `:` or it will not render.
+ * A `<:name:id>` tag only renders if the BOT shares a server with that emoji.
+ * Three of these did not, and showed up as literal ":sheet:" text, so they are
+ * given as CDN links instead.
  *
- * Each can be overridden with an env var, so swapping an emoji does not need a
- * code change — set e.g. TALLY_EMOJI_CONFIRMED='<:yes:123456789>'.
+ * Be aware: a bare URL in message content is a link, not an inline image.
+ * Discord will not draw it beside the text the way a real emoji tag does. The
+ * only ways to get a true inline emoji are to add the bot to the server that
+ * owns it, or re-upload the emoji to a server the bot is already in — at which
+ * point set the env var back to a `<:name:id>` tag.
+ *
+ * Each can be overridden with an env var, so swapping one does not need a code
+ * change — set e.g. TALLY_EMOJI_CONFIRMED='<:yes:123456789>'.
  */
 export const TALLY_EMOJI = {
+  // This one resolves in-server today, so it stays as a real emoji tag.
   confirmed: process.env.TALLY_EMOJI_CONFIRMED || '<:confirmed:1472902880120934431>',
-  sheet: process.env.TALLY_EMOJI_SHEET || '<:sheet:1348768330751938680>',
-  standings: process.env.TALLY_EMOJI_STANDINGS || '<:standings:1388436342257487872>',
-  leader: process.env.TALLY_EMOJI_LEADER || '<:leader:1387891022104760501>',
+  // These two did not resolve — they rendered as literal ":standings:" text —
+  // so they are written as CDN links instead. See the note above about how
+  // Discord treats a bare URL in message content.
+  standings:
+    process.env.TALLY_EMOJI_STANDINGS ||
+    'https://cdn.discordapp.com/emojis/1388436342257487872.webp?size=32&animated=true',
+  leader:
+    process.env.TALLY_EMOJI_LEADER ||
+    'https://cdn.discordapp.com/emojis/1387891022104760501.webp?size=32&animated=true',
 }
 
 export class TallyBoard {

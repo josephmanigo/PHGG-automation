@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { ButtonStyle } from 'discord.js'
 import assert from 'node:assert/strict'
 import {
   findMatchingTeam,
@@ -23,6 +24,7 @@ import {
   slotIndexFromCode,
   TITLE_BANNER_TEMPLATE,
   DATE_HEADER_TEMPLATE,
+  getSpreadsheetUrl,
 } from '../src/scrims/tally-sheet.js'
 import { formatAccuracyNotices, buildReviewMessage, buildRoundScoreTable } from '../src/scrims/tally-automation.js'
 
@@ -495,16 +497,18 @@ test('the confirmed round table is byte-identical to the reviewed one', () => {
 })
 
 test('the tally messages use the custom server emoji', () => {
-  // Discord resolves custom emoji by ID, so the exact <:name:id> form matters.
-  const EMOJI_FORM = /^<a?:[A-Za-z0-9_]+:\d{17,20}>$/
-  for (const [key, value] of Object.entries(TALLY_EMOJI)) {
-    assert.match(value, EMOJI_FORM, `${key} is not a valid custom emoji tag`)
-  }
-
+  // "confirmed" resolves in-server, so it stays a real <:name:id> tag.
+  assert.match(TALLY_EMOJI.confirmed, /^<a?:[A-Za-z0-9_]+:\d{17,20}>$/)
   assert.match(TALLY_EMOJI.confirmed, /1472902880120934431/)
-  assert.match(TALLY_EMOJI.sheet, /1348768330751938680/)
+
+  // These two did not resolve for the bot, so they are CDN links instead.
+  assert.match(TALLY_EMOJI.standings, /^https:\/\/cdn\.discordapp\.com\/emojis\//)
   assert.match(TALLY_EMOJI.standings, /1388436342257487872/)
+  assert.match(TALLY_EMOJI.leader, /^https:\/\/cdn\.discordapp\.com\/emojis\//)
   assert.match(TALLY_EMOJI.leader, /1387891022104760501/)
+
+  // The sheet line carries no emoji at all now.
+  assert.equal(TALLY_EMOJI.sheet, undefined)
 
   const board = new TallyBoard()
   board.setRound(1, [{ rank: 1, teamQuery: 'NR', kills: 10 }], mockRegisteredTeams)
@@ -533,5 +537,41 @@ test('the buttons carry plain text labels, no emoji', () => {
   const hasEmoji = /\p{Extended_Pictographic}/u
   for (const label of labels) {
     assert.ok(!hasEmoji.test(label), `"${label}" still contains an emoji`)
+  }
+})
+
+test('View Standings is a link straight to the scoresheet', () => {
+  const msg = buildReviewMessage({
+    roundNumber: 1,
+    entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID', kills: 10, totalPoints: 30 }],
+    registeredTeams: [],
+    reviewId: 'rev_x',
+  })
+
+  const [confirm, standings, reject] = msg.components[0].components.map((c) => c.data)
+
+  // Link buttons carry a url and no custom_id, so Discord opens them directly.
+  assert.equal(standings.label, 'View Standings')
+  assert.equal(standings.style, ButtonStyle.Link)
+  assert.match(standings.url, /^https:\/\/docs\.google\.com\/spreadsheets\/d\//)
+  assert.match(standings.url, /1N3oh4z2FbnWzfXg79UNvegoP44FO9TkYxic8fN8I17U/)
+  assert.equal(standings.custom_id, undefined)
+
+  // The other two still post back to the bot.
+  assert.ok(confirm.custom_id.startsWith('phgg_tally:confirm:'))
+  assert.ok(reject.custom_id.startsWith('phgg_tally:reject:'))
+})
+
+test('the sheet link follows the spreadsheet the bot actually writes to', () => {
+  const original = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
+  try {
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = 'OTHER_SHEET_ID'
+    assert.match(getSpreadsheetUrl(), /OTHER_SHEET_ID/)
+    process.env.TALLY_SHEET_URL = 'https://example.com/custom'
+    assert.equal(getSpreadsheetUrl(), 'https://example.com/custom')
+  } finally {
+    delete process.env.TALLY_SHEET_URL
+    if (original === undefined) delete process.env.GOOGLE_SHEETS_SPREADSHEET_ID
+    else process.env.GOOGLE_SHEETS_SPREADSHEET_ID = original
   }
 })

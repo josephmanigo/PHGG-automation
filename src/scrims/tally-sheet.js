@@ -3,6 +3,19 @@ import path from 'node:path'
 import { createSign } from 'node:crypto'
 
 export const DEFAULT_SPREADSHEET_ID = '1N3oh4z2FbnWzfXg79UNvegoP44FO9TkYxic8fN8I17U'
+const DEFAULT_WORKSHEET_GID = '707255476'
+
+/**
+ * Link to the live scoresheet, used by the View Standings button. Built from
+ * the same id the bot writes to, so pointing the bot at another spreadsheet
+ * moves the button with it. Override wholesale with TALLY_SHEET_URL.
+ */
+export function getSpreadsheetUrl() {
+  if (process.env.TALLY_SHEET_URL) return process.env.TALLY_SHEET_URL
+  const id = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID
+  const gid = process.env.GOOGLE_SHEETS_WORKSHEET_GID || DEFAULT_WORKSHEET_GID
+  return `https://docs.google.com/spreadsheets/d/${id}/edit?gid=${gid}#gid=${gid}`
+}
 
 export const ROUND_COLUMNS = Object.freeze({
   1: { place: 'K', placementPoints: 'L', kills: 'M' },

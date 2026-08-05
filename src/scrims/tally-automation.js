@@ -9,7 +9,7 @@ import {
 import { TallyBoard, findUnmatchedEntries, TALLY_EMOJI } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotWithOcr } from './tally-ocr.js'
-import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName } from './tally-sheet.js'
+import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName, getSpreadsheetUrl } from './tally-sheet.js'
 
 const activeTallyBoards = new Map()
 const pendingReviews = new Map()
@@ -163,10 +163,12 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
       .setCustomId(`phgg_tally:confirm:${scrimLabel}:${roundNumber}:${reviewId}`)
       .setLabel('Confirm & Save Scores')
       .setStyle(ButtonStyle.Success),
+    // Link buttons open the scoresheet directly; they carry a URL instead of a
+    // custom id and so never round-trip to the bot.
     new ButtonBuilder()
-      .setCustomId(`phgg_tally:standings:${scrimLabel}:${roundNumber}:${reviewId}`)
       .setLabel('View Standings')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Link)
+      .setURL(getSpreadsheetUrl()),
     new ButtonBuilder()
       .setCustomId(`phgg_tally:reject:${scrimLabel}:${roundNumber}:${reviewId}`)
       .setLabel('Reject')
@@ -628,18 +630,18 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         ? `⚠️ **Sheet Write Error**: ${syncError}`
         : (syncResult && syncResult.success
             ? [
-                `${TALLY_EMOJI.sheet} *Scores written & verified in Google Sheet! (${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`,
+                `*(Scores written & verified in Google Sheet — ${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`,
                 ...formatAccuracyNotices(syncResult),
               ].join('\n')
-            : `${TALLY_EMOJI.sheet} *Scores saved to leaderboard!*`)
+            : `*(Scores saved to leaderboard)*`)
 
       // Confirm and Reject are gone, but keep View Standings so the cumulative
       // table is still one click away.
       const standingsOnly = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`phgg_tally:standings:${scrimConfig.label}:${roundNumInt}:${reviewId}`)
           .setLabel('View Standings')
-          .setStyle(ButtonStyle.Primary),
+          .setStyle(ButtonStyle.Link)
+          .setURL(getSpreadsheetUrl()),
       )
 
       try {
