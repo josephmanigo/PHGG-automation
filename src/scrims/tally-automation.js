@@ -65,7 +65,7 @@ export function formatAccuracyNotices(syncResult = {}) {
   const unmatched = syncResult.unmatchedScreenshotEntries || []
 
   if (absent.length > 0) {
-    notices.push(`⬜ *Marked **X** (registered but not in this screenshot): ${summariseTeams(absent)}*`)
+    notices.push(`⬜ *Left blank (registered but not in this screenshot): ${summariseTeams(absent)}*`)
   }
   if (unmatched.length > 0) {
     notices.push(`🚫 *Skipped (not on the team slot board): ${summariseTeams(unmatched)}*`)
@@ -146,7 +146,7 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
     )
   }
   if (absent.length > 0) {
-    lines.push(`⬜ *Registered but not in this screenshot, will be marked **X**: ${summariseTeams(absent)}*`)
+    lines.push(`⬜ *Registered but not in this screenshot, left blank: ${summariseTeams(absent)}*`)
   }
 
   const row = new ActionRowBuilder().addComponents(

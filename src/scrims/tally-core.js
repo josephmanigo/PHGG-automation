@@ -295,7 +295,15 @@ export class TallyBoard {
     return updatedEntry
   }
 
-  getOverallStandings(registeredTeams = []) {
+  /**
+   * Standings for the teams actually taking part.
+   *
+   * A registered team that has not appeared in a single round has not played,
+   * and listing it on 0/0/0 pads the board with teams that were never in the
+   * lobby. Pass includeUnplayed to get the full roster instead. Note that a
+   * team which placed last with no kills HAS played, and still appears.
+   */
+  getOverallStandings(registeredTeams = [], { includeUnplayed = false } = {}) {
     const teamMap = new Map()
 
     for (const team of registeredTeams) {
@@ -338,7 +346,9 @@ export class TallyBoard {
       }
     }
 
-    const standings = [...teamMap.values()]
+    const standings = [...teamMap.values()].filter(
+      (team) => includeUnplayed || Object.keys(team.rounds).length > 0,
+    )
 
     standings.sort((a, b) => {
       if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints

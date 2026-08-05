@@ -566,23 +566,27 @@ export async function syncScoresToGoogleSheet({
         console.warn(`[TALLY] Slot ${slotCode} had an out-of-range placement (${entry.rank}); wrote 'X' instead.`)
       }
     } else {
-      // Either the slot is unused, or the team holds a slot but does not appear
-      // in this round's screenshot. Both get 'X' — never a score.
+      // Two different situations, and they are NOT marked the same way:
+      //  - the slot is unused         -> 'X', the sheet's "no team here" marker
+      //  - a registered team sat this round out -> blank, so an absent team is
+      //    not shown as having taken part
+      // Either way, never a score.
+      const marker = registered ? '' : 'X'
       if (registered) {
         registeredNotInScreenshot.push(`${slotCode} ${formatSheetTeamName(registered)}`)
       }
 
       updateData.push({
         range: `'${sheetName}'!${roundCols.place}${row}`,
-        values: [['X']],
+        values: [[marker]],
       })
       updateData.push({
         range: `'${sheetName}'!${roundCols.kills}${row}`,
-        values: [['X']],
+        values: [[marker]],
       })
 
-      writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: 'X' })
-      writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: 'X' })
+      writePlanTargets.push({ cell: `${roundCols.place}${row}`, role: 'place', value: marker })
+      writePlanTargets.push({ cell: `${roundCols.kills}${row}`, role: 'kills', value: marker })
       missingMarkersAddedCount++
 
       if (entry && !registered) {

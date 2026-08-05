@@ -83,7 +83,10 @@ test('TallyBoard computes overall standings across multiple rounds', () => {
   )
 
   const standings = board.getOverallStandings(mockRegisteredTeams)
-  assert.equal(standings.length, 4)
+  // M7 ESPORTS is registered but appeared in neither round, so it is not on
+  // the board. The other three played.
+  assert.equal(standings.length, 3)
+  assert.ok(!standings.some((s) => s.tag === 'M7'))
   assert.equal(standings[0].tag, 'SS')
   assert.equal(standings[0].totalPoints, 53)
   assert.equal(standings[0].totalKills, 17)
@@ -210,7 +213,7 @@ test('accuracy notices name what was deliberately not scored', () => {
   })
 
   assert.equal(notices.length, 2)
-  assert.match(notices[0], /Marked \*\*X\*\*/)
+  assert.match(notices[0], /Left blank/)
   assert.match(notices[0], /APXS • SYNDICATE/)
   assert.match(notices[1], /Skipped/)
   assert.match(notices[1], /SOME RANDOM TEAM/)
@@ -383,8 +386,8 @@ test('the review names what will not be scored, before confirming', () => {
 
   assert.match(msg.content, /Not on the team slot board/)
   assert.match(msg.content, /slot W/)
-  // ASCEND WONDERPETS holds a slot but is absent, so it is flagged as an X.
-  assert.match(msg.content, /marked \*\*X\*\*/)
+  // ASCEND WONDERPETS holds a slot but is absent, so its cells are left blank.
+  assert.match(msg.content, /left blank/)
   assert.match(msg.content, /11-K ASCE • ASCEND WONDERPETS/)
 })
 
@@ -399,4 +402,35 @@ test('a clean round adds no notices to the review', () => {
   })
   assert.doesNotMatch(msg.content, /Not on the team slot board/)
   assert.doesNotMatch(msg.content, /marked \*\*X\*\*/)
+})
+
+test('teams that never played are left off the standings', () => {
+  const roster = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
+    { slotIndex: 10, slotCode: '11K', slotLetter: 'K', tag: 'ASCE', name: 'ASCEND WONDERPETS' },
+    { slotIndex: 16, slotCode: '17Q', slotLetter: 'Q', tag: 'GNZ', name: 'WRATH' },
+  ]
+  const board = new TallyBoard()
+  board.setRound(
+    1,
+    [
+      { rank: 1, slotCode: '01A', teamQuery: 'A', kills: 58 },
+      { rank: 19, slotCode: '17Q', teamQuery: 'Q', kills: 0 }, // played, scored nothing
+    ],
+    roster,
+  )
+
+  const standings = board.getOverallStandings(roster)
+  const slots = standings.map((s) => s.slotCode)
+
+  // WONDERPETS was in no round at all, so it is not on the board.
+  assert.ok(!slots.includes('11K'))
+  // Placing last with zero kills still counts as having played.
+  assert.ok(slots.includes('17Q'))
+  assert.equal(standings.length, 2)
+
+  // The full roster is still available when explicitly asked for.
+  const all = board.getOverallStandings(roster, { includeUnplayed: true })
+  assert.equal(all.length, 3)
+  assert.ok(all.map((s) => s.slotCode).includes('11K'))
 })
