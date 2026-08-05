@@ -502,6 +502,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             // and the board was not updated, elimination will confidently
             // produce the wrong letter. It is still worth doing — it turns a
             // dropped row into a filled one — but it always says so.
+            // Read below the normal bar and accepted only because a second
+            // screenshot agreed. Worth stating, since it is weaker evidence
+            // than a row that read cleanly on its own.
+            const corroborated = parsed.entries?.filter((e) => e.corroborated) || []
+            if (corroborated.length) {
+              const which = corroborated.map((e) => `#${e.rank}`).join(', ')
+              warnings.push(
+                `ℹ️ **${which}** was faint in every screenshot, but two of them read it the same way. Worth a glance.`,
+              )
+            }
             const deduced = parsed.entries?.filter((e) => e.deduced) || []
             if (deduced.length) {
               const which = deduced.map((e) => `#${e.rank} → ${e.slotCode}`).join(', ')

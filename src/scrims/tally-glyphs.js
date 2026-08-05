@@ -674,9 +674,23 @@ export function readCapture(bitmap, atlas, thresholds = {}) {
         : null
     if (!readable) rank = null
 
+    // The best reading regardless of confidence, kept alongside the confident
+    // one. A single sub-threshold read is a guess and must never be scored, but
+    // the same guess arrived at independently from a different capture is
+    // corroboration — and that is what rescues a row nobody could read alone.
+    const plausible = (m) => Boolean(m) && m.score >= MIN_MATCH_SCORE
+    const candidateKills =
+      killMatches.length > 0 && killMatches.every((m) => plausible(m) && /^\d$/.test(m.label))
+        ? Number(killMatches.map((m) => m.label).join(''))
+        : null
+
     read.push({
       cy: row.cy,
       rank,
+      candidate: {
+        slotLetter: killsVisible && letterVisible && plausible(letterMatch) ? letterMatch.label : null,
+        kills: killsVisible && letterVisible ? candidateKills : null,
+      },
       slotLetter,
       kills,
       certain: Boolean(slotLetter) && kills !== null,

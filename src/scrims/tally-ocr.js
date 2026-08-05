@@ -301,6 +301,17 @@ export async function parseScreenshotWithOcr({
   return { roundNumber: 1, entries, source: 'ocr', uncertain: [] }
 }
 
+/** Every read of each placing, across all the captures posted together. */
+function groupByRank(rows) {
+  const byRank = new Map()
+  for (const row of rows) {
+    if (!Number.isInteger(row.rank)) continue
+    if (!byRank.has(row.rank)) byRank.set(row.rank, [])
+    byRank.get(row.rank).push(row)
+  }
+  return byRank
+}
+
 /**
  * Read captures with the glyph template matcher.
  *
@@ -375,6 +386,50 @@ export async function parseScreenshotWithGlyphs({
   for (const row of rankless) {
     uncertain.push({ rank: null, slotLetter: row.slotLetter, kills: row.kills })
   }
+
+  // Rescue rows no single capture could read, using the overlap between
+  // screenshots. Two captures show a placing at different scroll positions —
+  // different pixels, different compression blocks — so when both arrive at the
+  // same letter and the same kill count independently, that agreement is
+  // evidence in a way one sub-threshold read never is.
+  //
+  // Both reads still have to be plausible on their own; this lowers the bar for
+  // corroborated rows, it does not remove it.
+  const corroborated = []
+  for (const [rank, seenRows] of groupByRank(collected)) {
+    if (byRank.get(rank)?.certain) continue
+
+    const votes = new Map()
+    for (const row of seenRows) {
+      const { slotLetter, kills } = row.candidate || {}
+      if (!slotLetter || kills === null || kills === undefined) continue
+      const key = `${slotLetter}:${kills}`
+      votes.set(key, (votes.get(key) || 0) + 1)
+    }
+
+    const agreed = [...votes.entries()].filter(([, n]) => n >= 2)
+    // Exactly one reading may have two or more captures behind it. If two
+    // different readings each do, the captures disagree and neither is safe.
+    if (agreed.length !== 1) continue
+
+    const [letter, kills] = agreed[0][0].split(':')
+    if (allowedLetters && ![...allowedLetters].map((l) => String(l).toUpperCase()).includes(letter)) continue
+
+    corroborated.push({
+      rank,
+      slotCode: slotCodeFromLetter(letter),
+      teamQuery: letter,
+      kills: Number(kills),
+      corroborated: agreed[0][1],
+    })
+  }
+
+  for (const entry of corroborated) {
+    const index = uncertain.findIndex((u) => u.rank === entry.rank)
+    if (index >= 0) uncertain.splice(index, 1)
+    entries.push(entry)
+  }
+  if (corroborated.length) entries.sort((a, b) => a.rank - b.rank)
 
   // Every team occupies exactly one slot, so a letter already claimed by a
   // confident row cannot belong to another. If that leaves a single unclaimed
