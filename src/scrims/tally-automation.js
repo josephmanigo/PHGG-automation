@@ -6,10 +6,10 @@ import {
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
-import { TallyBoard } from './tally-core.js'
+import { TallyBoard, findUnmatchedEntries } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotWithOcr } from './tally-ocr.js'
-import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores } from './tally-sheet.js'
+import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName } from './tally-sheet.js'
 
 const activeTallyBoards = new Map()
 const pendingReviews = new Map()
@@ -113,7 +113,7 @@ function canManageTally(member, allowedRoleIds = new Set()) {
   return memberRoles.some((roleId) => allowedRoleIds.has(String(roleId)))
 }
 
-export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC' }) {
+export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC', skippedEntries = [] }) {
   const lines = [
     `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
     `*Please verify extracted team ranks and kills before confirming.*`,
@@ -132,6 +132,22 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
     lines.push(`${rk}  ${slot}  ${nameCol}  ${kills}  ${pts}`)
   })
   lines.push('```')
+
+  // Anything deliberately left out, shown BEFORE confirming rather than after.
+  // A gap in the RK column otherwise reads as a fetch error.
+  const scoredSlots = new Set(entries.map((e) => e.slotCode))
+  const absent = (registeredTeams || [])
+    .filter((t) => !scoredSlots.has(t.slotCode))
+    .map((t) => `${t.slotIndex + 1}-${t.slotLetter} ${formatSheetTeamName(t)}`)
+
+  if (skippedEntries.length > 0) {
+    lines.push(
+      `🚫 *Not on the team slot board, so **not** scored: ${summariseTeams(skippedEntries)}*`,
+    )
+  }
+  if (absent.length > 0) {
+    lines.push(`⬜ *Registered but not in this screenshot, will be marked **X**: ${summariseTeams(absent)}*`)
+  }
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -391,6 +407,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             registeredTeams,
             reviewId,
             scrimLabel: scrimConfig.label,
+            skippedEntries: findUnmatchedEntries(parsed.entries, registeredTeams),
           })
 
           await respond(reviewMsg)
@@ -431,6 +448,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             registeredTeams,
             reviewId,
             scrimLabel: scrimConfig.label,
+            skippedEntries: findUnmatchedEntries(parsed.entries, registeredTeams),
           })
 
           await message.reply(reviewMsg).catch(() => {})

@@ -4,6 +4,7 @@ import {
   findMatchingTeam,
   getPlacementPoints,
   TallyBoard,
+  findUnmatchedEntries,
 } from '../src/scrims/tally-core.js'
 import { parseTextScoreInput } from '../src/scrims/tally-vision.js'
 import {
@@ -21,7 +22,7 @@ import {
   TITLE_BANNER_TEMPLATE,
   DATE_HEADER_TEMPLATE,
 } from '../src/scrims/tally-sheet.js'
-import { formatAccuracyNotices } from '../src/scrims/tally-automation.js'
+import { formatAccuracyNotices, buildReviewMessage } from '../src/scrims/tally-automation.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -354,4 +355,48 @@ test('the board drops an unregistered-slot row instead of scoring it', () => {
   assert.equal(entries[0].slotCode, '01A')
   // ASCEND WONDERPETS must not have inherited the slot-W score.
   assert.ok(!entries.some((e) => e.name === 'ASCEND WONDERPETS'))
+})
+
+test('the review names what will not be scored, before confirming', () => {
+  const roster = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID ESPORTS' },
+    { slotIndex: 10, slotCode: '11K', slotLetter: 'K', tag: 'ASCE', name: 'ASCEND WONDERPETS' },
+  ]
+
+  // Slot W is a real lobby slot nobody holds, so it is reported, not scored.
+  const skipped = findUnmatchedEntries(
+    [
+      { rank: 1, slotCode: '1-A', teamQuery: 'A', kills: 58 },
+      { rank: 20, slotCode: 'W', teamQuery: 'W', kills: 1 },
+    ],
+    roster,
+  )
+  assert.deepEqual(skipped, ['slot W'])
+
+  const msg = buildReviewMessage({
+    roundNumber: 1,
+    entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID ESPORTS', kills: 58, totalPoints: 78 }],
+    registeredTeams: roster,
+    reviewId: 'rev_test',
+    skippedEntries: skipped,
+  })
+
+  assert.match(msg.content, /Not on the team slot board/)
+  assert.match(msg.content, /slot W/)
+  // ASCEND WONDERPETS holds a slot but is absent, so it is flagged as an X.
+  assert.match(msg.content, /marked \*\*X\*\*/)
+  assert.match(msg.content, /11-K ASCE • ASCEND WONDERPETS/)
+})
+
+test('a clean round adds no notices to the review', () => {
+  const roster = [{ slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' }]
+  const msg = buildReviewMessage({
+    roundNumber: 1,
+    entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID', kills: 58, totalPoints: 78 }],
+    registeredTeams: roster,
+    reviewId: 'rev_test',
+    skippedEntries: [],
+  })
+  assert.doesNotMatch(msg.content, /Not on the team slot board/)
+  assert.doesNotMatch(msg.content, /marked \*\*X\*\*/)
 })

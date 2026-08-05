@@ -151,6 +151,30 @@ export function findMatchingTeam(query, registeredTeams = [], explicitSlot = nul
   return bestTeam
 }
 
+/**
+ * Screenshot rows that resolve to no registered team, and so will not be
+ * scored. Returned as readable labels for the review message, because a row
+ * silently vanishing between the screenshot and the sheet looks like a bug.
+ */
+export function findUnmatchedEntries(entries = [], registeredTeams = []) {
+  if (!Array.isArray(entries) || registeredTeams.length === 0) return []
+  return entries
+    .filter(
+      (entry) =>
+        !findMatchingTeam(
+          entry.slotCode || entry.teamQuery || entry.tag || entry.name,
+          registeredTeams,
+          entry.slotCode,
+        ),
+    )
+    .map((entry) => {
+      const slot = String(entry.slotCode || '').trim()
+      const label = String(entry.teamQuery || entry.name || entry.tag || '').trim()
+      if (slot && slot !== '??') return `slot ${slot}${label && label !== slot ? ` (${label})` : ''}`
+      return label || 'unreadable row'
+    })
+}
+
 export class TallyBoard {
   constructor(placementPoints = DEFAULT_PLACEMENT_POINTS) {
     this.placementPoints = placementPoints
