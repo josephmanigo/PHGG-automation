@@ -595,3 +595,29 @@ test('renderAlignedTable sizes each column to its widest cell', () => {
   assert.equal(lines[3], '10  LONGER NAME')
   assert.equal(lines[1], '─'.repeat(lines[0].length))
 })
+
+test('each scrim scope reads screenshots from its own tally channel', async () => {
+  const { loadConfig } = await import('../src/config.js')
+
+  // loadConfig refuses to run without the bot's own credentials.
+  const saved = { ...process.env }
+  process.env.DISCORD_BOT_TOKEN ||= 'test-token'
+  process.env.DISCORD_GUILD_ID ||= '1'
+  let config
+  try {
+    config = loadConfig()
+  } finally {
+    process.env = saved
+  }
+
+  const pc = config.scrims.find((s) => s.label === 'PC')
+  const mobile = config.scrims.find((s) => s.label === 'MOBILE')
+
+  assert.equal(pc.tallyChannelId, '1534258096975904849')
+  assert.equal(mobile.tallyChannelId, '1534503608144363621')
+
+  // MOBILE used to fall through to '', so its listener treated no channel as a
+  // tally channel and mobile screenshots were never processed.
+  assert.ok(mobile.tallyChannelId)
+  assert.notEqual(pc.tallyChannelId, mobile.tallyChannelId)
+})

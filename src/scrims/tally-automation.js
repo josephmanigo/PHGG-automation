@@ -43,9 +43,21 @@ function clearAllTallyBoards() {
   for (const board of activeTallyBoards.values()) board.clear()
 }
 
-async function clearTallyAndSheet() {
+async function clearTallyAndSheet(scrimConfig = {}) {
   clearAllTallyBoards()
-  return clearGoogleSheetScores()
+  return clearGoogleSheetScores(sheetTarget(scrimConfig))
+}
+
+/**
+ * Which spreadsheet/worksheet this scrim scope reads and writes. Empty values
+ * fall through to the module defaults, so PC keeps its existing target and
+ * MOBILE only diverges once it is given one.
+ */
+function sheetTarget(scrimConfig = {}) {
+  const target = {}
+  if (scrimConfig.sheetSpreadsheetId) target.spreadsheetId = scrimConfig.sheetSpreadsheetId
+  if (scrimConfig.sheetWorksheetName) target.sheetName = scrimConfig.sheetWorksheetName
+  return target
 }
 
 // Rows that match no registered team are dropped silently in Discord. They are
@@ -245,7 +257,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         await message.reply('❌ You do not have permission to clear score tallies.').catch(() => {})
         return
       }
-      const clearResult = await clearTallyAndSheet()
+      const clearResult = await clearTallyAndSheet(scrimConfig)
       await message.reply(formatClearReply(scrimConfig.label, clearResult)).catch(() => {})
       return
     }
@@ -469,7 +481,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           return
         }
         await interaction.deferReply().catch(() => {})
-        const clearResult = await clearTallyAndSheet()
+        const clearResult = await clearTallyAndSheet(scrimConfig)
         await interaction.editReply(formatClearReply('PC', clearResult)).catch(() => {})
         return
       }
@@ -557,6 +569,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
         try {
           syncResult = await syncScoresToGoogleSheet({
+            ...sheetTarget(scrimConfig),
             roundNumber: reviewData.roundNumber,
             entries: reviewData.entries,
             registeredTeams,

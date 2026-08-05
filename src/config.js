@@ -8,7 +8,10 @@ const DEFAULT_RULES_MESSAGE_IDS = '1336451755734732861'
 const DEFAULT_SCRIM_RULES_CHANNEL_ID = '1345795209417457685'
 const DEFAULT_SCRIM_RULES_MESSAGE_IDS =
   '1531917547014721666'
+// Each scrim scope reads its screenshots from its own channel, so a MOBILE
+// result posted in the MOBILE channel is never picked up by the PC board.
 const DEFAULT_TALLY_CHANNEL_ID = '1534258096975904849'
+const DEFAULT_MOBILE_TALLY_CHANNEL_ID = '1534503608144363621'
 const DEFAULT_ANNOUNCEMENTS = {
   MOBILE: {
     channelId: '1345793370454495242',
@@ -183,10 +186,23 @@ function loadScrimConfig(scope, brandName, { legacy = false } = {}) {
     label: scope,
     enabled: suppliedChannels.length === 3,
     channels,
+    // MOBILE previously fell through to '', so its listener never recognised
+    // any channel as a tally channel and mobile screenshots were ignored.
     tallyChannelId: read(
       'TALLY_CHANNEL_ID',
-      defaults.channels?.tally || (scope === 'PC' ? value('GAME_RESULTS_CHANNEL_ID', DEFAULT_TALLY_CHANNEL_ID) : ''),
+      defaults.channels?.tally ||
+        (scope === 'PC'
+          ? value('GAME_RESULTS_CHANNEL_ID', DEFAULT_TALLY_CHANNEL_ID)
+          : scope === 'MOBILE'
+            ? DEFAULT_MOBILE_TALLY_CHANNEL_ID
+            : ''),
     ),
+    // Both scopes write to one spreadsheet by default, which means whichever
+    // scrim tallies second overwrites the first. Set
+    // MOBILE_SCRIM_SHEETS_SPREADSHEET_ID (or the worksheet name) to give a
+    // scope its own scoresheet.
+    sheetSpreadsheetId: read('SHEETS_SPREADSHEET_ID', ''),
+    sheetWorksheetName: read('SHEETS_WORKSHEET_NAME', ''),
     scorekeeperRoleIds: idSet(
       read('SCOREKEEPER_ROLE_IDS', value('GAME_RESULTS_SCOREKEEPER_ROLE_IDS', '')),
     ),
