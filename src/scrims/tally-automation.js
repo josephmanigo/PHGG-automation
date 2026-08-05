@@ -590,19 +590,29 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
         pendingReviews.delete(reviewId)
       } else {
+        // Nothing was tallied and nothing was written to the sheet. Saying
+        // "SCORES CONFIRMED" here was actively misleading: the round looked
+        // saved while the sheet still had no scores for it.
         console.warn(`[TALLY] No pending review found for reviewId=${reviewId}`)
+        await interaction
+          .editReply({
+            content:
+              `⚠️ **Round ${roundNumInt} was NOT saved.**\n` +
+              '*This review expired, or the bot restarted after the screenshot was posted. ' +
+              'Nothing was written to the Google Sheet.*\n' +
+              'Post the screenshot again to redo this round.',
+            components: [],
+          })
+          .catch(() => {})
+        return
       }
 
       // Show the round exactly as it was reviewed, in its own placement order.
       // Re-sorting into cumulative standings here made a correct extract look
       // like it had changed on confirm. Overall standings are still one click
       // away on the View Standings button, or via !standings.
-      const confirmedTable = reviewData
-        ? `📋 **ROUND ${roundNumInt} RESULTS**\n${buildRoundScoreTable(reviewData.entries)}`
-        : tallyBoard.formatStandingsMarkdown(
-            registeredTeams,
-            `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
-          )
+      // reviewData is guaranteed here — the branch above returns without it.
+      const confirmedTable = `📋 **ROUND ${roundNumInt} RESULTS**\n${buildRoundScoreTable(reviewData.entries)}`
 
       const statusNotice = syncError
         ? `⚠️ **Sheet Write Error**: ${syncError}`
