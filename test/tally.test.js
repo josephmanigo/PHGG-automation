@@ -697,3 +697,29 @@ test('the recovery parser skips the header under any of its names', () => {
     assert.equal(rows[0].slotCode, '01A')
   }
 })
+
+test('the rank highlight forces black text on the yellow fill', async () => {
+  const calls = []
+  const realFetch = global.fetch
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('?fields=')) {
+      return { ok: true, json: async () => ({ sheets: [{ properties: { title: 'S', sheetId: 1 }, conditionalFormats: [] }] }) }
+    }
+    calls.push(JSON.parse(opts.body))
+    return { ok: true, json: async () => ({}) }
+  }
+  try {
+    await applyRankHighlight({ spreadsheetId: 'x', sheetName: 'S', accessToken: 't' })
+  } finally {
+    global.fetch = realFetch
+  }
+
+  const rule = calls[0].requests.find((r) => r.addConditionalFormatRule).addConditionalFormatRule.rule
+  const { backgroundColor, textFormat } = rule.booleanRule.format
+
+  assert.deepEqual(backgroundColor, { red: 1.0, green: 1.0, blue: 0.0 })
+  // Without an explicit foreground the cell keeps its own colour, and FINAL
+  // SCORE / RANK are white on their dark fill — invisible once highlighted.
+  assert.deepEqual(textFormat.foregroundColor, { red: 0, green: 0, blue: 0 })
+  assert.equal(textFormat.bold, true)
+})

@@ -205,7 +205,10 @@ export async function applyRankHighlight({ spreadsheetId, sheetName, accessToken
           },
           format: {
             backgroundColor: { red: 1.0, green: 1.0, blue: 0.0 }, // Bright Yellow #FFFF00
-            textFormat: { bold: true },
+            // Force black text. Without it the cell keeps its own colour, and
+            // FINAL SCORE / RANK are white on their dark fill — unreadable once
+            // the row turns yellow.
+            textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } },
           },
         },
       },
