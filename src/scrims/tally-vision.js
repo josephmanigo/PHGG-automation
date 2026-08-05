@@ -265,13 +265,21 @@ Rules:
     }
   }
 
-  // Fallback to OpenAI GPT-4o Vision if OPENAI_API_KEY is configured
-  const openaiApiKey = process.env.OPENAI_API_KEY
-  if (openaiApiKey) {
+  // Fallback to OpenAI vision once every Gemini key is exhausted.
+  // Like GEMINI_API_KEY, OPENAI_API_KEY accepts a comma-separated list and each
+  // key is tried in turn, so a depleted key does not end the round.
+  const openaiKeys = String(process.env.OPENAI_API_KEY || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean)
+
+  for (const openaiApiKey of openaiKeys) {
     try {
-      console.log('[TALLY] Gemini API keys unavailable/depleted. Falling back to OpenAI GPT-4o Vision API...')
+      console.log(
+        `[TALLY] Gemini unavailable/depleted. Trying OpenAI vision with key ...${openaiApiKey.slice(-4)}`,
+      )
       const openaiPayload = {
-        model: 'gpt-4o-mini',
+        model: process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini',
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -321,9 +329,16 @@ Rules:
         }
       } else {
         const oaErrText = await oaResp.text()
-        console.warn(`[TALLY] OpenAI Vision HTTP ${oaResp.status}: ${oaErrText}`)
+        console.warn(`[TALLY] OpenAI Vision HTTP ${oaResp.status} (key ...${openaiApiKey.slice(-4)}): ${oaErrText}`)
+        lastError = new Error(
+          oaResp.status === 429
+            ? 'OpenAI quota exhausted (HTTP 429).'
+            : `OpenAI Vision error (${oaResp.status}): ${oaErrText}`,
+        )
+        // 401/429 are key-specific, so move on to the next key.
       }
     } catch (oaErr) {
+      lastError = oaErr
       console.warn('[TALLY] OpenAI Vision fallback error:', oaErr.message)
     }
   }
