@@ -14,6 +14,7 @@ import {
   buildTemplateRestore,
   buildRankHighlightFormula,
   placementPointsFormula,
+  defaultPlacementPointsFormula,
   formatSheetTeamName,
   renderTitleBanner,
   slotIndexFromCode,
@@ -157,25 +158,32 @@ test('rank highlight reads the RANK column, not the penalties table', () => {
   assert.match(formula, /PHGG_RANK_TOP3/)
 })
 
-test('placement points show X instead of #N/A when there is no score', () => {
+test('a running scrim shows X for no score, never #N/A', () => {
   assert.equal(
     placementPointsFormula('K', 8),
-    '=IFERROR(VLOOKUP(K8,$B$8:$C$32,2,0),"X")',
+    '=IF(K8="","",IFERROR(VLOOKUP(K8,$B$8:$C$32,2,0),"X"))',
   )
   assert.equal(
     placementPointsFormula('T', 32),
-    '=IFERROR(VLOOKUP(T32,$B$8:$C$32,2,0),"X")',
+    '=IF(T32="","",IFERROR(VLOOKUP(T32,$B$8:$C$32,2,0),"X"))',
   )
 
-  // A bare VLOOKUP returns #N/A for an empty or 'X' place cell, and
-  // X=SUM(...) turns that into #N/A for TOTAL, FINAL SCORE and RANK alike —
-  // which is what left the sheet with no ranking to highlight.
+  // Every round must be error-free, or SUM turns TOTAL / FINAL SCORE / RANK
+  // into #N/A and there is no ranking left to highlight.
   for (const round of [1, 2, 3, 4]) {
     const { place } = ROUND_COLUMNS[round]
     const formula = placementPointsFormula(place, 8)
-    assert.match(formula, /^=IFERROR\(/)
-    assert.match(formula, /,"X"\)$/)
+    assert.match(formula, /IFERROR/)
+    assert.match(formula, /"X"/)
   }
+})
+
+test('the default sheet keeps the plain template formula, #N/A and all', () => {
+  // /clear restores this, so a cleared sheet matches the untouched default.
+  assert.equal(defaultPlacementPointsFormula('K', 8), '=VLOOKUP(K8,$B$8:$C$32,2,0)')
+  assert.equal(defaultPlacementPointsFormula('U', 32), '=VLOOKUP(U32,$B$8:$C$32,2,0)')
+  assert.doesNotMatch(defaultPlacementPointsFormula('K', 8), /IFERROR/)
+  assert.doesNotMatch(defaultPlacementPointsFormula('K', 8), /"X"/)
 })
 
 test('slot codes resolve to the right row, and junk resolves to nothing', () => {
@@ -300,10 +308,7 @@ test('clear restores the header placeholders and the placement formulas', () => 
     const block = restore.find((d) => d.range.includes(`!${placementPoints}${SCORE_START_ROW}:`))
     assert.ok(block, `round ${round} placement column missing`)
     assert.equal(block.values.length, rowCount)
-    assert.equal(block.values[0][0], `=IFERROR(VLOOKUP(${place}8,$B$8:$C$32,2,0),"X")`)
-    assert.equal(
-      block.values[rowCount - 1][0],
-      `=IFERROR(VLOOKUP(${place}32,$B$8:$C$32,2,0),"X")`,
-    )
+    assert.equal(block.values[0][0], `=VLOOKUP(${place}8,$B$8:$C$32,2,0)`)
+    assert.equal(block.values[rowCount - 1][0], `=VLOOKUP(${place}32,$B$8:$C$32,2,0)`)
   }
 })

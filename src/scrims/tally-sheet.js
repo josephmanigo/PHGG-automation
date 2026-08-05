@@ -89,19 +89,28 @@ const auditStore = new Map()
  * must never replace this formula with a literal, or the column stops
  * recalculating for that row forever.
  *
- * The bare VLOOKUP returns #N/A for any round that has not been played yet,
- * and X = SUM(L,M,O,P,...) propagates that error all the way through
- * FINAL SCORE (Z) and RANK (AA) — which is why ranking, and therefore any
- * rank-based highlight, could never work. IFERROR turns every one of those
- * cases into the sheet's own "X" marker instead:
- *   - place empty  -> "X" (round not played / slot unused)
- *   - place 'X'    -> "X" (team sat this round out)
+ * Used once a scrim is running. The bare template formula returns #N/A for any
+ * round not yet played, and X = SUM(L,M,O,P,...) propagates that error through
+ * FINAL SCORE (Z) and RANK (AA) — which is why ranking, and therefore the
+ * rank highlight, could never work mid-scrim. This version keeps every case
+ * numeric-or-text so the totals always compute:
+ *   - place empty  -> "" (round not played yet)
+ *   - place 'X'    -> "X" (slot unused, or team not in this screenshot)
  *   - place 1..25  -> the placement points
  * SUM ignores text, so the totals stay correct in all three cases.
  */
 export function placementPointsFormula(placeColumn, row) {
   const cell = `${placeColumn}${row}`
-  return `=IFERROR(VLOOKUP(${cell},$B$8:$C$32,2,0),"X")`
+  return `=IF(${cell}="","",IFERROR(VLOOKUP(${cell},$B$8:$C$32,2,0),"X"))`
+}
+
+/**
+ * The formula exactly as the blank scoresheet ships it. /clear puts this back,
+ * so a cleared sheet shows #N/A down the placement, total, score and rank
+ * columns just like the untouched default template.
+ */
+export function defaultPlacementPointsFormula(placeColumn, row) {
+  return `=VLOOKUP(${placeColumn}${row},$B$8:$C$32,2,0)`
 }
 
 export function buildRankHighlightFormula(startRow = SCORE_START_ROW) {
@@ -737,9 +746,10 @@ export function buildClearRanges(sheetName) {
 
 /**
  * K8:V32 is cleared wholesale above, which also removes the PLACEMENT POINTS
- * VLOOKUPs in L/O/R/U. Put them back so a cleared sheet is a working template
- * rather than a dead one. With every place cell blank the formula renders
- * blank, so the sheet reads as fresh instead of showing #N/A on every row.
+ * VLOOKUPs in L/O/R/U. Put back the *template* formula, so a cleared sheet is
+ * indistinguishable from the untouched default scoresheet — #N/A included.
+ * The next tally swaps in placementPointsFormula(), which is what makes
+ * TOTAL / FINAL SCORE / RANK compute again.
  */
 export function buildTemplateRestore(sheetName) {
   // Put the header placeholders back instead of blanking them, so a cleared
@@ -757,7 +767,7 @@ export function buildTemplateRestore(sheetName) {
   for (const { place, placementPoints } of Object.values(ROUND_COLUMNS)) {
     const values = []
     for (let row = SCORE_START_ROW; row <= SCORE_END_ROW; row++) {
-      values.push([placementPointsFormula(place, row)])
+      values.push([defaultPlacementPointsFormula(place, row)])
     }
     data.push({
       range: `'${sheetName}'!${placementPoints}${SCORE_START_ROW}:${placementPoints}${SCORE_END_ROW}`,
