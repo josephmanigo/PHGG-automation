@@ -359,7 +359,7 @@ export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType 
 
   if (entries.length === 0) {
     throw new Error(
-      'The scoreboard reader could not confidently read any row. ' +
+      'The scoreboard reader could not confidently read any row (the capture may be too low-resolution). ' +
         'Post a sharper or less cropped image, or type the scores instead (e.g. "ROUND 1" then "1. NR 12 KILLS").',
     )
   }

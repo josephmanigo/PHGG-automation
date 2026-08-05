@@ -19,14 +19,32 @@
  * every value after it lands on the wrong team.
  */
 
-const REF_WIDTH = 1135
-
-// Geometry in reference pixels at REF_WIDTH; every value scales by width/1135.
-const SKULL_X0 = 90
-const SKULL_X1 = 118
-const SKULL_MIN_RUN = 4
-const SKULL_MIN_PIXELS_PER_ROW = 3
+// Geometry is expressed in reference pixels at the scale where the skull icon
+// measures REF_SKULL_SIZE across, and every value is scaled by the skull
+// actually found in the capture.
+//
+// Scale used to come from image width (width/1135). That silently assumed the
+// UI scales with the canvas, which it does not: across the six fixtures the
+// width varies 1135..1155 while the skull stays exactly 14px, so the factor was
+// always ~1.0 and the assumption was never tested. A 1920x1080 capture has the
+// same UI drawn at a different ratio, and width-derived scale put every crop in
+// the wrong place. The skull is the one element whose size IS the UI scale.
+const REF_SKULL_SIZE = 14
+// Distance between consecutive team rows at scale 1. Scale is derived from this
+// rather than from the skull: measuring a 14px icon to ±1px is a ±7% error,
+// which throws a -58px letter offset out by 4px, while pitch is ~92px and is
+// averaged over every row in the capture.
+const REF_ROW_PITCH = 92
 const WHITE_MIN_CHANNEL = 170
+
+// How far across the frame to hunt for the skull column. The team skull sits
+// left of the first player card in every layout seen so far.
+const SEARCH_STRIP_RATIO = 0.3
+// Identifying the column needs whole skulls; measuring a row needs the jaw too,
+// which is much smaller. Two thresholds rather than one.
+const MIN_COLUMN_BLOB_PIXELS = 40
+const MIN_PART_BLOB_PIXELS = 8
+const MIN_SKULLS_PER_COLUMN = 3
 
 const LETTER_DX = 1
 // Tall enough to hold Q's descender. At 34 the tail was clipped on some rows,
@@ -48,7 +66,9 @@ const KILLS_H = 26
 // A digit stroke carries ~28 ink pixels at this scale; icon slivers carry <10.
 export const KILLS_MIN_PIXELS = 12
 
-const RANK_X = 6
+// Measured leftward from the skull, not from the frame edge: the left margin
+// before the rank badge differs between capture aspect ratios.
+const RANK_GAP = 8
 const RANK_DY = -46
 const RANK_W = 84
 const RANK_H = 52
@@ -59,8 +79,146 @@ const RANK_H = 52
 export const GLYPH_W = 16
 export const GLYPH_H = 20
 
-export function scaleFactor(width) {
-  return width / REF_WIDTH
+/**
+ * White blobs in the left strip, found by flood fill.
+ *
+ * The skull is drawn as two pieces (cranium and jaw), so blobs are grouped into
+ * columns afterwards rather than assumed to be one shape per row.
+ */
+function whiteBlobs(bitmap) {
+  const { width: W, height: H, data } = bitmap
+  const sw = Math.max(1, Math.round(W * SEARCH_STRIP_RATIO))
+  const seen = new Uint8Array(sw * H)
+  const isWhite = (x, y) => {
+    const i = (y * W + x) * 4
+    return Math.min(data[i], data[i + 1], data[i + 2]) > WHITE_MIN_CHANNEL
+  }
+
+  const blobs = []
+  const stack = []
+  for (let sy = 0; sy < H; sy++) {
+    for (let sx = 0; sx < sw; sx++) {
+      if (seen[sy * sw + sx] || !isWhite(sx, sy)) continue
+      let x0 = sx
+      let x1 = sx
+      let y0 = sy
+      let y1 = sy
+      let pixels = 0
+      stack.length = 0
+      stack.push(sx, sy)
+      seen[sy * sw + sx] = 1
+      while (stack.length) {
+        const cy = stack.pop()
+        const cx = stack.pop()
+        pixels++
+        if (cx < x0) x0 = cx
+        if (cx > x1) x1 = cx
+        if (cy < y0) y0 = cy
+        if (cy > y1) y1 = cy
+        const neighbours = [cx + 1, cy, cx - 1, cy, cx, cy + 1, cx, cy - 1]
+        for (let n = 0; n < neighbours.length; n += 2) {
+          const nx = neighbours[n]
+          const ny = neighbours[n + 1]
+          if (nx < 0 || ny < 0 || nx >= sw || ny >= H) continue
+          if (seen[ny * sw + nx] || !isWhite(nx, ny)) continue
+          seen[ny * sw + nx] = 1
+          stack.push(nx, ny)
+        }
+      }
+      if (pixels >= MIN_PART_BLOB_PIXELS) {
+        blobs.push({ x0, x1, y0, y1, pixels, w: x1 - x0 + 1, h: y1 - y0 + 1 })
+      }
+    }
+  }
+  return blobs
+}
+
+const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
+
+/**
+ * Locate the team skull column and the UI scale it implies.
+ *
+ * Candidate columns are clusters of roughly square, similarly sized white
+ * blobs. The team skull column is the leftmost such cluster — everything
+ * further right belongs to the player cards, whose per-player kill counts must
+ * never be mistaken for the team total.
+ */
+export function detectSkullColumn(bitmap) {
+  const blobs = whiteBlobs(bitmap)
+  if (blobs.length === 0) return null
+
+  const tolerance = Math.max(3, Math.round(bitmap.width * 0.01))
+  const columns = new Map()
+  for (const blob of blobs) {
+    // Whole skulls only, to identify the column: square-ish and big enough.
+    // Medal badges and avatar corners fail one or the other.
+    if (blob.pixels < MIN_COLUMN_BLOB_PIXELS) continue
+    if (Math.abs(blob.w - blob.h) / Math.max(blob.w, blob.h) > 0.35) continue
+    const key = Math.round((blob.x0 + blob.x1) / 2 / tolerance)
+    if (!columns.has(key)) columns.set(key, [])
+    columns.get(key).push(blob)
+  }
+
+  const candidates = [...columns.entries()]
+    .filter(([, list]) => list.length >= MIN_SKULLS_PER_COLUMN)
+    .map(([key, list]) => {
+      const size = median(list.map((b) => b.w))
+      // Drop outliers so one stray blob cannot set the scale.
+      const kept = list.filter((b) => Math.abs(b.w - size) <= Math.max(2, size * 0.25))
+      return { key, list: kept, size }
+    })
+    .filter((c) => c.list.length >= MIN_SKULLS_PER_COLUMN)
+
+  if (candidates.length === 0) return null
+
+  // Leftmost alone is not safe: the rank 1-3 medal badges are big and bright,
+  // and three of them line up at a smaller x than the skulls. The real column
+  // has one blob per row, so require a candidate to be within half the best
+  // count before preferring it for being further left — that rejects the
+  // medals while still choosing the team skull over the player-card skulls.
+  const mostRows = Math.max(...candidates.map((c) => c.list.length))
+  const chosen = candidates
+    .filter((c) => c.list.length >= Math.max(MIN_SKULLS_PER_COLUMN, mostRows * 0.5))
+    .sort((a, b) => a.key - b.key)[0]
+  if (!chosen) return null
+
+  // Now take every white piece sitting in that column, jaw included, so a row's
+  // bounding box spans the whole skull. The cell offsets are measured from the
+  // centre of that full span; using the cranium alone shifts every crop up.
+  const left = Math.min(...chosen.list.map((b) => b.x0))
+  const right = Math.max(...chosen.list.map((b) => b.x1))
+  // Strictly inside the cranium's own span. The jaw sits directly beneath it,
+  // but the kill digits start just past its right edge — any tolerance here
+  // pulls a digit into the skull box and corrupts both the row centre and the
+  // kills crop.
+  const parts = blobs.filter((b) => {
+    const cx = (b.x0 + b.x1) / 2
+    return cx >= left && cx <= right
+  })
+
+  const rows = groupBlobsIntoRows(parts, chosen.size)
+
+  // Pitch is the accurate scale signal; the skull only stands in when there
+  // are too few rows to measure a pitch from.
+  let k = chosen.size / REF_SKULL_SIZE
+  if (rows.length >= 3) {
+    const pitches = rows.slice(1).map((r, i) => r.cy - rows[i].cy)
+    // The sticky rank-1 header sits closer to the row below it than a normal
+    // pitch, so the median rejects it rather than being dragged down by it.
+    k = median(pitches) / REF_ROW_PITCH
+  }
+
+  return { blobs: chosen.list, rows, skullSize: chosen.size, k }
+}
+
+/**
+ * Scale of the capture: 1 when the skull measures REF_SKULL_SIZE across.
+ * Falls back to the historical width ratio only if no skull column is found.
+ */
+export function scaleFactor(bitmapOrWidth) {
+  if (typeof bitmapOrWidth === 'number') return bitmapOrWidth / 1135
+  const column = detectSkullColumn(bitmapOrWidth)
+  return column ? column.k : bitmapOrWidth.width / 1135
 }
 
 /**
@@ -68,49 +226,41 @@ export function scaleFactor(width) {
  * its team kill total, so a vertical run of white pixels in that column marks a
  * row and its horizontal extent locates the cells beside it.
  */
-export function detectRows(bitmap) {
-  const { width: W, height: H, data } = bitmap
-  const k = scaleFactor(W)
-  const x0 = Math.round(SKULL_X0 * k)
-  const x1 = Math.round(SKULL_X1 * k)
+export function detectRows(bitmap, column = detectSkullColumn(bitmap)) {
+  if (!column) return []
+  return column.rows
+}
 
-  const isWhite = (x, y) => {
-    const i = (y * W + x) * 4
-    return Math.min(data[i], data[i + 1], data[i + 2]) > WHITE_MIN_CHANNEL
-  }
-
+/**
+ * Group the column's blobs into rows.
+ *
+ * The skull is drawn as two pieces, cranium and jaw, and upscaling separates
+ * them far enough that a scanline treats each as its own row. Grouping by
+ * vertical proximity — in units of the skull's own size, so it holds at any
+ * scale — merges them back into one row whose bounding box spans both, which
+ * is what the cell offsets are measured against.
+ */
+function groupBlobsIntoRows(blobs, skullSize) {
+  const sorted = [...blobs].sort((a, b) => a.y0 - b.y0)
+  const gap = Math.max(2, skullSize * 0.8)
   const rows = []
-  let start = -1
 
-  const closeRun = (end) => {
-    if (start < 0) return
-    if (end - start >= SKULL_MIN_RUN * k) {
-      let sx0 = x1
-      let sx1 = x0
-      for (let y = start; y < end; y++) {
-        for (let x = x0; x < x1; x++) {
-          if (!isWhite(x, y)) continue
-          if (x < sx0) sx0 = x
-          if (x > sx1) sx1 = x
-        }
-      }
-      if (sx1 > sx0) rows.push({ cy: (start + end) / 2, skullX0: sx0, skullX1: sx1 })
-    }
-    start = -1
-  }
-
-  for (let y = 0; y < H; y++) {
-    let count = 0
-    for (let x = x0; x < x1; x++) if (isWhite(x, y)) count++
-    if (count >= SKULL_MIN_PIXELS_PER_ROW) {
-      if (start < 0) start = y
+  for (const blob of sorted) {
+    const current = rows[rows.length - 1]
+    if (current && blob.y0 - current.y1 <= gap) {
+      current.y1 = Math.max(current.y1, blob.y1)
+      current.x0 = Math.min(current.x0, blob.x0)
+      current.x1 = Math.max(current.x1, blob.x1)
     } else {
-      closeRun(y)
+      rows.push({ x0: blob.x0, x1: blob.x1, y0: blob.y0, y1: blob.y1 })
     }
   }
-  closeRun(H)
 
-  return rows
+  return rows.map((r) => ({
+    cy: (r.y0 + r.y1 + 1) / 2,
+    skullX0: r.x0,
+    skullX1: r.x1,
+  }))
 }
 
 /** Otsu threshold over a luminance array. */
@@ -203,7 +353,13 @@ export function killsCell(row, k) {
 }
 
 export function rankCell(row, k) {
-  return { x: RANK_X * k, y: row.cy + RANK_DY * k, w: RANK_W * k, h: RANK_H * k }
+  const w = RANK_W * k
+  return {
+    x: Math.max(0, row.skullX0 - (RANK_GAP + RANK_W) * k),
+    y: row.cy + RANK_DY * k,
+    w,
+    h: RANK_H * k,
+  }
 }
 
 /**
@@ -377,6 +533,14 @@ function confident(match) {
  * that is returned with `certain: false` so the caller can surface it for
  * checking rather than folding a guess into the standings.
  */
+/**
+ * Below this scale the glyphs carry too few pixels to separate reliably —
+ * measured at 0.75x, where the reader produced 9 outright wrong cells rather
+ * than merely uncertain ones. Declining is the only safe response: a wrong
+ * slot letter awards a team's kills to somebody else.
+ */
+export const MIN_RELIABLE_SCALE = 0.85
+
 export function readCapture(bitmap, atlas) {
   const letters = loadTemplates(atlas.letters)
   const digits = loadTemplates(atlas.digits)
@@ -385,8 +549,10 @@ export function readCapture(bitmap, atlas) {
   // both into one pool blunted every match; they get their own templates.
   const rankTemplates = { ...loadTemplates(atlas.rankDigits), ...loadTemplates(atlas.marks) }
 
-  const k = scaleFactor(bitmap.width)
-  const rows = detectRows(bitmap)
+  const column = detectSkullColumn(bitmap)
+  if (!column) return []
+  const k = column.k
+  const rows = detectRows(bitmap, column)
   const read = []
 
   for (const row of rows) {
@@ -411,9 +577,12 @@ export function readCapture(bitmap, atlas) {
       }
     }
 
-    const killsCertain = killMatches.length > 0 && killMatches.every((m) => confident(m) && /^\d$/.test(m.label))
+    const readable = k >= MIN_RELIABLE_SCALE
+    const killsCertain =
+      readable && killMatches.length > 0 && killMatches.every((m) => confident(m) && /^\d$/.test(m.label))
     const kills = killsCertain ? Number(killMatches.map((m) => m.label).join('')) : null
-    const slotLetter = confident(letterMatch) ? letterMatch.label : null
+    const slotLetter = readable && confident(letterMatch) ? letterMatch.label : null
+    if (!readable) rank = null
 
     read.push({
       cy: row.cy,

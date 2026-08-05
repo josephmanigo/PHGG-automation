@@ -79,6 +79,11 @@ function toObject(store) {
   return out
 }
 
+// The fixtures are all one device scale. A phone renders the same UI larger,
+// so each capture is harvested at several scales to cover the range a real
+// screenshot can arrive at.
+const SCALES = [1, 0.75, 1.25, 1.43, 1.69, 2]
+
 let rowsSeen = 0
 let letterKept = 0
 let killsKept = 0
@@ -92,15 +97,33 @@ for (const round of ROUNDS) {
       continue
     }
 
-    const image = await Jimp.read(file)
+    for (const scale of SCALES) {
+      const image = await Jimp.read(file)
+      if (scale !== 1) image.scale(scale)
+      await harvest(image, capture, scale)
+    }
+  }
+}
+
+/**
+ * Cut every labelled glyph out of one capture.
+ *
+ * Called once per scale: a phone capture renders the same UI larger or smaller
+ * than the fixtures, and resampling changes stroke thickness and antialiasing
+ * enough that a template cut at one scale is a poor match at another. Teaching
+ * the atlas each scale is cheaper and far more reliable than trying to
+ * normalise the difference away.
+ */
+async function harvest(image, capture, scale) {
+  {
     const bitmap = image.bitmap
-    const k = scaleFactor(bitmap.width)
+    const k = scaleFactor(bitmap)
     const rows = detectRows(bitmap)
     const expected = [...(capture.stickyRank1 ? [capture.stickyRank1] : []), ...capture.rows]
 
     if (rows.length !== expected.length) {
-      console.log(`${capture.file}  row count ${rows.length} != ${expected.length}, skipped`)
-      continue
+      console.log(`${capture.file} @${scale}x  row count ${rows.length} != ${expected.length}, skipped`)
+      return
     }
 
     for (let i = 0; i < rows.length; i++) {
