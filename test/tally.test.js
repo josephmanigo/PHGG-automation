@@ -656,7 +656,7 @@ test('each scrim scope reads screenshots from its own tally channel', async () =
   assert.notEqual(pc.tallyChannelId, mobile.tallyChannelId)
 })
 
-test('a recovered round renders team names and points, not slot codes', () => {
+test('a recovered round shows real points, and no TEAM column', () => {
   const roster = [
     { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID ESPORTS' },
     { slotIndex: 5, slotCode: '06F', slotLetter: 'F', tag: 'AIM', name: 'AIM SEEK GREATNESS' },
@@ -674,19 +674,35 @@ test('a recovered round renders team names and points, not slot codes', () => {
   const table = buildRoundScoreTable(processed)
 
   // setRound resolves the roster and computes the points.
-  assert.match(table, /\[NR\] NIGHTRAID ESPORTS/)
-  assert.match(table, /\[AIM\] AIM SEEK GREATNESS/)
-  assert.equal(processed[0].totalPoints, 20 + 56) // rank 1 -> 20 placement pts
-  assert.equal(processed[1].totalPoints, 16 + 41) // rank 2 -> 16
+  assert.equal(processed[0].totalPoints, 20 + 56) // place 1 -> 20 placement pts
+  assert.equal(processed[1].totalPoints, 16 + 41) // place 2 -> 16
 
-  // The TEAM column must never fall back to repeating the slot code, and no
-  // row may show 0 points when the team actually scored.
-  const rows = table.split('\n').slice(1).map((l) => l.replace(/`/g, ''))
+  // Four columns: PLACE, SLOT, KILLS, PTS. No TEAM.
+  assert.match(table, /PLACE\s+SLOT\s+KILLS\s+PTS/)
+  assert.ok(!table.includes('TEAM'))
+  assert.ok(!table.includes('NIGHTRAID'))
+
+  const rows = table.split('\n').slice(1).map((l) => l.replace(/`/g, '').trim())
   for (const row of rows) {
-    const [, slot, ...rest] = row.trim().split(/\s+/)
-    assert.ok(!rest[0].startsWith(slot), `TEAM column repeats the slot code: ${row}`)
-    assert.notEqual(rest[rest.length - 1], '0')
+    const cells = row.split(/\s+/)
+    assert.equal(cells.length, 4, `expected 4 columns, got: ${row}`)
+    // A team that scored must never show 0 points.
+    assert.notEqual(cells[3], '0', `points not computed: ${row}`)
   }
+  assert.deepEqual(rows.map((r) => r.split(/\s+/)[3]), ['76', '57'])
+})
+
+test('points are computed even when the entry was never resolved', () => {
+  // Straight from parseRoundTableFromMessage: no totalPoints on the entry.
+  const table = buildRoundScoreTable([
+    { rank: 1, slotCode: '01A', kills: 56 },
+    { rank: 21, slotCode: '07G', kills: 0 },
+  ])
+  const rows = table.split('\n').slice(1).map((l) => l.replace(/`/g, '').trim())
+
+  assert.equal(rows[0].split(/\s+/)[3], String(20 + 56)) // 76
+  // Place 21 scores no placement points, and zero kills really is zero.
+  assert.equal(rows[1].split(/\s+/)[3], '0')
 })
 
 test('the recovery parser skips the header under any of its names', () => {

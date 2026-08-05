@@ -6,7 +6,7 @@ import {
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
-import { TallyBoard, TALLY_EMOJI, renderAlignedTable } from './tally-core.js'
+import { TallyBoard, TALLY_EMOJI, renderAlignedTable, getPlacementPoints } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotWithOcr } from './tally-ocr.js'
 import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName, getSpreadsheetUrl } from './tally-sheet.js'
@@ -134,21 +134,26 @@ function canManageTally(member, allowedRoleIds = new Set()) {
  * re-sorting into cumulative standings.
  */
 export function buildRoundScoreTable(entries = []) {
+  // The slot code identifies the team, and the sheet carries the names, so the
+  // TEAM column is left out here.
   return renderAlignedTable(
     [
       { key: 'rk', label: 'PLACE', align: 'right' },
       { key: 'slot', label: 'SLOT' },
-      { key: 'team', label: 'TEAM' },
       { key: 'kills', label: 'KILLS', align: 'right' },
       { key: 'pts', label: 'PTS', align: 'right' },
     ],
-    entries.map((e, idx) => ({
-      rk: e.rank || idx + 1,
-      slot: e.slotCode || '??',
-      team: (e.tag ? `[${e.tag}] ${e.name}` : e.teamQuery || 'Unknown').slice(0, 32),
-      kills: e.kills || 0,
-      pts: e.totalPoints || 0,
-    })),
+    entries.map((e, idx) => {
+      const rank = e.rank || idx + 1
+      const kills = Number(e.kills) || 0
+      // totalPoints is only present once setRound has resolved the row. Work it
+      // out here too, so a table built straight from parsed entries still shows
+      // real points rather than 0.
+      const points = Number.isFinite(Number(e.totalPoints))
+        ? Number(e.totalPoints)
+        : getPlacementPoints(rank) + kills
+      return { rk: rank, slot: e.slotCode || '??', kills, pts: points }
+    }),
   )
 }
 
@@ -167,19 +172,21 @@ export function parseRoundTableFromMessage(content) {
     // Skip the header, whatever it was called when the message was posted.
     if (!line || /^(RK|RANK|PLACE)\b/.test(line) || /^[─-]+$/.test(line)) continue
 
-    // "<rank> <slot> <team name…> <kills> <pts>" — the team name may contain
-    // spaces, so anchor on the two numeric columns at the end.
-    const match = /^(\d{1,2})\s+(\S+)\s+(.+?)\s+(\d{1,3})\s+(\d{1,3})$/.exec(line)
-    if (!match) continue
+    // "<place> <slot> [team name…] <kills> <pts>". The TEAM column was dropped,
+    // but older messages still carry it — and a team name contains spaces — so
+    // read the ends of the row and ignore whatever sits between them.
+    const tokens = line.split(/\s+/)
+    if (tokens.length < 4) continue
 
-    const [, rank, slotCode, , kills] = match
+    const rank = Number(tokens[0])
+    const slotCode = tokens[1]
+    const kills = Number(tokens[tokens.length - 2])
+
+    if (!Number.isInteger(rank) || rank < 1 || rank > 25) continue
     if (!/^\d{1,2}[A-Z]$/i.test(slotCode)) continue
-    entries.push({
-      rank: Number(rank),
-      slotCode,
-      teamQuery: slotCode,
-      kills: Number(kills),
-    })
+    if (!Number.isInteger(kills) || kills < 0) continue
+
+    entries.push({ rank, slotCode, teamQuery: slotCode, kills })
   }
   return entries
 }
