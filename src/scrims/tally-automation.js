@@ -61,12 +61,11 @@ function summariseTeams(list) {
  */
 export function formatAccuracyNotices(syncResult = {}) {
   const notices = []
-  const absent = syncResult.registeredNotInScreenshot || []
   const unmatched = syncResult.unmatchedScreenshotEntries || []
 
-  if (absent.length > 0) {
-    notices.push(`⬜ *Left blank (registered but not in this screenshot): ${summariseTeams(absent)}*`)
-  }
+  // Only rows that were in the screenshot but matched no registered team are
+  // reported. A registered team that did not play is left off the sheet and off
+  // this message alike, so an absent team is never surfaced as a participant.
   if (unmatched.length > 0) {
     notices.push(`🚫 *Skipped (not on the team slot board): ${summariseTeams(unmatched)}*`)
   }
@@ -133,20 +132,16 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
   })
   lines.push('```')
 
-  // Anything deliberately left out, shown BEFORE confirming rather than after.
-  // A gap in the RK column otherwise reads as a fetch error.
-  const scoredSlots = new Set(entries.map((e) => e.slotCode))
-  const absent = (registeredTeams || [])
-    .filter((t) => !scoredSlots.has(t.slotCode))
-    .map((t) => `${t.slotIndex + 1}-${t.slotLetter} ${formatSheetTeamName(t)}`)
-
+  // Rows the screenshot showed but that belong to no registered team. Worth
+  // saying, because they leave a visible gap in the RK column that would
+  // otherwise read as a fetch error.
+  //
+  // Registered teams that simply did not play are NOT listed: an absent team
+  // should not appear anywhere, here or on the sheet.
   if (skippedEntries.length > 0) {
     lines.push(
       `🚫 *Not on the team slot board, so **not** scored: ${summariseTeams(skippedEntries)}*`,
     )
-  }
-  if (absent.length > 0) {
-    lines.push(`⬜ *Registered but not in this screenshot, left blank: ${summariseTeams(absent)}*`)
   }
 
   const row = new ActionRowBuilder().addComponents(

@@ -496,28 +496,8 @@ export async function syncScoresToGoogleSheet({
     // N=6 (R2 Place), O=7 (R2 Pts), P=8 (R2 Kills), Q=9 (R3 Place), R=10 (R3 Pts), S=11 (R3 Kills)
     // T=12 (R4 Place), U=13 (R4 Pts), V=14 (R4 Kills)
 
-    // 1. Write Official Team Name in Column J
+    // 1. Find this slot's participating entry (match by slot code ONLY, never by rank)
     const registered = registeredTeams.find((t) => t.slotIndex === i)
-    if (registered) {
-      const officialTeamName = sanitizeSheetText(formatSheetTeamName(registered))
-
-      updateData.push({
-        range: `'${sheetName}'!${TEAM_COLUMN}${row}`,
-        values: [[officialTeamName]],
-      })
-      writePlanTargets.push({ cell: `${TEAM_COLUMN}${row}`, role: 'team_name', value: officialTeamName })
-    } else if (registeredTeams.length > 0) {
-      // Slot is unused this scrim — drop any team name left over from the last
-      // session so stale names never sit next to fresh scores. Skipped entirely
-      // when the board is empty, so a bot restart cannot wipe the roster.
-      updateData.push({
-        range: `'${sheetName}'!${TEAM_COLUMN}${row}`,
-        values: [['']],
-      })
-      writePlanTargets.push({ cell: `${TEAM_COLUMN}${row}`, role: 'team_name', value: '' })
-    }
-
-    // 2. Find participating entry for this slot (match by slot code ONLY, never by rank)
     const entry = entries.find((e) => {
       if (!e.slotCode || e.slotCode === '??') return false
       const eCode = String(e.slotCode).toUpperCase().replace(/[\s\-]/g, '')
@@ -526,6 +506,43 @@ export async function syncScoresToGoogleSheet({
       const matchSlotLetter = slotLetter.toUpperCase()
       return eCode === matchSlotCode || eCode === matchAltSlotCode || eCode === matchSlotLetter
     })
+
+    // Does this row already hold a score from one of the OTHER three rounds?
+    // A team that sat out this round but played an earlier one must keep its
+    // name, or its existing scores are orphaned on an unlabelled row.
+    const playedAnotherRound = Object.entries(ROUND_COLUMNS)
+      .filter(([num]) => Number(num) !== roundNum)
+      .some(([, cols]) => {
+        const placeIdx = cols.place.charCodeAt(0) - 'H'.charCodeAt(0)
+        const killsIdx = cols.kills.charCodeAt(0) - 'H'.charCodeAt(0)
+        return [placeIdx, killsIdx].some((idx) => {
+          const value = String(existingRowValues[idx] ?? '').trim()
+          return value !== '' && value.toUpperCase() !== 'X' && Number.isFinite(Number(value))
+        })
+      })
+
+    // 2. Write the team name in column J.
+    // A registered team that has not played ANY round is left off the sheet
+    // entirely — no name, no markers — so an absent team never looks like a
+    // participant. The name appears the moment it actually plays.
+    const showTeamName = Boolean(registered) && (Boolean(entry) || playedAnotherRound)
+    if (showTeamName) {
+      const officialTeamName = sanitizeSheetText(formatSheetTeamName(registered))
+      updateData.push({
+        range: `'${sheetName}'!${TEAM_COLUMN}${row}`,
+        values: [[officialTeamName]],
+      })
+      writePlanTargets.push({ cell: `${TEAM_COLUMN}${row}`, role: 'team_name', value: officialTeamName })
+    } else if (registeredTeams.length > 0) {
+      // Unused slot, or a registered team that has played nothing yet. Clear any
+      // name left over from a previous session. Skipped entirely when the board
+      // is empty, so a bot restart cannot wipe the roster.
+      updateData.push({
+        range: `'${sheetName}'!${TEAM_COLUMN}${row}`,
+        values: [['']],
+      })
+      writePlanTargets.push({ cell: `${TEAM_COLUMN}${row}`, role: 'team_name', value: '' })
+    }
 
     // Repair the PLACEMENT POINTS formula for all four rounds, not just the one
     // being written. A single unplayed round left a #N/A that propagated into
@@ -571,7 +588,10 @@ export async function syncScoresToGoogleSheet({
       //  - a registered team sat this round out -> blank, so an absent team is
       //    not shown as having taken part
       // Either way, never a score.
-      const marker = registered ? '' : 'X'
+      // A team on the sheet that sat this round out gets blank cells. A row with
+      // no team on it at all — unused slot, or a registered team that has played
+      // nothing — gets the sheet's 'X' marker.
+      const marker = showTeamName ? '' : 'X'
       if (registered) {
         registeredNotInScreenshot.push(`${slotCode} ${formatSheetTeamName(registered)}`)
       }

@@ -212,11 +212,12 @@ test('accuracy notices name what was deliberately not scored', () => {
     unmatchedScreenshotEntries: ['SOME RANDOM TEAM'],
   })
 
-  assert.equal(notices.length, 2)
-  assert.match(notices[0], /Left blank/)
-  assert.match(notices[0], /APXS • SYNDICATE/)
-  assert.match(notices[1], /Skipped/)
-  assert.match(notices[1], /SOME RANDOM TEAM/)
+  // Only unmatched screenshot rows are reported. A registered team that did not
+  // play is left off the sheet entirely, so it is not announced either.
+  assert.equal(notices.length, 1)
+  assert.match(notices[0], /Skipped/)
+  assert.match(notices[0], /SOME RANDOM TEAM/)
+  assert.ok(!notices.some((n) => n.includes('SYNDICATE')))
 
   // A clean round says nothing at all.
   assert.deepEqual(formatAccuracyNotices({}), [])
@@ -386,9 +387,8 @@ test('the review names what will not be scored, before confirming', () => {
 
   assert.match(msg.content, /Not on the team slot board/)
   assert.match(msg.content, /slot W/)
-  // ASCEND WONDERPETS holds a slot but is absent, so its cells are left blank.
-  assert.match(msg.content, /left blank/)
-  assert.match(msg.content, /11-K ASCE • ASCEND WONDERPETS/)
+  // ASCEND WONDERPETS holds a slot but did not play, so it is not shown at all.
+  assert.ok(!msg.content.includes('ASCEND WONDERPETS'))
 })
 
 test('a clean round adds no notices to the review', () => {
