@@ -8,6 +8,7 @@ import {
 } from 'discord.js'
 import { TallyBoard } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
+import { parseScreenshotWithOcr } from './tally-ocr.js'
 import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores } from './tally-sheet.js'
 
 const activeTallyBoards = new Map()
@@ -77,6 +78,21 @@ function formatClearReply(scrimLabel, result) {
     return `✅ Score tally board and Google Sheet reset to blank for **${scrimLabel} SCRIM**.\n*Team names, all four rounds, penalties and the rank 1-2-3 highlight were removed.*`
   }
   return `⚠️ Tally board reset for **${scrimLabel} SCRIM**, but the Google Sheet could not be cleared: ${result?.error || 'unknown error'}`
+}
+
+/**
+ * Screenshots are read locally by default. The hosted vision model is opt-in
+ * via TALLY_VISION_PROVIDER=gemini, so no API LLM is involved unless asked for.
+ */
+function resolveVisionProvider(globalConfig) {
+  const configured = String(process.env.TALLY_VISION_PROVIDER || 'ocr').toLowerCase()
+  if (configured !== 'gemini') return 'ocr'
+  const apiKey = globalConfig?.geminiApiKey || process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    console.warn('[TALLY] TALLY_VISION_PROVIDER=gemini but no API key is set; falling back to local OCR.')
+    return 'ocr'
+  }
+  return 'gemini'
 }
 
 function canManageTally(member, allowedRoleIds = new Set()) {
@@ -314,12 +330,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             : message.reply(payload).catch(() => {})
 
         try {
-          const apiKey = globalConfig.geminiApiKey || process.env.GEMINI_API_KEY
-          if (!apiKey) {
-            await respond('⚠️ `GEMINI_API_KEY` is not set. Please set your Gemini API key in environment variables.')
-            return
-          }
-
+          const provider = resolveVisionProvider(globalConfig)
           const startedAt = Date.now()
           console.log(`[TALLY] Processing ${imageAttachments.length} attached images for ${scrimConfig.label} scrim...`)
 
@@ -333,11 +344,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           )
           console.log(`[TALLY] Downloaded ${downloadedImages.length} image(s) in ${Date.now() - startedAt}ms`)
 
-          const parsed = await parseScreenshotWithGemini({
-            images: downloadedImages,
-            apiKey,
-          })
-          console.log(`[TALLY] Vision parse finished ${Date.now() - startedAt}ms after the screenshot arrived`)
+          const parsed =
+            provider === 'gemini'
+              ? await parseScreenshotWithGemini({
+                  images: downloadedImages,
+                  apiKey: globalConfig.geminiApiKey || process.env.GEMINI_API_KEY,
+                })
+              : await parseScreenshotWithOcr({ images: downloadedImages })
+          console.log(
+            `[TALLY] ${provider.toUpperCase()} parse finished ${Date.now() - startedAt}ms after the screenshot arrived (${parsed.entries.length} rows)`,
+          )
 
           // Use user-specified round, auto-detected next round, or Gemini's parsed round
           const effectiveRound = userSpecifiedRound
