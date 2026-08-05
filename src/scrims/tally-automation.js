@@ -6,7 +6,7 @@ import {
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
-import { TallyBoard, findUnmatchedEntries, TALLY_EMOJI } from './tally-core.js'
+import { TallyBoard, findUnmatchedEntries, TALLY_EMOJI, renderAlignedTable } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotWithOcr } from './tally-ocr.js'
 import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName, getSpreadsheetUrl } from './tally-sheet.js'
@@ -120,23 +120,22 @@ function canManageTally(member, allowedRoleIds = new Set()) {
  * re-sorting into cumulative standings.
  */
 export function buildRoundScoreTable(entries = []) {
-  const lines = [
-    '```',
-    `RK  SLOT  TAG / TEAM                        KILLS  PTS`,
-    `───────────────────────────────────────────────────────`,
-  ]
-
-  entries.forEach((e, idx) => {
-    const rk = String(e.rank || idx + 1).padStart(2, ' ')
-    const slot = String(e.slotCode || '??').padEnd(4, ' ')
-    const nameStr = e.tag ? `[${e.tag}] ${e.name}` : (e.teamQuery || 'Unknown')
-    const nameCol = nameStr.slice(0, 32).padEnd(32, ' ')
-    const kills = String(e.kills || 0).padStart(5, ' ')
-    const pts = String(e.totalPoints || 0).padStart(4, ' ')
-    lines.push(`${rk}  ${slot}  ${nameCol}  ${kills}  ${pts}`)
-  })
-  lines.push('```')
-  return lines.join('\n')
+  return renderAlignedTable(
+    [
+      { key: 'rk', label: 'RK', align: 'right' },
+      { key: 'slot', label: 'SLOT' },
+      { key: 'team', label: 'TEAM' },
+      { key: 'kills', label: 'KILLS', align: 'right' },
+      { key: 'pts', label: 'PTS', align: 'right' },
+    ],
+    entries.map((e, idx) => ({
+      rk: e.rank || idx + 1,
+      slot: e.slotCode || '??',
+      team: (e.tag ? `[${e.tag}] ${e.name}` : e.teamQuery || 'Unknown').slice(0, 32),
+      kills: e.kills || 0,
+      pts: e.totalPoints || 0,
+    })),
+  )
 }
 
 export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC', skippedEntries = [] }) {

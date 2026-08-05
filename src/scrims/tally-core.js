@@ -205,6 +205,31 @@ export const TALLY_EMOJI = {
     'https://cdn.discordapp.com/emojis/1387891022104760501.webp?size=32&animated=true',
 }
 
+/**
+ * A code-block table sized to its contents.
+ *
+ * Fixed-width padding made every table as wide as the widest name it could
+ * ever hold, so the block ran far past the text and forced a sideways scroll
+ * on narrow windows. Each column is now only as wide as its widest cell.
+ */
+export function renderAlignedTable(columns, rows) {
+  const widths = columns.map((col) =>
+    Math.max(col.label.length, ...rows.map((row) => String(row[col.key] ?? '').length)),
+  )
+  const pad = (value, i) =>
+    columns[i].align === 'right'
+      ? String(value ?? '').padStart(widths[i])
+      : String(value ?? '').padEnd(widths[i])
+
+  const header = columns.map((col, i) => pad(col.label, i)).join('  ')
+  const lines = ['```', header, '─'.repeat(header.length)]
+  for (const row of rows) {
+    lines.push(columns.map((col, i) => pad(row[col.key], i)).join('  '))
+  }
+  lines.push('```')
+  return lines.join('\n')
+}
+
 export class TallyBoard {
   constructor(placementPoints = DEFAULT_PLACEMENT_POINTS) {
     this.placementPoints = placementPoints
@@ -406,25 +431,23 @@ export class TallyBoard {
     const lines = [
       `${TALLY_EMOJI.standings} **${title}**`,
       `*Active Rounds: ${activeRounds.length > 0 ? activeRounds.join(', ') : 'None'} | Total Teams: ${standings.length}*`,
-      '```',
-      `RK  SLOT  TEAM                              KILLS  WWCD  PTS`,
-      `──────────────────────────────────────────────────────────────`,
+      renderAlignedTable(
+        [
+          { key: 'rk', label: 'RK', align: 'right' },
+          { key: 'slot', label: 'SLOT' },
+          { key: 'team', label: 'TEAM' },
+          { key: 'kills', label: 'KILLS', align: 'right' },
+          { key: 'pts', label: 'PTS', align: 'right' },
+        ],
+        standings.map((team) => ({
+          rk: team.overallRank,
+          slot: team.slotCode,
+          team: (team.tag ? `[${team.tag}] ${team.name}` : team.name).slice(0, 32),
+          kills: team.totalKills,
+          pts: team.totalPoints,
+        })),
+      ),
     ]
-
-    for (const team of standings) {
-      const rk = String(team.overallRank).padStart(2, ' ')
-      const slot = String(team.slotCode).padEnd(4, ' ')
-      const displayName = team.tag ? `[${team.tag}] ${team.name}` : team.name
-      const nameCol = displayName.slice(0, 32).padEnd(32, ' ')
-      const kills = String(team.totalKills).padStart(5, ' ')
-      const wwcdCount = Object.values(team.rounds).filter((r) => r.rank === 1).length
-      const wwcd = String(wwcdCount).padStart(4, ' ')
-      const pts = String(team.totalPoints).padStart(4, ' ')
-
-      lines.push(`${rk}  ${slot}  ${nameCol}  ${kills}  ${wwcd}  ${pts}`)
-    }
-
-    lines.push('```')
 
     if (standings.length > 0) {
       const topTeam = standings[0]

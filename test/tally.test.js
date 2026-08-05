@@ -7,6 +7,7 @@ import {
   TallyBoard,
   findUnmatchedEntries,
   TALLY_EMOJI,
+  renderAlignedTable,
 } from '../src/scrims/tally-core.js'
 import { parseTextScoreInput } from '../src/scrims/tally-vision.js'
 import {
@@ -590,4 +591,48 @@ test('the /clear reply is one line with the custom check emoji', () => {
   // A failed clear still reports the reason rather than claiming success.
   const failed = formatClearReply('PC', { success: false, error: 'permission denied' })
   assert.match(failed, /permission denied/)
+})
+
+test('tables have no WWCD column and fit their contents', () => {
+  const roster = [
+    { slotIndex: 6, slotCode: '07G', slotLetter: 'G', tag: 'RYLS', name: 'ROYALS FORTIS INVICTUS' },
+    { slotIndex: 16, slotCode: '17Q', slotLetter: 'Q', tag: 'GNZ', name: 'WRATH' },
+  ]
+  const board = new TallyBoard()
+  board.setRound(
+    1,
+    [
+      { rank: 1, slotCode: '07G', teamQuery: 'G', kills: 72 },
+      { rank: 21, slotCode: '17Q', teamQuery: 'Q', kills: 1 },
+    ],
+    roster,
+  )
+  const out = board.formatStandingsMarkdown(roster, 'PHGG PC SCRIM STANDINGS')
+
+  assert.ok(!out.includes('WWCD'))
+  assert.match(out, /RK\s+SLOT\s+TEAM\s+KILLS\s+PTS/)
+
+  // Every table row is the same width as the header, and no wider than the
+  // longest cell needs — the old fixed padding forced 61 characters.
+  const body = out.split('\n').filter((l) => /^(RK|─|\s*\d)/.test(l))
+  const widths = new Set(body.map((l) => l.length))
+  assert.equal(widths.size, 1, 'table rows are not aligned to one width')
+  assert.ok([...widths][0] < 61, `table is ${[...widths][0]} chars, expected narrower than 61`)
+})
+
+test('renderAlignedTable sizes each column to its widest cell', () => {
+  const table = renderAlignedTable(
+    [
+      { key: 'rk', label: 'RK', align: 'right' },
+      { key: 'team', label: 'TEAM' },
+    ],
+    [{ rk: 1, team: 'AB' }, { rk: 10, team: 'LONGER NAME' }],
+  )
+  const lines = table.split('\n').filter((l) => l !== '```')
+
+  // "RK" is 2 wide, "TEAM" widens to 11 for "LONGER NAME".
+  assert.equal(lines[0], 'RK  TEAM       ')
+  assert.equal(lines[2], ' 1  AB         ')
+  assert.equal(lines[3], '10  LONGER NAME')
+  assert.equal(lines[1], '─'.repeat(lines[0].length))
 })
