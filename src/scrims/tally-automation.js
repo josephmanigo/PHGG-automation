@@ -709,7 +709,9 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         ? `⚠️ **Sheet Write Error**: ${syncError}`
         : (syncResult && syncResult.success
             ? [
-                `*(Scores written & verified in Google Sheet — ${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`,
+                // The audit id stays in the audit store and the logs; it is not
+                // something the scorekeeper needs to read on every round.
+                `*(Scores written & verified in Google Sheet — ${syncResult.teamsTallied} teams tallied)*`,
               ].join('\n')
             : `*(Scores saved to leaderboard)*`)
 
