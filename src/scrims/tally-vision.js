@@ -42,22 +42,50 @@ export function parseTextScoreInput(text) {
   return { roundNumber, entries }
 }
 
+// Every model attempt re-uploads the full screenshot, so each wasted candidate
+// costs seconds. Cap how many we are willing to burn before giving up.
+const MAX_MODEL_ATTEMPTS = 3
+// Vision calls that hang would otherwise block the scorekeeper indefinitely.
+const VISION_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 45000)
+
+// Discovered model lists are stable for the life of the process; refetching
+// them per screenshot added a round trip to every 404 path.
+const discoveredModelCache = new Map()
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = VISION_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function getAvailableGeminiModels(apiKey) {
+  if (discoveredModelCache.has(apiKey)) return discoveredModelCache.get(apiKey)
+
+  let models = []
   try {
     const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
-    const res = await fetch(listUrl)
-    if (!res.ok) return []
-    const data = await res.json()
-    if (!Array.isArray(data.models)) return []
-
-    return data.models
-      .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
-      .map((m) => String(m.name || '').replace(/^models\//, ''))
-      .filter(Boolean)
+    const res = await fetchWithTimeout(listUrl, {}, 10000)
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data.models)) {
+        models = data.models
+          .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+          .map((m) => String(m.name || '').replace(/^models\//, ''))
+          .filter(Boolean)
+          // Flash models first: this is OCR on a scoreboard, not reasoning.
+          .sort((a, b) => Number(b.includes('flash')) - Number(a.includes('flash')))
+      }
+    }
   } catch (err) {
     console.warn('[TALLY] Failed to query dynamic model list:', err.message)
-    return []
   }
+
+  discoveredModelCache.set(apiKey, models)
+  return models
 }
 
 export async function parseScreenshotWithGemini({
@@ -135,14 +163,10 @@ Rules:
 
   const requestedModel = String(modelName || '').trim()
 
-  const candidateModels = [
-    requestedModel,
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-pro',
-    'gemini-1.5-pro-latest',
-  ]
+  // Only current models are tried up front. The retired gemini-1.5-* names that
+  // used to sit here always 404, and each one cost a full image upload before
+  // the request that actually works.
+  const candidateModels = [requestedModel, 'gemini-2.0-flash']
     .filter(Boolean)
     .filter((m, i, arr) => arr.indexOf(m) === i)
 
@@ -151,14 +175,21 @@ Rules:
   if (apiKeys.length > 0) {
     keyLoop: for (const currentApiKey of apiKeys) {
       let dynamicModelsFetched = false
+      const tried = new Set()
+      // Snapshot per key: discovery appends to this list, and mutating the array
+      // being iterated previously let it grow without bound.
+      const queue = [...candidateModels]
 
-      for (let i = 0; i < candidateModels.length; i++) {
-        const currentModel = candidateModels[i]
+      while (queue.length > 0 && tried.size < MAX_MODEL_ATTEMPTS) {
+        const currentModel = queue.shift()
+        if (tried.has(currentModel)) continue
+        tried.add(currentModel)
+
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
             const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${currentApiKey}`
 
-            const response = await fetch(endpoint, {
+            const response = await fetchWithTimeout(endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload),
@@ -185,11 +216,9 @@ Rules:
                 const liveModels = await getAvailableGeminiModels(currentApiKey)
                 if (liveModels.length > 0) {
                   console.log(`[TALLY] Dynamically discovered active models for key: ${liveModels.join(', ')}`)
-                  for (const lm of liveModels) {
-                    if (!candidateModels.includes(lm)) {
-                      candidateModels.push(lm)
-                    }
-                  }
+                  // Front of the queue: a model the API just confirmed exists
+                  // beats anything left in the static list.
+                  queue.unshift(...liveModels.filter((lm) => !tried.has(lm)))
                 }
               }
 
@@ -221,8 +250,15 @@ Rules:
 
             return { roundNumber, entries }
           } catch (err) {
-            console.warn(`Attempt ${attempt} for model "${currentModel}" failed: ${err.message}`)
-            lastError = err
+            const timedOut = err.name === 'AbortError'
+            console.warn(
+              `Attempt ${attempt} for model "${currentModel}" failed: ${timedOut ? `timed out after ${VISION_REQUEST_TIMEOUT_MS}ms` : err.message}`,
+            )
+            lastError = timedOut
+              ? new Error(`Vision request timed out after ${Math.round(VISION_REQUEST_TIMEOUT_MS / 1000)}s. Try a smaller screenshot.`)
+              : err
+            // Retrying a timeout just doubles the wait the scorekeeper sees.
+            if (timedOut) break
           }
         }
       }
@@ -255,7 +291,9 @@ Rules:
         ],
       }
 
-      const oaResp = await fetch('https://api.openai.com/v1.chat/completions', {
+      // NB: this was "/v1.chat/completions" — a typo that made the fallback
+      // fail every time Gemini was exhausted.
+      const oaResp = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

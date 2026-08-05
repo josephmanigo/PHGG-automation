@@ -301,13 +301,26 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       })
 
       if (imageAttachments.length > 0) {
+        // Reading a screenshot takes several seconds. Acknowledge immediately —
+        // the typing indicator fires right away and the placeholder is edited
+        // into the review, so there is never a silent gap and no extra message.
+        message.channel.sendTyping().catch(() => {})
+        const workingMessage = await message
+          .reply(`⏳ **Reading ${imageAttachments.length > 1 ? `${imageAttachments.length} screenshots` : 'screenshot'}...**`)
+          .catch(() => null)
+        const respond = (payload) =>
+          workingMessage
+            ? workingMessage.edit(payload).catch(() => {})
+            : message.reply(payload).catch(() => {})
+
         try {
           const apiKey = globalConfig.geminiApiKey || process.env.GEMINI_API_KEY
           if (!apiKey) {
-            await message.reply('⚠️ `GEMINI_API_KEY` is not set. Please set your Gemini API key in environment variables.').catch(() => {})
+            await respond('⚠️ `GEMINI_API_KEY` is not set. Please set your Gemini API key in environment variables.')
             return
           }
 
+          const startedAt = Date.now()
           console.log(`[TALLY] Processing ${imageAttachments.length} attached images for ${scrimConfig.label} scrim...`)
 
           const downloadedImages = await Promise.all(
@@ -318,11 +331,13 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
               return { buffer: buf, mimeType: att.contentType || 'image/png' }
             }),
           )
+          console.log(`[TALLY] Downloaded ${downloadedImages.length} image(s) in ${Date.now() - startedAt}ms`)
 
           const parsed = await parseScreenshotWithGemini({
             images: downloadedImages,
             apiKey,
           })
+          console.log(`[TALLY] Vision parse finished ${Date.now() - startedAt}ms after the screenshot arrived`)
 
           // Use user-specified round, auto-detected next round, or Gemini's parsed round
           const effectiveRound = userSpecifiedRound
@@ -354,12 +369,10 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             scrimLabel: scrimConfig.label,
           })
 
-          await message.reply(reviewMsg).catch((err) => {
-            console.error('[TALLY] Failed to send review reply:', err.message)
-          })
+          await respond(reviewMsg)
         } catch (err) {
           console.error('[TALLY] Failed to parse screenshot with Gemini:', err)
-          await message.reply(`❌ **Tally Error**: ${err.message}`).catch(() => {})
+          await respond(`❌ **Tally Error**: ${err.message}`)
         }
         return
       }
