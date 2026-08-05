@@ -339,6 +339,24 @@ export function cellMask(bitmap, { x, y, w, h }, mode = 'otsu') {
   return { bits, w: cw, h: ch }
 }
 
+/**
+ * Does this cell lie wholly inside the capture?
+ *
+ * A scrolled screenshot cuts a row in half at the top or bottom edge — the next
+ * placement is on screen far enough to show its skull, but its letter or kill
+ * total is not. cellMask clamps such a crop to the image instead of failing, so
+ * the row would otherwise be read from whatever fraction happens to be visible.
+ * That row belongs to the neighbouring capture, where it appears in full.
+ */
+export function cellFits(bitmap, cell) {
+  return (
+    cell.x >= 0 &&
+    cell.y >= 0 &&
+    cell.x + cell.w <= bitmap.width &&
+    cell.y + cell.h <= bitmap.height
+  )
+}
+
 export function letterCell(row, k) {
   return {
     x: row.skullX0 + LETTER_DX * k,
@@ -614,6 +632,12 @@ export function readCapture(bitmap, atlas, thresholds = {}) {
   const minMargin = thresholds.minMargin ?? (small ? SMALL_MATCH_MARGIN : MIN_MATCH_MARGIN)
 
   for (const row of rows) {
+    // A row clipped by the capture edge is skipped here, not guessed at. It is
+    // fully visible in the neighbouring screenshot, and the merge keeps that
+    // read — which is why overlapping captures cover the whole board.
+    const letterVisible = cellFits(bitmap, letterCell(row, k))
+    const killsVisible = cellFits(bitmap, killsCell(row, k))
+
     const letterMask = cellMask(bitmap, letterCell(row, k), 'otsu')
     const letterMatches = readCell(letterMask, letters)
     // A stray speck can split the cell; the widest box is the letter.
@@ -639,9 +663,15 @@ export function readCapture(bitmap, atlas, thresholds = {}) {
 
     const readable = k >= MIN_RELIABLE_SCALE
     const killsCertain =
-      readable && killMatches.length > 0 && killMatches.every((m) => confident(m, minScore, minMargin) && /^\d$/.test(m.label))
+      readable &&
+      killsVisible &&
+      killMatches.length > 0 &&
+      killMatches.every((m) => confident(m, minScore, minMargin) && /^\d$/.test(m.label))
     const kills = killsCertain ? Number(killMatches.map((m) => m.label).join('')) : null
-    const slotLetter = readable && confident(letterMatch, minScore, minMargin) ? letterMatch.label : null
+    const slotLetter =
+      readable && letterVisible && confident(letterMatch, minScore, minMargin)
+        ? letterMatch.label
+        : null
     if (!readable) rank = null
 
     read.push({

@@ -6,7 +6,7 @@ import { Jimp } from 'jimp'
 import { readCapture, resolveMedalRanks } from '../src/scrims/tally-glyphs.js'
 import { parseScreenshotWithGlyphs } from '../src/scrims/tally-ocr.js'
 import atlas from '../src/scrims/glyph-atlas.json' with { type: 'json' }
-import { ALL_ROUNDS, MOBILE_ROUND_A, ROUNDS } from './fixtures/scoreboard-ground-truth.js'
+import { ALL_ROUNDS, MOBILE_ROUND_A, ROUND_C, ROUNDS } from './fixtures/scoreboard-ground-truth.js'
 
 const SHOT_DIR = path.join(process.cwd(), 'test', 'fixtures', 'screenshots')
 const expectedRows = (capture) => [
@@ -185,6 +185,49 @@ test('two rows claiming one slot are both pulled rather than scored', () => {
   const seen = ['A', 'B', 'B', 'C']
   const counts = seen.reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map())
   assert.equal([...counts.values()].filter((n) => n > 1).length, 1)
+})
+
+/**
+ * How a scrolled round is meant to divide up: each capture contributes the
+ * placings it shows in full, a placing repeated in the next capture is not read
+ * twice, and a row clipped by the screen edge is left to the capture that shows
+ * it whole. Getting this wrong is what made placings go missing.
+ */
+test('each capture contributes only the placings it shows in full', needsCaptures, async () => {
+  const cases = [
+    { round: MOBILE_ROUND_A, maxSlots: 20, mime: 'image/jpeg' },
+    { round: ROUND_C, maxSlots: 25, mime: 'image/png' },
+  ]
+
+  for (const { round, maxSlots, mime } of cases) {
+    const files = round.captures.map((c) => path.join(SHOT_DIR, c.file))
+    if (!files.every((f) => fs.existsSync(f))) continue
+
+    for (const capture of round.captures) {
+      const image = await Jimp.read(path.join(SHOT_DIR, capture.file))
+      const rows = readCapture(image.bitmap, atlas, { maxSlots })
+      const expected = expectedRows(capture)
+
+      for (let i = 0; i < expected.length && i < rows.length; i++) {
+        // Rows the ground truth marks as cut off must never be read as usable.
+        if (expected[i].skip) {
+          assert.equal(rows[i].certain, false, `${capture.file}: clipped row was read anyway`)
+        }
+      }
+    }
+
+    const images = files.map((f) => ({ buffer: fs.readFileSync(f), mimeType: mime }))
+    const parsed = await parseScreenshotWithGlyphs({ images, maxSlots })
+    const ranks = parsed.entries.map((e) => e.rank)
+
+    assert.equal(new Set(ranks).size, ranks.length, `${round.label}: a placing was read twice`)
+    assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b), `${round.label}: out of order`)
+    assert.deepEqual(parsed.missingRanks, [], `${round.label}: a placing was missed`)
+    assert.deepEqual(parsed.uncertain, [], `${round.label}: a placing was left unread`)
+    // Contiguous from 1 to the last team, with no holes.
+    assert.deepEqual(ranks, Array.from({ length: ranks.length }, (_, i) => i + 1))
+    assert.ok(ranks.length <= maxSlots, `${round.label}: more placings than slots`)
+  }
 })
 
 test('a scrolled capture keeps its sticky header at rank 1 instead of extrapolating', () => {
