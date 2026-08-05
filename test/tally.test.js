@@ -14,6 +14,7 @@ import {
   buildClearRanges,
   buildTemplateRestore,
   buildRankHighlightFormula,
+  applyRankHighlight,
   placementPointsFormula,
   defaultPlacementPointsFormula,
   formatSheetTeamName,
@@ -433,4 +434,31 @@ test('teams that never played are left off the standings', () => {
   const all = board.getOverallStandings(roster, { includeUnplayed: true })
   assert.equal(all.length, 3)
   assert.ok(all.map((s) => s.slotCode).includes('11K'))
+})
+
+test('the rank highlight covers TEAM..RANK and leaves the SLOT column alone', async () => {
+  const calls = []
+  const realFetch = global.fetch
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('?fields=')) {
+      return { ok: true, json: async () => ({ sheets: [{ properties: { title: 'S', sheetId: 1 }, conditionalFormats: [] }] }) }
+    }
+    calls.push(JSON.parse(opts.body))
+    return { ok: true, json: async () => ({}) }
+  }
+
+  try {
+    await applyRankHighlight({ spreadsheetId: 'x', sheetName: 'S', accessToken: 't' })
+  } finally {
+    global.fetch = realFetch
+  }
+
+  const add = calls[0].requests.find((r) => r.addConditionalFormatRule)
+  const range = add.addConditionalFormatRule.rule.ranges[0]
+
+  // H=7 is SLOT and I=8 is SLOT NO.; the highlight must start after them at J.
+  assert.equal(range.startColumnIndex, 9)
+  assert.equal(range.endColumnIndex, 27) // exclusive, so through AA (RANK)
+  assert.equal(range.startRowIndex, 7) // row 8
+  assert.equal(range.endRowIndex, 32)
 })

@@ -22,7 +22,9 @@ export const SCORE_END_ROW = SCORE_START_ROW + SCORE_TOTAL_SLOTS - 1 // 32
 export const TEAM_COLUMN = 'J'
 export const FINAL_SCORE_COLUMN = 'Z'
 export const RANK_COLUMN = 'AA'
-const HIGHLIGHT_START_COLUMN_INDEX = 7 // H
+// The highlight covers TEAM..RANK. It deliberately starts at J, not H, so the
+// SLOT and SLOT NO. columns keep their own template styling.
+const HIGHLIGHT_START_COLUMN_INDEX = 9 // J (TEAM)
 const HIGHLIGHT_END_COLUMN_INDEX = 27 // exclusive -> through AA
 
 // Marker embedded in the rule we own so repeat syncs replace it instead of
