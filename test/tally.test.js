@@ -517,3 +517,21 @@ test('the tally messages use the custom server emoji', () => {
   assert.ok(!out.includes('🌟'))
   assert.ok(!out.includes('🥇'))
 })
+
+test('the buttons carry plain text labels, no emoji', () => {
+  const msg = buildReviewMessage({
+    roundNumber: 1,
+    entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID', kills: 10, totalPoints: 30 }],
+    registeredTeams: [],
+    reviewId: 'rev_x',
+  })
+
+  const labels = msg.components[0].components.map((c) => c.data.label)
+  assert.deepEqual(labels, ['Confirm & Save Scores', 'View Standings', 'Reject'])
+
+  // Colour already conveys the action, so no pictographs belong in the labels.
+  const hasEmoji = /\p{Extended_Pictographic}/u
+  for (const label of labels) {
+    assert.ok(!hasEmoji.test(label), `"${label}" still contains an emoji`)
+  }
+})

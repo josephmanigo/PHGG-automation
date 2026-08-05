@@ -161,15 +161,15 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`phgg_tally:confirm:${scrimLabel}:${roundNumber}:${reviewId}`)
-      .setLabel('✅ Confirm & Save Scores')
+      .setLabel('Confirm & Save Scores')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`phgg_tally:standings:${scrimLabel}:${roundNumber}:${reviewId}`)
-      .setLabel('📊 View Standings')
+      .setLabel('View Standings')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId(`phgg_tally:reject:${scrimLabel}:${roundNumber}:${reviewId}`)
-      .setLabel('❌ Reject')
+      .setLabel('Reject')
       .setStyle(ButtonStyle.Danger),
   )
 
@@ -638,7 +638,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       const standingsOnly = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`phgg_tally:standings:${scrimConfig.label}:${roundNumInt}:${reviewId}`)
-          .setLabel('📊 View Standings')
+          .setLabel('View Standings')
           .setStyle(ButtonStyle.Primary),
       )
 
