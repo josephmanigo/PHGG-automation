@@ -655,3 +655,36 @@ test('each scrim scope reads screenshots from its own tally channel', async () =
   assert.ok(mobile.tallyChannelId)
   assert.notEqual(pc.tallyChannelId, mobile.tallyChannelId)
 })
+
+test('a recovered round renders team names and points, not slot codes', () => {
+  const roster = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID ESPORTS' },
+    { slotIndex: 5, slotCode: '06F', slotLetter: 'F', tag: 'AIM', name: 'AIM SEEK GREATNESS' },
+  ]
+
+  // What parseRoundTableFromMessage hands back after a restart: slot and kills
+  // only — no tag, no name, no points.
+  const recovered = [
+    { rank: 1, slotCode: '01A', teamQuery: '01A', kills: 56 },
+    { rank: 2, slotCode: '06F', teamQuery: '06F', kills: 41 },
+  ]
+
+  const board = new TallyBoard()
+  const processed = board.setRound(2, recovered, roster)
+  const table = buildRoundScoreTable(processed)
+
+  // setRound resolves the roster and computes the points.
+  assert.match(table, /\[NR\] NIGHTRAID ESPORTS/)
+  assert.match(table, /\[AIM\] AIM SEEK GREATNESS/)
+  assert.equal(processed[0].totalPoints, 20 + 56) // rank 1 -> 20 placement pts
+  assert.equal(processed[1].totalPoints, 16 + 41) // rank 2 -> 16
+
+  // The TEAM column must never fall back to repeating the slot code, and no
+  // row may show 0 points when the team actually scored.
+  const rows = table.split('\n').slice(1).map((l) => l.replace(/`/g, ''))
+  for (const row of rows) {
+    const [, slot, ...rest] = row.trim().split(/\s+/)
+    assert.ok(!rest[0].startsWith(slot), `TEAM column repeats the slot code: ${row}`)
+    assert.notEqual(rest[rest.length - 1], '0')
+  }
+})

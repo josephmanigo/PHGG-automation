@@ -602,6 +602,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         }
       }
       let roundNumInt = Number(roundStr || 1)
+      let confirmedEntries = []
       let syncResult = null
       let syncError = null
 
@@ -609,7 +610,12 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         roundNumInt = reviewData.roundNumber
         console.log(`[TALLY] Confirm pressed for Round ${roundNumInt} with ${reviewData.entries.length} entries`)
 
-        tallyBoard.setRound(
+        // Use what setRound returns, not what went in. Entries recovered from
+        // a review message carry only the slot code and kills, so rendering
+        // them raw showed the slot code in the TEAM column and 0 points.
+        // setRound resolves each row against the roster and works out the
+        // placement points.
+        confirmedEntries = tallyBoard.setRound(
           reviewData.roundNumber,
           reviewData.entries,
           registeredTeams,
@@ -619,7 +625,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           syncResult = await syncScoresToGoogleSheet({
             ...sheetTarget(scrimConfig),
             roundNumber: reviewData.roundNumber,
-            entries: reviewData.entries,
+            entries: confirmedEntries,
             registeredTeams,
             // Stable per-review id, so the duplicate-write guard can actually
             // fire. It defaulted to a fresh random value on every call, which
