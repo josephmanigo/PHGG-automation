@@ -333,9 +333,18 @@ export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType 
 
   // Scrolled captures overlap and each repeats rank 1 as a sticky header, so
   // the same rank appears more than once. Keep the confident read of each.
+  //
+  // A row whose rank could not be resolved used to be skipped here, which meant
+  // it disappeared from the tally with nothing said about it — a whole capture
+  // could contribute no rows and the scorekeeper would only notice by spotting
+  // the gap in the placements by eye. Every detected row is now accounted for.
   const byRank = new Map()
+  const rankless = []
   for (const row of collected) {
-    if (!Number.isInteger(row.rank)) continue
+    if (!Number.isInteger(row.rank)) {
+      rankless.push(row)
+      continue
+    }
     const existing = byRank.get(row.rank)
     if (!existing || (row.certain && !existing.certain)) byRank.set(row.rank, row)
   }
@@ -357,6 +366,22 @@ export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType 
     })
   }
 
+  for (const row of rankless) {
+    uncertain.push({ rank: null, slotLetter: row.slotLetter, kills: row.kills })
+  }
+
+  // Placements run consecutively, so a hole between the lowest and highest rank
+  // read means a row was missed outright — usually a screenshot that was never
+  // posted, or one whose rows could not be placed.
+  const ranks = entries.map((e) => e.rank)
+  const missingRanks = []
+  if (ranks.length > 0) {
+    const flagged = new Set(uncertain.map((u) => u.rank).filter(Number.isInteger))
+    for (let r = Math.min(...ranks); r <= Math.max(...ranks); r++) {
+      if (!ranks.includes(r) && !flagged.has(r)) missingRanks.push(r)
+    }
+  }
+
   if (entries.length === 0) {
     throw new Error(
       'The scoreboard reader could not confidently read any row (the capture may be too low-resolution). ' +
@@ -364,7 +389,7 @@ export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType 
     )
   }
 
-  return { roundNumber: 1, entries, source: 'glyphs', uncertain }
+  return { roundNumber: 1, entries, source: 'glyphs', uncertain, missingRanks }
 }
 
 /**

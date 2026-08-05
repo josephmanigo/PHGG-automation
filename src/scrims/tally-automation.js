@@ -466,9 +466,23 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           if (usedProvider === 'ocr') {
             degradedNotice =
               '⚠️ **Read with fallback OCR** — the glyph reader could not parse this layout, so slot letters and kill counts are frequently wrong here. **Check every row** before confirming.'
-          } else if (parsed.uncertain?.length) {
-            const ranks = parsed.uncertain.map((u) => `#${u.rank ?? '?'}`).join(', ')
-            degradedNotice = `⚠️ **${parsed.uncertain.length} row(s) could not be read confidently** (${ranks}) and were left out. Add them manually before confirming.`
+          } else {
+            const warnings = []
+            if (parsed.uncertain?.length) {
+              const ranks = parsed.uncertain.map((u) => `#${u.rank ?? '?'}`).join(', ')
+              warnings.push(
+                `⚠️ **${parsed.uncertain.length} row(s) could not be read confidently** (${ranks}) and were left out. Add them manually before confirming.`,
+              )
+            }
+            // A hole in the placements means a row never made it in at all.
+            // Saying so beats leaving the scorekeeper to spot it by eye.
+            if (parsed.missingRanks?.length) {
+              const ranks = parsed.missingRanks.map((r) => `#${r}`).join(', ')
+              warnings.push(
+                `⚠️ **No row found for ${ranks}.** Post the screenshot covering those placements, or add them manually.`,
+              )
+            }
+            degradedNotice = warnings.join('\n')
           }
 
           console.log(

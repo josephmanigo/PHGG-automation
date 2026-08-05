@@ -623,17 +623,54 @@ export function readCapture(bitmap, atlas, thresholds = {}) {
 export function resolveMedalRanks(rows) {
   let lead = 0
   while (lead < rows.length && rows[lead].rank === null) lead++
-  if (lead === 0 || lead === rows.length) return rows
 
-  const firstReadable = rows[lead].rank
-  const contiguous = firstReadable === lead + 1
+  // No rank readable anywhere in this capture. Nothing can be inferred, but the
+  // rows are still returned rankless so the caller reports them rather than
+  // dropping the whole capture in silence — which is exactly what used to
+  // happen, and made a capture's rows vanish with no message at all.
+  if (lead === rows.length) return rows
 
-  for (let i = 0; i < lead; i++) {
-    rows[i].rank = contiguous ? i + 1 : 1
+  if (lead > 0) {
+    const firstReadable = rows[lead].rank
+    const contiguous = firstReadable === lead + 1
+    for (let i = 0; i < lead; i++) {
+      rows[i].rank = contiguous ? i + 1 : 1
+    }
+    // A scrolled capture repeats only rank 1, so anything above it is header.
+    if (!contiguous && lead > 1) {
+      for (let i = 0; i < lead; i++) rows[i].certain = false
+    }
   }
-  // A scrolled capture repeats only rank 1, so anything above it is the header.
-  if (!contiguous && lead > 1) {
-    for (let i = 0; i < lead; i++) rows[i].certain = false
+
+  // Ranks below the header run consecutively down the capture, so a rank the
+  // matcher could not read sits a fixed number of rows from one it could. Only
+  // accept it when the neighbour above and the neighbour below agree; a lone
+  // anchor could itself be misread, and a wrong rank misplaces the team.
+  for (let i = lead; i < rows.length; i++) {
+    if (rows[i].rank !== null) continue
+
+    let before = null
+    for (let j = i - 1; j >= lead; j--) {
+      if (rows[j].rank !== null) {
+        before = rows[j].rank + (i - j)
+        break
+      }
+    }
+    let after = null
+    for (let j = i + 1; j < rows.length; j++) {
+      if (rows[j].rank !== null) {
+        after = rows[j].rank - (j - i)
+        break
+      }
+    }
+
+    const agreed = before !== null && after !== null && before === after
+    if (agreed && before >= 1) {
+      rows[i].rank = before
+    } else {
+      rows[i].certain = false
+    }
   }
+
   return rows
 }

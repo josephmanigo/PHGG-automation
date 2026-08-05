@@ -124,6 +124,42 @@ test('a scrolled capture keeps its sticky header at rank 1 instead of extrapolat
   assert.equal(rows[0].rank, 1)
 })
 
+/**
+ * A capture where no rank was readable used to leave every row rankless, and
+ * rankless rows were skipped without a word — so a whole screenshot could
+ * contribute nothing and the only clue was a gap in the placements.
+ */
+test('a capture with no readable rank still returns its rows to be reported', () => {
+  const rows = resolveMedalRanks([
+    { rank: null, certain: true },
+    { rank: null, certain: true },
+    { rank: null, certain: true },
+  ])
+  assert.equal(rows.length, 3, 'rows must not be discarded')
+})
+
+test('a rank the matcher missed is recovered from the rows around it', () => {
+  const rows = resolveMedalRanks([
+    { rank: 4, certain: true },
+    { rank: null, certain: true },
+    { rank: 6, certain: true },
+  ])
+  assert.equal(rows[1].rank, 5)
+  assert.equal(rows[1].certain, true)
+})
+
+test('a rank is only inferred when both neighbours agree', () => {
+  // 4 then 9 with one row between: the neighbours imply 5 and 8, so the row
+  // cannot be placed and must be flagged rather than guessed at.
+  const rows = resolveMedalRanks([
+    { rank: 4, certain: true },
+    { rank: null, certain: true },
+    { rank: 9, certain: true },
+  ])
+  assert.equal(rows[1].rank, null)
+  assert.equal(rows[1].certain, false)
+})
+
 test('an unscrolled capture numbers its three medal rows 1, 2, 3', () => {
   const rows = resolveMedalRanks([
     { rank: null, certain: true },
