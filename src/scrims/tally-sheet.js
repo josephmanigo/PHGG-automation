@@ -37,6 +37,28 @@ const RANK_HIGHLIGHT_SIGNATURES = [
   'LARGE($Z$8:$Z$3', // older "top 3 by final score" variant
 ]
 
+// H4 is the big merged title banner. It ships with a "[DEVICE]" placeholder
+// that has to be swapped for PC / MOBILE on tally and put back on /clear.
+export const TITLE_BANNER_TEMPLATE =
+  'PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • [DEVICE]'
+const TITLE_DEVICE_PLACEHOLDER = '[DEVICE]'
+
+export function renderTitleBanner(deviceLabel) {
+  return TITLE_BANNER_TEMPLATE.replace(TITLE_DEVICE_PLACEHOLDER, String(deviceLabel || 'PC').toUpperCase())
+}
+
+/**
+ * Team names as the scoresheet shows them: "NR • NIGHTRAID ESPORTS".
+ * The bracket form ("[NR] NIGHTRAID ESPORTS") did not match the sheet layout.
+ */
+export function formatSheetTeamName({ tag, name } = {}) {
+  const cleanTag = String(tag || '').trim()
+  const cleanName = String(name || '').trim()
+  if (!cleanTag) return cleanName
+  if (!cleanName) return cleanTag
+  return `${cleanTag} • ${cleanName}`
+}
+
 const auditStore = new Map()
 
 /**
@@ -390,11 +412,17 @@ export async function syncScoresToGoogleSheet({
   let teamsTalliedCount = 0
   let missingMarkersAddedCount = 0
 
-  // Update Header Title Cell (H3) with Device PC/MOBILE
+  // Update Header Title Cells with Device PC/MOBILE.
+  // H4 is the big merged banner that is actually visible on the scoresheet;
+  // writing only H3 left the "[DEVICE]" placeholder on screen all scrim.
   const deviceLabel = String(device || 'PC').toUpperCase()
   updateData.push({
     range: `'${sheetName}'!H3`,
     values: [[`BLOODSTRIKE SCRIMMAGE • ${deviceLabel}`]],
+  })
+  updateData.push({
+    range: `'${sheetName}'!H4`,
+    values: [[renderTitleBanner(deviceLabel)]],
   })
 
   // Update Header Date Cell (H5 contains capital date, time, and rounds label)
@@ -420,8 +448,7 @@ export async function syncScoresToGoogleSheet({
     // 1. Write Official Team Name in Column J
     const registered = registeredTeams.find((t) => t.slotIndex === i)
     if (registered) {
-      const rawName = registered.tag ? `[${registered.tag}] ${registered.name}` : registered.name
-      const officialTeamName = sanitizeSheetText(rawName)
+      const officialTeamName = sanitizeSheetText(formatSheetTeamName(registered))
 
       updateData.push({
         range: `'${sheetName}'!${TEAM_COLUMN}${row}`,
@@ -667,7 +694,14 @@ export function buildClearRanges(sheetName) {
  * blank, so the sheet reads as fresh instead of showing #N/A on every row.
  */
 export function buildPlacementFormulaRestore(sheetName) {
-  const data = []
+  // H4 is not blanked by the clear — that would wipe the guild banner. It is
+  // reset to the template so the device reads "[DEVICE]" again until the next tally.
+  const data = [
+    {
+      range: `'${sheetName}'!H4`,
+      values: [[TITLE_BANNER_TEMPLATE]],
+    },
+  ]
   for (const { place, placementPoints } of Object.values(ROUND_COLUMNS)) {
     const values = []
     for (let row = SCORE_START_ROW; row <= SCORE_END_ROW; row++) {

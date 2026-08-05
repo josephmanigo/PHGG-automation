@@ -14,6 +14,9 @@ import {
   buildPlacementFormulaRestore,
   buildRankHighlightFormula,
   placementPointsFormula,
+  formatSheetTeamName,
+  renderTitleBanner,
+  TITLE_BANNER_TEMPLATE,
 } from '../src/scrims/tally-sheet.js'
 
 const mockRegisteredTeams = [
@@ -170,6 +173,33 @@ test('placement points stay a live VLOOKUP and never yield #N/A', () => {
   }
 })
 
+test('the visible title banner resolves the [DEVICE] placeholder', () => {
+  assert.equal(
+    renderTitleBanner('PC'),
+    'PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • PC',
+  )
+  assert.equal(
+    renderTitleBanner('mobile'),
+    'PH GAMING GUILD  -  OPERATION :  DOMINATION\nBLOODSTRIKE SCRIMMAGE • MOBILE',
+  )
+  // The guild line must survive — only the device token is substituted.
+  assert.match(renderTitleBanner('PC'), /PH GAMING GUILD/)
+  assert.doesNotMatch(renderTitleBanner('PC'), /\[DEVICE\]/)
+  // ...and the template keeps the placeholder so /clear can put it back.
+  assert.match(TITLE_BANNER_TEMPLATE, /\[DEVICE\]/)
+})
+
+test('team names are written in the sheet\'s "TAG • NAME" form', () => {
+  assert.equal(
+    formatSheetTeamName({ tag: 'NR', name: 'NIGHTRAID ESPORTS' }),
+    'NR • NIGHTRAID ESPORTS',
+  )
+  // No tag, or no name, must not leave a dangling separator.
+  assert.equal(formatSheetTeamName({ tag: '', name: 'NEMESIS' }), 'NEMESIS')
+  assert.equal(formatSheetTeamName({ tag: 'SVE', name: '' }), 'SVE')
+  assert.equal(formatSheetTeamName({}), '')
+})
+
 test('clear wipes scrim data but leaves the sheet template intact', () => {
   const ranges = buildClearRanges('SHEET').join(' ')
 
@@ -193,7 +223,7 @@ test('clear puts the placement-points formulas back after wiping K:V', () => {
   const restore = buildPlacementFormulaRestore('SHEET')
   const rowCount = SCORE_END_ROW - SCORE_START_ROW + 1
 
-  assert.equal(restore.length, 4) // one column per round
+  assert.equal(restore.length, 5) // the H4 banner + one column per round
   assert.equal(rowCount, 25)
 
   for (const round of [1, 2, 3, 4]) {
