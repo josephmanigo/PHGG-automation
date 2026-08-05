@@ -82,7 +82,7 @@ function toObject(store) {
 // The fixtures are all one device scale. A phone renders the same UI larger,
 // so each capture is harvested at several scales to cover the range a real
 // screenshot can arrive at.
-const SCALES = [1, 0.75, 1.25, 1.43, 1.69, 2]
+const SCALES = [1, 0.95, 1.1, 1.2, 1.35, 1.43, 1.6, 1.69, 2, 2.5, 3]
 
 let rowsSeen = 0
 let letterKept = 0

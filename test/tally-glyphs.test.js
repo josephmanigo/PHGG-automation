@@ -80,6 +80,41 @@ test('overlapping captures merge into one round without duplicate ranks', needsC
   assert.equal(ranks.filter((r) => r === 1).length, 1)
 })
 
+/**
+ * A phone screenshot arrives at whatever size the device renders, so the reader
+ * has to be independent of it. This asserts the guarantee that matters at every
+ * size: it may decline to answer, but it must never answer wrongly.
+ */
+test('reads at any capture size, and never answers wrongly at any of them', needsCaptures, async () => {
+  for (const scale of [0.7, 0.95, 1, 1.43, 1.69, 2.5]) {
+    let wrong = 0
+    let read = 0
+    let cells = 0
+
+    for (const capture of captures) {
+      const image = await Jimp.read(path.join(SHOT_DIR, capture.file))
+      if (scale !== 1) image.scale(scale)
+      const got = readCapture(image.bitmap, image.bitmap && atlas)
+      const expected = expectedRows(capture)
+      assert.equal(got.length, expected.length, `${capture.file} @${scale}x: row count`)
+
+      for (let i = 0; i < expected.length; i++) {
+        cells += 2
+        for (const field of ['slotLetter', 'kills']) {
+          if (got[i][field] === expected[i][field]) read++
+          else if (got[i][field] !== null) wrong++
+        }
+      }
+    }
+
+    assert.equal(wrong, 0, `@${scale}x produced ${wrong} wrong cell(s) — must flag, never guess`)
+    // Below the reliable scale the reader is expected to decline entirely.
+    if (scale >= 1) {
+      assert.ok(read / cells > 0.95, `@${scale}x only read ${read}/${cells}`)
+    }
+  }
+})
+
 test('a scrolled capture keeps its sticky header at rank 1 instead of extrapolating', () => {
   const rows = resolveMedalRanks([
     { rank: null, certain: true },

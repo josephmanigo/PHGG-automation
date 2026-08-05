@@ -512,6 +512,11 @@ export function loadTemplates(atlasSection = {}) {
 // Below this agreement fraction the glyph is not one of the known templates —
 // a UI restyle, an unseen slot letter, or a bad crop. Guessing anyway is what
 // silently awards points to the wrong team, so the row is flagged instead.
+// Stricter bar for a capture rendered below reference size, where the same
+// thresholds start producing wrong answers rather than uncertain ones.
+export const SMALL_MATCH_SCORE = 0.94
+export const SMALL_MATCH_MARGIN = 0.04
+
 export const MIN_MATCH_SCORE = 0.86
 // Two classes this close apart (O/D/Q, 8/B) is a coin flip, not a read.
 export const MIN_MATCH_MARGIN = 0.02
@@ -521,8 +526,8 @@ function readCell(mask, templates, segmentOptions) {
   return boxes.map((box) => matchGlyph(normalizeGlyph(mask, box), templates))
 }
 
-function confident(match) {
-  return Boolean(match) && match.score >= MIN_MATCH_SCORE && match.margin >= MIN_MATCH_MARGIN
+function confident(match, minScore = MIN_MATCH_SCORE, minMargin = MIN_MATCH_MARGIN) {
+  return Boolean(match) && match.score >= minScore && match.margin >= minMargin
 }
 
 /**
@@ -539,9 +544,9 @@ function confident(match) {
  * than merely uncertain ones. Declining is the only safe response: a wrong
  * slot letter awards a team's kills to somebody else.
  */
-export const MIN_RELIABLE_SCALE = 0.85
+export const MIN_RELIABLE_SCALE = 0.95
 
-export function readCapture(bitmap, atlas) {
+export function readCapture(bitmap, atlas, thresholds = {}) {
   const letters = loadTemplates(atlas.letters)
   const digits = loadTemplates(atlas.digits)
   // Rank digits are drawn far larger than kill digits. Normalisation aliases
@@ -554,6 +559,14 @@ export function readCapture(bitmap, atlas) {
   const k = column.k
   const rows = detectRows(bitmap, column)
   const read = []
+
+  // A capture rendered below reference size has genuinely fewer pixels per
+  // glyph, so the same thresholds that are safe at 1x start producing wrong
+  // answers. Demand more agreement from a small capture instead of refusing
+  // it outright: a stricter bar flags the marginal cells rather than guessing.
+  const small = (thresholds.sourceScale ?? k) < 1
+  const minScore = thresholds.minScore ?? (small ? SMALL_MATCH_SCORE : MIN_MATCH_SCORE)
+  const minMargin = thresholds.minMargin ?? (small ? SMALL_MATCH_MARGIN : MIN_MATCH_MARGIN)
 
   for (const row of rows) {
     const letterMask = cellMask(bitmap, letterCell(row, k), 'otsu')
@@ -571,7 +584,7 @@ export function readCapture(bitmap, atlas) {
     let rank = null
     if (rankMatches.length > 1 && rankMatches[0].label === '#') {
       const digitsOnly = rankMatches.slice(1)
-      if (digitsOnly.every((m) => confident(m) && /^\d$/.test(m.label))) {
+      if (digitsOnly.every((m) => confident(m, minScore, minMargin) && /^\d$/.test(m.label))) {
         const value = Number(digitsOnly.map((m) => m.label).join(''))
         if (value >= 1 && value <= 99) rank = value
       }
@@ -579,9 +592,9 @@ export function readCapture(bitmap, atlas) {
 
     const readable = k >= MIN_RELIABLE_SCALE
     const killsCertain =
-      readable && killMatches.length > 0 && killMatches.every((m) => confident(m) && /^\d$/.test(m.label))
+      readable && killMatches.length > 0 && killMatches.every((m) => confident(m, minScore, minMargin) && /^\d$/.test(m.label))
     const kills = killsCertain ? Number(killMatches.map((m) => m.label).join('')) : null
-    const slotLetter = readable && confident(letterMatch) ? letterMatch.label : null
+    const slotLetter = readable && confident(letterMatch, minScore, minMargin) ? letterMatch.label : null
     if (!readable) rank = null
 
     read.push({
