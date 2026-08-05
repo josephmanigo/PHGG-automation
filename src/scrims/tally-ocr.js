@@ -2,22 +2,32 @@ import { Jimp } from 'jimp'
 import { createWorker, PSM } from 'tesseract.js'
 
 /**
- * Local scoreboard OCR. No API key, no quota, no network call to a model
+ * Local scoreboard OCR. No API key, no quota, no per-request call to a model
  * provider — Tesseract runs in-process.
  *
- * This works because the problem is far narrower than general image reading:
- * the team names are a closed set of at most 25 known strings, and the numbers
- * that matter (placement and kills) are plain digits. OCR only has to get close
- * enough for findMatchingTeam() to snap the name onto the right slot.
+ * The Bloodstrike endgame screen is a grid, not a text table. One team row is:
+ *
+ *   [rank badge] [slot letter] [skull] [TEAM kills] | player1 ... player4
+ *
+ * Only the narrow strip on the left is worth reading. Everything to the right
+ * is four player cells, each with its own kill count — reading the whole row
+ * would pick up a player's kills instead of the team's total.
+ *
+ * The slot letter is what makes this reliable: it maps straight onto a sheet
+ * slot (A -> 1-A, Y -> 25-Y), so no team-name recognition is needed at all.
  */
 
-// Cold start costs ~1s and the worker holds ~150-200MB. On a small instance
-// that is worth reclaiming between scrims, but not between rounds.
 const WORKER_IDLE_TIMEOUT_MS = Number(process.env.OCR_WORKER_IDLE_MS || 5 * 60 * 1000)
+const MIN_STRIP_WIDTH = Number(process.env.OCR_MIN_STRIP_WIDTH || 480)
 
-// Tesseract reads small text badly. Screenshots are upscaled to at least this
-// width before recognition.
-const MIN_OCR_WIDTH = Number(process.env.OCR_MIN_WIDTH || 1600)
+// Fraction of image width holding rank + slot letter + team kills. Measured at
+// ~160px on 1135px-wide captures; the margin is deliberate.
+export const DEFAULT_LEFT_STRIP_RATIO = Number(process.env.OCR_LEFT_STRIP_RATIO || 0.17)
+
+// 25 slots, A..Y, matching rows 8..32 of the scoresheet.
+export const SLOT_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXY'
+const MAX_RANK = SLOT_LETTERS.length
+const MAX_PLAUSIBLE_KILLS = 200
 
 let workerPromise = null
 let idleTimer = null
@@ -27,7 +37,6 @@ function touchIdleTimer() {
   idleTimer = setTimeout(() => {
     releaseOcrWorker().catch(() => {})
   }, WORKER_IDLE_TIMEOUT_MS)
-  // Never hold the process open just to keep a cache warm.
   if (typeof idleTimer.unref === 'function') idleTimer.unref()
 }
 
@@ -36,8 +45,10 @@ async function getWorker() {
     workerPromise = (async () => {
       const worker = await createWorker('eng')
       await worker.setParameters({
-        // A scoreboard is a sparse grid, not prose.
         tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+        // The strip only ever holds digits, a slot letter and the "#" prefix.
+        // Constraining the alphabet cuts the usual O/0 and I/1 confusions.
+        tessedit_char_whitelist: `#0123456789${SLOT_LETTERS}`,
       })
       return worker
     })().catch((err) => {
@@ -65,145 +76,185 @@ export async function releaseOcrWorker() {
   }
 }
 
-/**
- * Game UI is light text on a dark panel, which Tesseract handles poorly.
- * Greyscale + invert + contrast + upscale turns it into something much closer
- * to the black-on-white it was trained on.
- */
-export async function preprocessScreenshot(buffer, { invert = true, contrast = 0.35 } = {}) {
-  const image = await Jimp.fromBuffer(buffer)
+export function slotCodeFromLetter(letter) {
+  const normalized = String(letter || '').toUpperCase()
+  // Guard the length first: "".indexOf is 0, which would silently map an
+  // empty read onto slot 1-A.
+  if (normalized.length !== 1) return null
+  const index = SLOT_LETTERS.indexOf(normalized)
+  if (index === -1) return null
+  return `${index + 1}-${normalized}`
+}
 
-  if (image.bitmap.width < MIN_OCR_WIDTH) {
-    image.scale(Math.min(3, MIN_OCR_WIDTH / image.bitmap.width))
+/**
+ * Crop to the left strip and make it legible: light-on-dark game UI inverted to
+ * dark-on-light, contrast pushed, and upscaled because the glyphs are small.
+ */
+export async function preprocessLeftStrip(buffer, { stripRatio = DEFAULT_LEFT_STRIP_RATIO } = {}) {
+  const image = await Jimp.fromBuffer(buffer)
+  const stripWidth = Math.max(1, Math.round(image.bitmap.width * stripRatio))
+
+  image.crop({ x: 0, y: 0, w: stripWidth, h: image.bitmap.height })
+  if (image.bitmap.width < MIN_STRIP_WIDTH) {
+    image.scale(Math.min(4, MIN_STRIP_WIDTH / image.bitmap.width))
   }
   image.greyscale()
-  if (invert) image.invert()
-  if (contrast) image.contrast(contrast)
+  image.invert()
+  image.contrast(0.4)
 
   return image.getBuffer('image/png')
 }
 
-/**
- * tesseract.js v7 nests results as blocks > paragraphs > lines > words, with no
- * top-level `lines`. Flatten to one entry per visual line, keeping word boxes
- * so columns can be told apart by x position.
- */
-export function flattenLines(data) {
-  const lines = []
+/** tesseract.js v7 nests results as blocks > paragraphs > lines > words. */
+export function flattenWords(data) {
+  const words = []
   for (const block of data?.blocks || []) {
     for (const paragraph of block.paragraphs || []) {
       for (const line of paragraph.lines || []) {
-        const words = (line.words || [])
-          .map((w) => ({
-            text: String(w.text || '').trim(),
-            confidence: Number(w.confidence ?? 0),
-            x: Number(w.bbox?.x0 ?? 0),
-          }))
-          .filter((w) => w.text)
-        if (words.length === 0) continue
-        lines.push({
-          text: words.map((w) => w.text).join(' '),
-          confidence: words.reduce((sum, w) => sum + w.confidence, 0) / words.length,
-          words,
-        })
+        for (const word of line.words || []) {
+          const text = String(word.text || '').trim()
+          if (!text) continue
+          const bbox = word.bbox || {}
+          words.push({
+            text,
+            confidence: Number(word.confidence ?? 0),
+            x: Number(bbox.x0 ?? 0),
+            yCenter: (Number(bbox.y0 ?? 0) + Number(bbox.y1 ?? 0)) / 2,
+          })
+        }
+      }
+    }
+  }
+  return words
+}
+
+/**
+ * Cluster words into visual rows by vertical position. Row pitch is ~92px on a
+ * 1135px-wide capture, so a generous fraction of that separates rows safely.
+ */
+export function groupWordsIntoRows(words, rowTolerance) {
+  const sorted = [...words].sort((a, b) => a.yCenter - b.yCenter)
+  const rows = []
+
+  for (const word of sorted) {
+    const current = rows[rows.length - 1]
+    if (current && Math.abs(word.yCenter - current.yCenter) <= rowTolerance) {
+      current.words.push(word)
+      current.yCenter = current.words.reduce((s, w) => s + w.yCenter, 0) / current.words.length
+    } else {
+      rows.push({ yCenter: word.yCenter, words: [word] })
+    }
+  }
+
+  return rows.map((row) => ({
+    yCenter: row.yCenter,
+    words: row.words.sort((a, b) => a.x - b.x),
+  }))
+}
+
+/**
+ * Read one strip row. Tokens run left to right as rank, slot letter, kills, so
+ * position decides the meaning rather than pattern matching — that is what
+ * keeps slot "I" from being read as rank "1", and vice versa.
+ *
+ * Ranks 1-3 are medal badges rather than "#N" text; when the rank is missing
+ * the row is still returned so the caller can infer it from row order.
+ */
+export function parseStripRow(row) {
+  const tokens = row.words
+    .map((w) => ({ ...w, clean: w.text.replace(/[^0-9A-Z]/gi, '').toUpperCase() }))
+    .filter((t) => t.clean)
+
+  if (tokens.length === 0) return null
+
+  let rank = null
+  let slotLetter = null
+  let kills = null
+
+  for (const token of tokens) {
+    const isLetter = /^[A-Z]$/.test(token.clean)
+    const isNumber = /^\d{1,3}$/.test(token.clean)
+
+    if (slotLetter === null && isLetter && SLOT_LETTERS.includes(token.clean)) {
+      slotLetter = token.clean
+      continue
+    }
+    if (isNumber) {
+      const value = Number(token.clean)
+      // Before the slot letter it is the rank; after it, the team kill total.
+      if (slotLetter === null) {
+        if (rank === null && value >= 1 && value <= MAX_RANK) rank = value
+      } else if (kills === null && value >= 0 && value <= MAX_PLAUSIBLE_KILLS) {
+        kills = value
       }
     }
   }
 
-  // Some builds return only flat text; keep a usable fallback.
-  if (lines.length === 0 && typeof data?.text === 'string') {
-    return data.text
-      .split(/\r?\n/)
-      .map((text) => text.trim())
-      .filter(Boolean)
-      .map((text) => ({ text, confidence: Number(data.confidence ?? 0), words: [] }))
-  }
+  if (slotLetter === null || kills === null) return null
 
-  return lines
-}
-
-const MAX_RANK = 25
-const MAX_PLAUSIBLE_KILLS = 99
-
-/**
- * Pull rank / team / kills out of one scoreboard line.
- *
- * Layout is "<rank> <team name> <...numeric columns...>". Kills is taken from
- * the LAST number on the line by default, because DAMAGE and SCORE columns sit
- * between the name and kills on some layouts and are far larger. killsColumn
- * lets that be re-pointed once real screenshots are measured.
- */
-export function parseScoreboardLine(rawLine, { killsColumn = 'last' } = {}) {
-  const text = String(rawLine || '')
-    .replace(/[|]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (!text) return null
-
-  const rankMatch = /^#?\s*(\d{1,2})\b/.exec(text)
-  if (!rankMatch) return null
-  const rank = Number(rankMatch[1])
-  if (!Number.isInteger(rank) || rank < 1 || rank > MAX_RANK) return null
-
-  const rest = text.slice(rankMatch[0].length).trim()
-  if (!rest) return null
-
-  // Every digit run, including 4+ digit DAMAGE values. Matching only short
-  // numbers here would skip past them and swallow them into the team name.
-  const numbers = [...rest.matchAll(/\d+/g)]
-  if (numbers.length === 0) return null
-
-  let killsMatch
-  if (killsColumn === 'first') {
-    killsMatch = numbers[0]
-  } else if (Number.isInteger(killsColumn)) {
-    killsMatch = numbers[Math.min(killsColumn, numbers.length - 1)]
-  } else {
-    killsMatch = numbers[numbers.length - 1]
-  }
-
-  const kills = Number(killsMatch[0])
-  if (!Number.isInteger(kills) || kills < 0 || kills > MAX_PLAUSIBLE_KILLS) return null
-
-  // Everything before the first numeric column is the team name.
-  const teamQuery = rest.slice(0, numbers[0].index).replace(/[^\p{L}\p{N}\s.'-]/gu, '').trim()
-  if (!teamQuery) return null
-
-  return { rank, teamQuery, slotCode: '', kills }
+  const confidence = tokens.reduce((s, t) => s + t.confidence, 0) / tokens.length
+  return { rank, slotLetter, kills, confidence, yCenter: row.yCenter }
 }
 
 /**
- * Drop the rows that are obviously not teams (headers, footers, watermarks)
- * and collapse duplicate ranks, keeping the highest-confidence read.
+ * Fill in ranks the medal badges hid. Rows are always in descending rank order
+ * down the capture, so a missing rank sits between its readable neighbours.
  */
-export function selectScoreboardEntries(lines, options = {}) {
-  const byRank = new Map()
+export function inferMissingRanks(rows) {
+  const ordered = [...rows].sort((a, b) => a.yCenter - b.yCenter)
 
-  for (const line of lines) {
-    const parsed = parseScoreboardLine(line.text, options)
-    if (!parsed) continue
+  for (let i = 0; i < ordered.length; i++) {
+    if (ordered[i].rank !== null) continue
 
-    const existing = byRank.get(parsed.rank)
-    if (!existing || (line.confidence ?? 0) > (existing.confidence ?? 0)) {
-      byRank.set(parsed.rank, { ...parsed, confidence: line.confidence ?? 0 })
+    const before = ordered.slice(0, i).reverse().find((r) => r.rank !== null)
+    const after = ordered.slice(i + 1).find((r) => r.rank !== null)
+
+    if (before) {
+      const offset = i - ordered.indexOf(before)
+      ordered[i].rank = before.rank + offset
+    } else if (after) {
+      const offset = ordered.indexOf(after) - i
+      ordered[i].rank = after.rank - offset
     }
   }
 
-  return [...byRank.values()]
+  return ordered.filter((r) => Number.isInteger(r.rank) && r.rank >= 1 && r.rank <= MAX_RANK)
+}
+
+/**
+ * Merge rows from every capture of the same round. Scrolled screenshots overlap
+ * and each repeats the rank-1 row as a sticky header, so the same slot shows up
+ * more than once; keep the highest-confidence read of each slot.
+ */
+export function mergeCaptureRows(rows) {
+  const bySlot = new Map()
+
+  for (const row of rows) {
+    const existing = bySlot.get(row.slotLetter)
+    if (!existing || (row.confidence ?? 0) > (existing.confidence ?? 0)) {
+      bySlot.set(row.slotLetter, row)
+    }
+  }
+
+  return [...bySlot.values()]
     .sort((a, b) => a.rank - b.rank)
-    .map(({ confidence, ...entry }) => entry)
+    .map((row) => ({
+      rank: row.rank,
+      slotCode: slotCodeFromLetter(row.slotLetter),
+      teamQuery: row.slotLetter,
+      kills: row.kills,
+    }))
 }
 
 /**
  * Drop-in replacement for parseScreenshotWithGemini: same { roundNumber,
- * entries } shape, so the review / confirm flow is unchanged.
+ * entries } shape, so the review and confirm flow is unchanged.
  */
 export async function parseScreenshotWithOcr({
   images = [],
   buffer,
   mimeType = 'image/png',
-  killsColumn = process.env.OCR_KILLS_COLUMN || 'last',
-  invert,
+  stripRatio = DEFAULT_LEFT_STRIP_RATIO,
 } = {}) {
   const imageList = images.length > 0 ? images : buffer ? [{ buffer, mimeType }] : []
   if (imageList.length === 0) {
@@ -211,24 +262,33 @@ export async function parseScreenshotWithOcr({
   }
 
   const worker = await getWorker()
-  const allLines = []
+  const collected = []
 
   for (const img of imageList) {
     const source = img.buffer || (img.base64 ? Buffer.from(img.base64, 'base64') : null)
     if (!source) continue
 
-    const prepared = await preprocessScreenshot(source, invert === undefined ? {} : { invert })
+    const prepared = await preprocessLeftStrip(source, { stripRatio })
     const { data } = await worker.recognize(prepared, {}, { blocks: true, text: true })
-    allLines.push(...flattenLines(data))
+
+    const words = flattenWords(data)
+    if (words.length === 0) continue
+
+    // Row pitch scales with the capture, so derive the tolerance from it.
+    const heights = words.map((w) => w.yCenter)
+    const span = Math.max(...heights) - Math.min(...heights)
+    const rowTolerance = Math.max(12, span / (words.length || 1))
+
+    const rows = groupWordsIntoRows(words, rowTolerance)
+      .map(parseStripRow)
+      .filter(Boolean)
+
+    collected.push(...inferMissingRanks(rows))
   }
 
   touchIdleTimer()
 
-  const parsedKillsColumn = /^\d+$/.test(String(killsColumn))
-    ? Number(killsColumn)
-    : String(killsColumn)
-  const entries = selectScoreboardEntries(allLines, { killsColumn: parsedKillsColumn })
-
+  const entries = mergeCaptureRows(collected)
   if (entries.length === 0) {
     throw new Error(
       'Local OCR could not read any team rows from that screenshot. ' +
@@ -236,7 +296,5 @@ export async function parseScreenshotWithOcr({
     )
   }
 
-  // The round number is not reliably present in the endgame screen; the caller
-  // already falls back to the next unfilled round.
-  return { roundNumber: 1, entries, source: 'ocr', linesRead: allLines.length }
+  return { roundNumber: 1, entries, source: 'ocr' }
 }
