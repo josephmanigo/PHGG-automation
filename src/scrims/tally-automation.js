@@ -14,6 +14,28 @@ import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetS
 const activeTallyBoards = new Map()
 const pendingReviews = new Map()
 
+/**
+ * Every scrim scope registers itself here.
+ *
+ * Discord delivers a slash command once, and only the PC listener handles them
+ * (they are registered once, globally). Without this registry those commands
+ * always answered with PC's board, so /standings in the mobile channel showed
+ * the PC scrim. The scope is now picked from the channel the command was run
+ * in, falling back to PC.
+ */
+const scrimScopes = new Map()
+
+function resolveScopeForChannel(channelId) {
+  for (const scope of scrimScopes.values()) {
+    const { scrimConfig } = scope
+    const owns =
+      Object.values(scrimConfig.channels || {}).includes(channelId) ||
+      (scrimConfig.tallyChannelId && scrimConfig.tallyChannelId === channelId)
+    if (owns) return scope
+  }
+  return scrimScopes.get('PC') || [...scrimScopes.values()][0] || null
+}
+
 const PENDING_REVIEW_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours — one scrim night
 
 export function getOrCreateTallyBoard(scrimLabel, customPlacementPoints) {
@@ -142,7 +164,8 @@ export function parseRoundTableFromMessage(content) {
   const entries = []
   for (const raw of String(content || '').split('\n')) {
     const line = raw.trim().replace(/^`+/, '').replace(/`+$/, '').trim()
-    if (!line || /^(RK|RANK)\b/.test(line) || /^[─-]+$/.test(line)) continue
+    // Skip the header, whatever it was called when the message was posted.
+    if (!line || /^(RK|RANK|PLACE)\b/.test(line) || /^[─-]+$/.test(line)) continue
 
     // "<rank> <slot> <team name…> <kills> <pts>" — the team name may contain
     // spaces, so anchor on the two numeric columns at the end.
@@ -195,6 +218,10 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     ...(scrimConfig.scorekeeperRoleIds || []),
     ...(globalConfig.scorekeeperRoleIds || []),
   ])
+
+  // Register this scope so the globally-registered slash commands can answer
+  // for whichever scrim's channel they were invoked in.
+  scrimScopes.set(scrimConfig.label.toUpperCase(), { scrimConfig, tallyBoard, getScrimBoard })
 
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return
@@ -506,31 +533,41 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     // Only the PC listener handles slash commands (they are registered once by PC)
     if (interaction.isChatInputCommand() && scrimConfig.label.toUpperCase() === 'PC') {
       const cmdName = interaction.commandName
+
+      // Answer for the scrim whose channel the command was run in, so the
+      // mobile channel reports the mobile scrim rather than always PC.
+      const scope = resolveScopeForChannel(interaction.channelId) || {
+        scrimConfig,
+        tallyBoard,
+        getScrimBoard,
+      }
+      const scopeLabel = scope.scrimConfig.label.toUpperCase()
+      const scopeTeams = () => (scope.getScrimBoard ? scope.getScrimBoard().getRegisteredTeams() : [])
+
       if (cmdName === 'clear' || cmdName === 'clearsheet') {
         if (!canManageTally(interaction.member, allowedRoleIds)) {
           await interaction.reply({ content: '❌ You do not have permission to clear score tallies.', flags: MessageFlags.Ephemeral }).catch(() => {})
           return
         }
         await interaction.deferReply().catch(() => {})
-        const clearResult = await clearTallyAndSheet(scrimConfig)
-        await interaction.editReply(formatClearReply('PC', clearResult)).catch(() => {})
+        const clearResult = await clearTallyAndSheet(scope.scrimConfig)
+        await interaction.editReply(formatClearReply(scopeLabel, clearResult)).catch(() => {})
         return
       }
       if (cmdName === 'standings') {
-        const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
-        const standingsText = tallyBoard.formatStandingsMarkdown(
-          registeredTeams,
-          `${globalConfig.brandName} PC SCRIM STANDINGS`,
+        const standingsText = scope.tallyBoard.formatStandingsMarkdown(
+          scopeTeams(),
+          `${globalConfig.brandName} ${scopeLabel} SCRIM STANDINGS`,
         )
         await interaction.reply({ content: standingsText }).catch(() => {})
         return
       }
       if (cmdName === 'refreshteams') {
-        const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
+        const registeredTeams = scopeTeams()
         const teamListStr = registeredTeams.length > 0
           ? registeredTeams.map((t) => `${t.slotCode}: ${t.tag ? `[${t.tag}] ` : ''}${t.name}`).join('\n')
           : '*No teams registered on the board yet.*'
-        await interaction.reply({ content: `🔄 **PC SCRIM REGISTERED TEAMS REFRESHED** (${registeredTeams.length} Teams):\n\`\`\`\n${teamListStr}\n\`\`\`` }).catch(() => {})
+        await interaction.reply({ content: `🔄 **${scopeLabel} SCRIM REGISTERED TEAMS REFRESHED** (${registeredTeams.length} Teams):\n\`\`\`\n${teamListStr}\n\`\`\`` }).catch(() => {})
         return
       }
     }

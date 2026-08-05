@@ -688,3 +688,12 @@ test('a recovered round renders team names and points, not slot codes', () => {
     assert.notEqual(rest[rest.length - 1], '0')
   }
 })
+
+test('the recovery parser skips the header under any of its names', () => {
+  for (const header of ['RK  SLOT  TEAM  KILLS  PTS', 'RANK  SLOT  TEAM  KILLS  PTS', 'PLACE  SLOT  TEAM  KILLS  PTS']) {
+    const msg = `\`${header}\`\n\` 1  01A   [NR] NIGHTRAID     58   78\``
+    const rows = parseRoundTableFromMessage(msg)
+    assert.equal(rows.length, 1, `header "${header.split(' ')[0]}" was parsed as a team row`)
+    assert.equal(rows[0].slotCode, '01A')
+  }
+})
