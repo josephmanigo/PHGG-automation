@@ -588,6 +588,12 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     const [, action, targetLabel, roundStr, reviewId] = parts
     if (targetLabel && targetLabel.toUpperCase() !== scrimConfig.label.toUpperCase()) return
 
+    // Log every button this scope accepts. "This interaction failed" in Discord
+    // gives no detail, so without this there is nothing to diagnose from.
+    console.log(
+      `[TALLY] ${scrimConfig.label} button "${action}" round=${roundStr} review=${reviewId} by ${interaction.user?.id}`,
+    )
+
     const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
 
     if (action === 'standings') {
@@ -605,10 +611,24 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (action === 'confirm') {
+      // A second press on a round that is already saved. Discord keeps showing
+      // the old buttons until the client catches up, so this is easy to do by
+      // accident — answer it plainly instead of letting it fail.
+      if (/SCORES CONFIRMED/i.test(interaction.message?.content || '')) {
+        console.log(`[TALLY] Ignoring repeat confirm for ${reviewId}; round ${roundStr} is already saved.`)
+        await interaction
+          .reply({
+            content: `✅ Round ${roundStr} is already saved. Nothing was changed.`,
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch(() => {})
+        return
+      }
+
       try {
         await interaction.deferUpdate()
       } catch (deferErr) {
-        console.error('Failed to defer button update:', deferErr.message)
+        console.error(`[TALLY] Could not acknowledge confirm for ${reviewId}:`, deferErr.message)
         try {
           await interaction.reply({ content: '⚠️ Button interaction expired. Please send the screenshot again.', flags: MessageFlags.Ephemeral })
         } catch { /* already replied */ }
