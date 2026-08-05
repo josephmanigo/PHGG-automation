@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env.local --env-file-if-exists=.env src/index.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/announcements.js && node --check src/discord-upload.js && node --check src/invite-links.js && node --check src/nickname.js && node --check src/reactions.js && node --check src/rules.js && node --check src/scrims/core.js && node --check src/scrims/automation.js && node --check src/scrims/tally-core.js && node --check src/scrims/tally-vision.js && node --check src/scrims/tally-automation.js && node --check src/scrims/tally-sheet.js && node --check src/scrims/tally-ocr.js && node --check src/scrims/tally-glyphs.js"
+    "check": "node --check src/index.js && node --check src/announcements.js && node --check src/announce.js && node --check src/discord-upload.js && node --check src/invite-links.js && node --check src/nickname.js && node --check src/reactions.js && node --check src/rules.js && node --check src/scrims/core.js && node --check src/scrims/automation.js && node --check src/scrims/tally-core.js && node --check src/scrims/tally-vision.js && node --check src/scrims/tally-automation.js && node --check src/scrims/tally-sheet.js && node --check src/scrims/tally-ocr.js && node --check src/scrims/tally-glyphs.js"
   },
   "dependencies": {
     "discord.js": "^14.27.0",

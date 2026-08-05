@@ -8,6 +8,24 @@ tallying from Bloodstrike endgame screenshots.
     npm test
     npm run check      # syntax check every module
 
+## /announce
+
+Post a message to any channel as the bot.
+
+    /announce channel:#main-chat message:Scrims at 8PM\nBe on time mention:@Scrim Players image:[attach]
+
+- **channel** — where it goes. Text and announcement channels.
+- **message** — what to post. A slash command field cannot hold a real newline,
+  so type `\n` where you want a line break.
+- **mention** *(optional)* — a role to ping. Only the role you pick can ping:
+  an `@everyone` typed into the message text stays inert.
+- **image** *(optional)* — attach a picture. It is re-uploaded, so it survives
+  even if the original message is deleted.
+
+Restricted to Manage Messages / Manage Server, checked when the command runs and
+not only in Discord's UI. The reply is ephemeral; the announcement is the only
+public output, and it links back to the posted message.
+
 ## Reading scoreboards
 
 Screenshots are read locally by template matching — no API key, no quota. The
