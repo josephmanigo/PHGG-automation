@@ -6,7 +6,7 @@ import {
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
-import { TallyBoard, findUnmatchedEntries } from './tally-core.js'
+import { TallyBoard, findUnmatchedEntries, TALLY_EMOJI } from './tally-core.js'
 import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotWithOcr } from './tally-ocr.js'
 import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName } from './tally-sheet.js'
@@ -628,10 +628,10 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         ? `⚠️ **Sheet Write Error**: ${syncError}`
         : (syncResult && syncResult.success
             ? [
-                `📊 *Scores written & verified in Google Sheet! (${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`,
+                `${TALLY_EMOJI.sheet} *Scores written & verified in Google Sheet! (${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`,
                 ...formatAccuracyNotices(syncResult),
               ].join('\n')
-            : `📊 *Scores saved to leaderboard!*`)
+            : `${TALLY_EMOJI.sheet} *Scores saved to leaderboard!*`)
 
       // Confirm and Reject are gone, but keep View Standings so the cumulative
       // table is still one click away.
@@ -644,7 +644,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
       try {
         await interaction.editReply({
-          content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED!**\n${statusNotice}\n\n${confirmedTable}`,
+          content: `${TALLY_EMOJI.confirmed} **ROUND ${roundNumInt} SCORES CONFIRMED!**\n${statusNotice}\n\n${confirmedTable}`,
           components: [standingsOnly],
         })
       } catch (editErr) {

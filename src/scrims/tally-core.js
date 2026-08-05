@@ -175,6 +175,23 @@ export function findUnmatchedEntries(entries = [], registeredTeams = []) {
     })
 }
 
+/**
+ * Custom server emoji used in the tally messages.
+ *
+ * Discord resolves these by ID, so the name between the colons is only a label
+ * and does not have to match the emoji's real name. If any of these are
+ * ANIMATED, its prefix must be `a:` instead of `:` or it will not render.
+ *
+ * Each can be overridden with an env var, so swapping an emoji does not need a
+ * code change — set e.g. TALLY_EMOJI_CONFIRMED='<:yes:123456789>'.
+ */
+export const TALLY_EMOJI = {
+  confirmed: process.env.TALLY_EMOJI_CONFIRMED || '<:confirmed:1472902880120934431>',
+  sheet: process.env.TALLY_EMOJI_SHEET || '<:sheet:1348768330751938680>',
+  standings: process.env.TALLY_EMOJI_STANDINGS || '<:standings:1388436342257487872>',
+  leader: process.env.TALLY_EMOJI_LEADER || '<:leader:1387891022104760501>',
+}
+
 export class TallyBoard {
   constructor(placementPoints = DEFAULT_PLACEMENT_POINTS) {
     this.placementPoints = placementPoints
@@ -374,7 +391,7 @@ export class TallyBoard {
     }
 
     const lines = [
-      `🏆 **${title}**`,
+      `${TALLY_EMOJI.standings} **${title}**`,
       `*Active Rounds: ${activeRounds.length > 0 ? activeRounds.join(', ') : 'None'} | Total Teams: ${standings.length}*`,
       '```',
       `RK  SLOT  TEAM                              KILLS  WWCD  PTS`,
@@ -399,7 +416,7 @@ export class TallyBoard {
     if (standings.length > 0) {
       const topTeam = standings[0]
       const topName = topTeam.tag ? `[${topTeam.tag}] ${topTeam.name}` : topTeam.name
-      lines.push(`🌟 **Current Leader**: 🥇 **${topName}** with **${topTeam.totalPoints} PTS** (${topTeam.totalKills} Kills)`)
+      lines.push(`${TALLY_EMOJI.leader} **Current Leader**: **${topName}** with **${topTeam.totalPoints} PTS** (${topTeam.totalKills} Kills)`)
     }
 
     return lines.join('\n')

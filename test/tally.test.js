@@ -5,6 +5,7 @@ import {
   getPlacementPoints,
   TallyBoard,
   findUnmatchedEntries,
+  TALLY_EMOJI,
 } from '../src/scrims/tally-core.js'
 import { parseTextScoreInput } from '../src/scrims/tally-vision.js'
 import {
@@ -491,4 +492,28 @@ test('the confirmed round table is byte-identical to the reviewed one', () => {
   // Rank 8 with 48 pts still sits below rank 2 with 32 — sorting by points
   // would have moved it, which is exactly what confirming used to do.
   assert.ok(table.indexOf('21U') < table.indexOf('04D'))
+})
+
+test('the tally messages use the custom server emoji', () => {
+  // Discord resolves custom emoji by ID, so the exact <:name:id> form matters.
+  const EMOJI_FORM = /^<a?:[A-Za-z0-9_]+:\d{17,20}>$/
+  for (const [key, value] of Object.entries(TALLY_EMOJI)) {
+    assert.match(value, EMOJI_FORM, `${key} is not a valid custom emoji tag`)
+  }
+
+  assert.match(TALLY_EMOJI.confirmed, /1472902880120934431/)
+  assert.match(TALLY_EMOJI.sheet, /1348768330751938680/)
+  assert.match(TALLY_EMOJI.standings, /1388436342257487872/)
+  assert.match(TALLY_EMOJI.leader, /1387891022104760501/)
+
+  const board = new TallyBoard()
+  board.setRound(1, [{ rank: 1, teamQuery: 'NR', kills: 10 }], mockRegisteredTeams)
+  const out = board.formatStandingsMarkdown(mockRegisteredTeams, 'PHGG PC SCRIM STANDINGS')
+
+  assert.ok(out.includes(`${TALLY_EMOJI.standings} **PHGG PC SCRIM STANDINGS**`))
+  assert.ok(out.includes(`${TALLY_EMOJI.leader} **Current Leader**:`))
+  // The old unicode emoji must be gone, including the medal before the name.
+  assert.ok(!out.includes('🏆'))
+  assert.ok(!out.includes('🌟'))
+  assert.ok(!out.includes('🥇'))
 })
