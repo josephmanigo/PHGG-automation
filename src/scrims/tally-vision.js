@@ -343,5 +343,20 @@ Rules:
     }
   }
 
-  throw lastError || new Error('All Vision model endpoints (Gemini / OpenAI) failed after retries.')
+  // Say which providers were actually configured. A bare "quota exhausted" gave
+  // no hint that a second provider was available but unset.
+  const tried = [
+    `${apiKeys.length} Gemini key${apiKeys.length === 1 ? '' : 's'}`,
+    openaiKeys.length > 0
+      ? `${openaiKeys.length} OpenAI key${openaiKeys.length === 1 ? '' : 's'}`
+      : 'no OpenAI key configured',
+  ].join(', ')
+
+  const advice =
+    openaiKeys.length === 0
+      ? ' Set OPENAI_API_KEY to add a fallback provider, or add more comma-separated keys to GEMINI_API_KEY.'
+      : ' Add more comma-separated keys to GEMINI_API_KEY or OPENAI_API_KEY.'
+
+  const detail = lastError ? ` Last error: ${lastError.message}` : ''
+  throw new Error(`All vision providers failed (tried ${tried}).${advice}${detail}`)
 }
