@@ -485,6 +485,18 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
               warnings.push(
                 `⚠️ **${parsed.uncertain.length} row(s) could not be read confidently** (${ranks}) and were left out. Add them manually before confirming.`,
               )
+              // A pasted screenshot arrives at whatever size it was displayed
+              // at, not its original resolution, and the lost pixels are the
+              // glyph detail the reader needs. Losing a quarter of the rows is
+              // the signature of that, and it costs nothing to fix.
+              const detected = parsed.entries.length + parsed.uncertain.length
+              if (detected > 0 && parsed.uncertain.length / detected > 0.25) {
+                warnings.push(
+                  '💡 That many unread rows usually means the screenshot was **pasted** rather than attached. ' +
+                    'Copying an image sends it at the size it was displayed, not its full resolution. ' +
+                    'Send it again with the **+** button and pick the file — every row should read.',
+                )
+              }
             }
             // Deduction is only as good as the roster: if a team's slot changed
             // and the board was not updated, elimination will confidently
