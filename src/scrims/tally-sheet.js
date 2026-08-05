@@ -63,6 +63,25 @@ export function formatSheetTeamName({ tag, name } = {}) {
   return `${cleanTag} • ${cleanName}`
 }
 
+/**
+ * Slot index (0-based) for the codes the parsers emit: "1-A", "01A", "A".
+ * Returns -1 when the code is missing or unreadable, which keeps such an entry
+ * out of the sheet rather than letting it land on an arbitrary row.
+ */
+export function slotIndexFromCode(slotCode) {
+  const raw = String(slotCode ?? '').toUpperCase().replace(/[\s\-]/g, '')
+  if (!raw || raw === '??') return -1
+
+  const numbered = /^(\d{1,2})([A-Z])$/.exec(raw)
+  if (numbered) {
+    const index = Number(numbered[1]) - 1
+    return index === numbered[2].charCodeAt(0) - 65 ? index : -1
+  }
+  if (/^[A-Z]$/.test(raw)) return raw.charCodeAt(0) - 65
+  if (/^\d{1,2}$/.test(raw)) return Number(raw) - 1
+  return -1
+}
+
 const auditStore = new Map()
 
 /**
@@ -73,16 +92,16 @@ const auditStore = new Map()
  * The bare VLOOKUP returns #N/A for any round that has not been played yet,
  * and X = SUM(L,M,O,P,...) propagates that error all the way through
  * FINAL SCORE (Z) and RANK (AA) — which is why ranking, and therefore any
- * rank-based highlight, could never work. Wrapping it makes every unplayed
- * round contribute nothing instead of poisoning the row:
- *   - place empty  -> "" (round not played yet)
- *   - place 'X'    -> "X" (team sat this round out; matches the sheet styling)
+ * rank-based highlight, could never work. IFERROR turns every one of those
+ * cases into the sheet's own "X" marker instead:
+ *   - place empty  -> "X" (round not played / slot unused)
+ *   - place 'X'    -> "X" (team sat this round out)
  *   - place 1..25  -> the placement points
  * SUM ignores text, so the totals stay correct in all three cases.
  */
 export function placementPointsFormula(placeColumn, row) {
   const cell = `${placeColumn}${row}`
-  return `=IF(${cell}="","",IFERROR(VLOOKUP(${cell},$B$8:$C$32,2,0),"X"))`
+  return `=IFERROR(VLOOKUP(${cell},$B$8:$C$32,2,0),"X")`
 }
 
 export function buildRankHighlightFormula(startRow = SCORE_START_ROW) {
@@ -344,6 +363,16 @@ export async function syncScoresToGoogleSheet({
     throw new Error(`Round ${roundNum} is invalid. Supported rounds are 1, 2, 3, or 4.`)
   }
 
+  // 0. Never tally against an empty team-slot board. Without a roster every
+  //    row falls through to the "not registered" branch and the whole round
+  //    gets overwritten with X, silently wiping scores that were already there.
+  if (!Array.isArray(registeredTeams) || registeredTeams.length === 0) {
+    throw new Error(
+      'No registered teams on the slot board, so nothing can be tallied. ' +
+        'Refresh the team slots (!refreshteams) and try again.',
+    )
+  }
+
   // 1. Duplicate Write Protection check
   const existingAudit = [...auditStore.values()].find(
     (a) => a.submissionId === submissionId && a.roundNumber === roundNum && a.status === 'verified',
@@ -415,6 +444,15 @@ export async function syncScoresToGoogleSheet({
   const writePlanTargets = []
   let teamsTalliedCount = 0
   let missingMarkersAddedCount = 0
+  // Registered teams that hold a slot but do not appear in this screenshot.
+  // They are marked X, never scored — reported back so the result can be checked.
+  const registeredNotInScreenshot = []
+
+  // Screenshot rows that matched no registered slot. They are never written to
+  // the sheet; surfaced so a misread or unregistered team does not pass silently.
+  const unmatchedScreenshotEntries = entries
+    .filter((e) => !registeredTeams.some((t) => t.slotIndex === slotIndexFromCode(e.slotCode)))
+    .map((e) => e.teamQuery || e.name || e.slotCode || 'unknown')
 
   // Update Header Title Cells with Device PC/MOBILE.
   // H4 is the big merged banner that is actually visible on the scoresheet;
@@ -519,8 +557,12 @@ export async function syncScoresToGoogleSheet({
         console.warn(`[TALLY] Slot ${slotCode} had an out-of-range placement (${entry.rank}); wrote 'X' instead.`)
       }
     } else {
-      // Empty slot or team did not participate/score in this round:
-      // Write 'X' to PLACE and KILLS to replace #N/A without touching total score/rank columns
+      // Either the slot is unused, or the team holds a slot but does not appear
+      // in this round's screenshot. Both get 'X' — never a score.
+      if (registered) {
+        registeredNotInScreenshot.push(`${slotCode} ${formatSheetTeamName(registered)}`)
+      }
+
       updateData.push({
         range: `'${sheetName}'!${roundCols.place}${row}`,
         values: [['X']],
@@ -618,6 +660,8 @@ export async function syncScoresToGoogleSheet({
     worksheetName: sheetName,
     teamsTallied: teamsTalliedCount,
     missingMarkersAdded: missingMarkersAddedCount,
+    registeredNotInScreenshot,
+    unmatchedScreenshotEntries,
     formulaCellsChanged: 0,
     penaltyCellsChanged: 0,
     verificationStatus: 'PASSED',

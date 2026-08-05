@@ -16,9 +16,11 @@ import {
   placementPointsFormula,
   formatSheetTeamName,
   renderTitleBanner,
+  slotIndexFromCode,
   TITLE_BANNER_TEMPLATE,
   DATE_HEADER_TEMPLATE,
 } from '../src/scrims/tally-sheet.js'
+import { formatAccuracyNotices } from '../src/scrims/tally-automation.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -155,23 +157,77 @@ test('rank highlight reads the RANK column, not the penalties table', () => {
   assert.match(formula, /PHGG_RANK_TOP3/)
 })
 
-test('placement points stay a live VLOOKUP and never yield #N/A', () => {
+test('placement points show X instead of #N/A when there is no score', () => {
   assert.equal(
     placementPointsFormula('K', 8),
-    '=IF(K8="","",IFERROR(VLOOKUP(K8,$B$8:$C$32,2,0),"X"))',
+    '=IFERROR(VLOOKUP(K8,$B$8:$C$32,2,0),"X")',
   )
   assert.equal(
     placementPointsFormula('T', 32),
-    '=IF(T32="","",IFERROR(VLOOKUP(T32,$B$8:$C$32,2,0),"X"))',
+    '=IFERROR(VLOOKUP(T32,$B$8:$C$32,2,0),"X")',
   )
 
-  // A bare VLOOKUP returns #N/A for an unplayed round, and X=SUM(...) turns
-  // that into #N/A for TOTAL, FINAL SCORE and RANK alike — which is what left
-  // the sheet with no ranking to highlight.
+  // A bare VLOOKUP returns #N/A for an empty or 'X' place cell, and
+  // X=SUM(...) turns that into #N/A for TOTAL, FINAL SCORE and RANK alike —
+  // which is what left the sheet with no ranking to highlight.
   for (const round of [1, 2, 3, 4]) {
     const { place } = ROUND_COLUMNS[round]
-    assert.match(placementPointsFormula(place, 8), /^=IF\(/)
+    const formula = placementPointsFormula(place, 8)
+    assert.match(formula, /^=IFERROR\(/)
+    assert.match(formula, /,"X"\)$/)
   }
+})
+
+test('slot codes resolve to the right row, and junk resolves to nothing', () => {
+  assert.equal(slotIndexFromCode('1-A'), 0)
+  assert.equal(slotIndexFromCode('01A'), 0)
+  assert.equal(slotIndexFromCode('A'), 0)
+  assert.equal(slotIndexFromCode('25-Y'), 24)
+  assert.equal(slotIndexFromCode('13M'), 12)
+
+  // Unusable codes must not land on an arbitrary row.
+  assert.equal(slotIndexFromCode('??'), -1)
+  assert.equal(slotIndexFromCode(''), -1)
+  assert.equal(slotIndexFromCode(undefined), -1)
+  // Number and letter disagreeing means the read is untrustworthy.
+  assert.equal(slotIndexFromCode('1-B'), -1)
+  assert.equal(slotIndexFromCode('25-A'), -1)
+})
+
+test('accuracy notices name what was deliberately not scored', () => {
+  const notices = formatAccuracyNotices({
+    registeredNotInScreenshot: ['3-C APXS • SYNDICATE'],
+    unmatchedScreenshotEntries: ['SOME RANDOM TEAM'],
+  })
+
+  assert.equal(notices.length, 2)
+  assert.match(notices[0], /Marked \*\*X\*\*/)
+  assert.match(notices[0], /APXS • SYNDICATE/)
+  assert.match(notices[1], /Skipped/)
+  assert.match(notices[1], /SOME RANDOM TEAM/)
+
+  // A clean round says nothing at all.
+  assert.deepEqual(formatAccuracyNotices({}), [])
+  assert.deepEqual(
+    formatAccuracyNotices({ registeredNotInScreenshot: [], unmatchedScreenshotEntries: [] }),
+    [],
+  )
+})
+
+test('unregistered screenshot teams are discarded, not scored', () => {
+  const board = new TallyBoard()
+  const entries = board.setRound(
+    1,
+    [
+      { rank: 1, teamQuery: 'NR', kills: 10 },
+      { rank: 2, teamQuery: 'TOTALLY UNKNOWN CLAN', kills: 30 },
+    ],
+    mockRegisteredTeams,
+  )
+
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].tag, 'NR')
+  assert.ok(!entries.some((e) => e.kills === 30))
 })
 
 test('the visible title banner resolves the [DEVICE] placeholder', () => {
@@ -244,10 +300,10 @@ test('clear restores the header placeholders and the placement formulas', () => 
     const block = restore.find((d) => d.range.includes(`!${placementPoints}${SCORE_START_ROW}:`))
     assert.ok(block, `round ${round} placement column missing`)
     assert.equal(block.values.length, rowCount)
-    assert.equal(block.values[0][0], `=IF(${place}8="","",IFERROR(VLOOKUP(${place}8,$B$8:$C$32,2,0),"X"))`)
+    assert.equal(block.values[0][0], `=IFERROR(VLOOKUP(${place}8,$B$8:$C$32,2,0),"X")`)
     assert.equal(
       block.values[rowCount - 1][0],
-      `=IF(${place}32="","",IFERROR(VLOOKUP(${place}32,$B$8:$C$32,2,0),"X"))`,
+      `=IFERROR(VLOOKUP(${place}32,$B$8:$C$32,2,0),"X")`,
     )
   }
 })

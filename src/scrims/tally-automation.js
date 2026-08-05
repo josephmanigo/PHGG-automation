@@ -47,6 +47,31 @@ async function clearTallyAndSheet() {
   return clearGoogleSheetScores()
 }
 
+const MAX_LISTED_TEAMS = 8
+
+function summariseTeams(list) {
+  if (list.length <= MAX_LISTED_TEAMS) return list.join(', ')
+  return `${list.slice(0, MAX_LISTED_TEAMS).join(', ')} +${list.length - MAX_LISTED_TEAMS} more`
+}
+
+/**
+ * Spell out what was deliberately NOT scored, so a misread screenshot is
+ * obvious at a glance instead of silently landing in the sheet.
+ */
+export function formatAccuracyNotices(syncResult = {}) {
+  const notices = []
+  const absent = syncResult.registeredNotInScreenshot || []
+  const unmatched = syncResult.unmatchedScreenshotEntries || []
+
+  if (absent.length > 0) {
+    notices.push(`⬜ *Marked **X** (registered but not in this screenshot): ${summariseTeams(absent)}*`)
+  }
+  if (unmatched.length > 0) {
+    notices.push(`🚫 *Skipped (not on the team slot board): ${summariseTeams(unmatched)}*`)
+  }
+  return notices
+}
+
 function formatClearReply(scrimLabel, result) {
   if (result?.success) {
     return `✅ Score tally board and Google Sheet reset to blank for **${scrimLabel} SCRIM**.\n*Team names, all four rounds, penalties and the rank 1-2-3 highlight were removed.*`
@@ -472,6 +497,18 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         return
       }
 
+      // Nothing can be tallied accurately without a roster: every row would
+      // fall through to "not registered" and overwrite the round with X.
+      if (registeredTeams.length === 0) {
+        await interaction.editReply({
+          content:
+            '❌ **No registered teams on the slot board.** Nothing was written to the sheet.\n' +
+            'Run `!refreshteams` so the board is loaded, then send the screenshot again.',
+          components: [],
+        }).catch(() => {})
+        return
+      }
+
       const reviewData = pendingReviews.get(reviewId)
       let roundNumInt = Number(roundStr || 1)
       let syncResult = null
@@ -520,7 +557,10 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       const statusNotice = syncError
         ? `⚠️ **Sheet Write Error**: ${syncError}`
         : (syncResult && syncResult.success
-            ? `📊 *Scores written & verified in Google Sheet! (${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`
+            ? [
+                `📊 *Scores written & verified in Google Sheet! (${syncResult.teamsTallied} teams tallied, Audit ID: \`${syncResult.auditId}\`)*`,
+                ...formatAccuracyNotices(syncResult),
+              ].join('\n')
             : `📊 *Scores saved to leaderboard!*`)
 
       try {

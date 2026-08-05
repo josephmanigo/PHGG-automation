@@ -187,7 +187,6 @@ export class TallyBoard {
 
     // Deduplicate entries by matched slotCode / team identity
     const seenSlots = new Map()
-    const seenRanks = new Set()
     const deduplicated = []
 
     // Sort by rank ascending first so best placement comes first
