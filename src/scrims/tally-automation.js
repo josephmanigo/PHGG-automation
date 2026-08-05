@@ -112,10 +112,15 @@ function canManageTally(member, allowedRoleIds = new Set()) {
   return memberRoles.some((roleId) => allowedRoleIds.has(String(roleId)))
 }
 
-export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC', skippedEntries = [] }) {
+/**
+ * One round's result table, in that round's own placement order.
+ *
+ * Shared by the review and the confirmation so the table cannot drift between
+ * them — confirming a round shows exactly what was approved, rather than
+ * re-sorting into cumulative standings.
+ */
+export function buildRoundScoreTable(entries = []) {
   const lines = [
-    `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
-    `*Please verify extracted team ranks and kills before confirming.*`,
     '```',
     `RK  SLOT  TAG / TEAM                        KILLS  PTS`,
     `───────────────────────────────────────────────────────`,
@@ -131,6 +136,15 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
     lines.push(`${rk}  ${slot}  ${nameCol}  ${kills}  ${pts}`)
   })
   lines.push('```')
+  return lines.join('\n')
+}
+
+export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC', skippedEntries = [] }) {
+  const lines = [
+    `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
+    `*Please verify extracted team ranks and kills before confirming.*`,
+    buildRoundScoreTable(entries),
+  ]
 
   // Rows the screenshot showed but that belong to no registered team. Worth
   // saying, because they leave a visible gap in the RK column that would
@@ -599,10 +613,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         console.warn(`[TALLY] No pending review found for reviewId=${reviewId}`)
       }
 
-      const standingsText = tallyBoard.formatStandingsMarkdown(
-        registeredTeams,
-        `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
-      )
+      // Show the round exactly as it was reviewed, in its own placement order.
+      // Re-sorting into cumulative standings here made a correct extract look
+      // like it had changed on confirm. Overall standings are still one click
+      // away on the View Standings button, or via !standings.
+      const confirmedTable = reviewData
+        ? `📋 **ROUND ${roundNumInt} RESULTS**\n${buildRoundScoreTable(reviewData.entries)}`
+        : tallyBoard.formatStandingsMarkdown(
+            registeredTeams,
+            `${globalConfig.brandName} ${scrimConfig.label} SCRIM STANDINGS`,
+          )
 
       const statusNotice = syncError
         ? `⚠️ **Sheet Write Error**: ${syncError}`
@@ -613,10 +633,19 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
               ].join('\n')
             : `📊 *Scores saved to leaderboard!*`)
 
+      // Confirm and Reject are gone, but keep View Standings so the cumulative
+      // table is still one click away.
+      const standingsOnly = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`phgg_tally:standings:${scrimConfig.label}:${roundNumInt}:${reviewId}`)
+          .setLabel('📊 View Standings')
+          .setStyle(ButtonStyle.Primary),
+      )
+
       try {
         await interaction.editReply({
-          content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED!**\n${statusNotice}\n\n${standingsText}`,
-          components: [],
+          content: `✅ **ROUND ${roundNumInt} SCORES CONFIRMED!**\n${statusNotice}\n\n${confirmedTable}`,
+          components: [standingsOnly],
         })
       } catch (editErr) {
         console.error('[TALLY] Failed to edit reply after confirm:', editErr.message)

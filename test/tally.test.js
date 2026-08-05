@@ -23,7 +23,7 @@ import {
   TITLE_BANNER_TEMPLATE,
   DATE_HEADER_TEMPLATE,
 } from '../src/scrims/tally-sheet.js'
-import { formatAccuracyNotices, buildReviewMessage } from '../src/scrims/tally-automation.js'
+import { formatAccuracyNotices, buildReviewMessage, buildRoundScoreTable } from '../src/scrims/tally-automation.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -461,4 +461,34 @@ test('the rank highlight covers TEAM..RANK and leaves the SLOT column alone', as
   assert.equal(range.endColumnIndex, 27) // exclusive, so through AA (RANK)
   assert.equal(range.startRowIndex, 7) // row 8
   assert.equal(range.endRowIndex, 32)
+})
+
+test('the confirmed round table is byte-identical to the reviewed one', () => {
+  // Round 3 as reviewed: placement order, not cumulative standings order.
+  const entries = [
+    { rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID ESPORTS', kills: 56, totalPoints: 76 },
+    { rank: 2, slotCode: '21U', tag: 'LAG', name: 'UNORTHODOX', kills: 16, totalPoints: 32 },
+    { rank: 3, slotCode: '06F', tag: 'AIM', name: 'AIM SEEK GREATNESS', kills: 32, totalPoints: 45 },
+    { rank: 8, slotCode: '04D', tag: 'SG', name: 'SEEK GREATNESS ESPORTS PH', kills: 43, totalPoints: 48 },
+  ]
+
+  const table = buildRoundScoreTable(entries)
+  const review = buildReviewMessage({
+    roundNumber: 3,
+    entries,
+    registeredTeams: [],
+    reviewId: 'rev_x',
+  })
+
+  // The confirmation embeds the very same table the reviewer approved.
+  assert.ok(review.content.includes(table))
+
+  // Order is the round's placement order and is preserved verbatim.
+  const rows = table.split('\n').filter((l) => /^\s*\d/.test(l))
+  assert.deepEqual(rows.map((r) => r.trim().split(/\s+/)[0]), ['1', '2', '3', '8'])
+  assert.deepEqual(rows.map((r) => r.trim().split(/\s+/)[1]), ['01A', '21U', '06F', '04D'])
+
+  // Rank 8 with 48 pts still sits below rank 2 with 32 — sorting by points
+  // would have moved it, which is exactly what confirming used to do.
+  assert.ok(table.indexOf('21U') < table.indexOf('04D'))
 })
