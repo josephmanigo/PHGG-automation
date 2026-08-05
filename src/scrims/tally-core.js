@@ -212,7 +212,7 @@ export const TALLY_EMOJI = {
  * ever hold, so the block ran far past the text and forced a sideways scroll
  * on narrow windows. Each column is now only as wide as its widest cell.
  */
-export function renderAlignedTable(columns, rows) {
+export function renderAlignedTable(columns, rows, { fenced = false } = {}) {
   const widths = columns.map((col) =>
     Math.max(col.label.length, ...rows.map((row) => String(row[col.key] ?? '').length)),
   )
@@ -222,12 +222,17 @@ export function renderAlignedTable(columns, rows) {
       : String(value ?? '').padEnd(widths[i])
 
   const header = columns.map((col, i) => pad(col.label, i)).join('  ')
-  const lines = ['```', header, '─'.repeat(header.length)]
-  for (const row of rows) {
-    lines.push(columns.map((col, i) => pad(row[col.key], i)).join('  '))
+  const body = rows.map((row) => columns.map((col, i) => pad(row[col.key], i)).join('  '))
+
+  if (fenced) {
+    return ['```', header, '─'.repeat(header.length), ...body, '```'].join('\n')
   }
-  lines.push('```')
-  return lines.join('\n')
+
+  // A ``` block is a full-width element in Discord: its grey container spans
+  // the whole message area no matter how narrow the table is. Inline code spans
+  // keep the monospace alignment but hug the text, so the block ends where the
+  // columns do.
+  return [`\`${header}\``, ...body.map((line) => `\`${line}\``)].join('\n')
 }
 
 export class TallyBoard {

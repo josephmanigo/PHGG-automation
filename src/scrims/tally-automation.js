@@ -130,6 +130,37 @@ export function buildRoundScoreTable(entries = []) {
   )
 }
 
+/**
+ * Rebuild a round's entries from a review message that is already on screen.
+ *
+ * pendingReviews lives in memory, so a restart — a redeploy, or the host
+ * spinning the instance down between the screenshot and the Confirm press —
+ * used to lose the round entirely. The table in the message holds everything
+ * needed, so it is parsed back rather than making the scorekeeper redo it.
+ */
+export function parseRoundTableFromMessage(content) {
+  const entries = []
+  for (const raw of String(content || '').split('\n')) {
+    const line = raw.trim().replace(/^`+/, '').replace(/`+$/, '').trim()
+    if (!line || /^RK\b/.test(line) || /^[─-]+$/.test(line)) continue
+
+    // "<rank> <slot> <team name…> <kills> <pts>" — the team name may contain
+    // spaces, so anchor on the two numeric columns at the end.
+    const match = /^(\d{1,2})\s+(\S+)\s+(.+?)\s+(\d{1,3})\s+(\d{1,3})$/.exec(line)
+    if (!match) continue
+
+    const [, rank, slotCode, , kills] = match
+    if (!/^\d{1,2}[A-Z]$/i.test(slotCode)) continue
+    entries.push({
+      rank: Number(rank),
+      slotCode,
+      teamQuery: slotCode,
+      kills: Number(kills),
+    })
+  }
+  return entries
+}
+
 export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC' }) {
   const lines = [
     `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
@@ -552,7 +583,24 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         return
       }
 
-      const reviewData = pendingReviews.get(reviewId)
+      // Fall back to the table already on screen when the in-memory review is
+      // gone, so a restart between posting and confirming no longer costs the
+      // round. The review is the source of truth either way: the scorekeeper
+      // approved exactly what is rendered there.
+      let reviewData = pendingReviews.get(reviewId)
+      if (!reviewData) {
+        const recovered = parseRoundTableFromMessage(interaction.message?.content)
+        if (recovered.length > 0) {
+          console.warn(
+            `[TALLY] Review ${reviewId} was lost (restart?); recovered ${recovered.length} rows from the message.`,
+          )
+          reviewData = {
+            roundNumber: Number(roundStr || 1),
+            entries: recovered,
+            scrimLabel: scrimConfig.label,
+          }
+        }
+      }
       let roundNumInt = Number(roundStr || 1)
       let syncResult = null
       let syncError = null

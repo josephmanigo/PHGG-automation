@@ -26,7 +26,7 @@ import {
   DATE_HEADER_TEMPLATE,
   getSpreadsheetUrl,
 } from '../src/scrims/tally-sheet.js'
-import { buildReviewMessage, buildRoundScoreTable, formatClearReply } from '../src/scrims/tally-automation.js'
+import { buildReviewMessage, buildRoundScoreTable, formatClearReply, parseRoundTableFromMessage } from '../src/scrims/tally-automation.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -365,7 +365,7 @@ test('the review is just the heading and the table, with no notices', () => {
   // Heading, subtitle, then the fenced table — nothing after it.
   const lines = msg.content.split('\n')
   assert.match(lines[0], /SCORE TALLY REVIEW — ROUND 1/)
-  assert.equal(lines[lines.length - 1], '```')
+  assert.ok(lines[lines.length - 1].startsWith(String.fromCharCode(96)))
 })
 
 test('teams that never played are left off the standings', () => {
@@ -447,7 +447,10 @@ test('the confirmed round table is byte-identical to the reviewed one', () => {
   assert.ok(review.content.includes(table))
 
   // Order is the round's placement order and is preserved verbatim.
-  const rows = table.split('\n').filter((l) => /^\s*\d/.test(l))
+  const rows = table
+    .split('\n')
+    .map((l) => l.replace(/`/g, ''))
+    .filter((l) => /^\s*\d/.test(l))
   assert.deepEqual(rows.map((r) => r.trim().split(/\s+/)[0]), ['1', '2', '3', '8'])
   assert.deepEqual(rows.map((r) => r.trim().split(/\s+/)[1]), ['01A', '21U', '06F', '04D'])
 
@@ -573,7 +576,10 @@ test('tables have no WWCD column and fit their contents', () => {
 
   // Every table row is the same width as the header, and no wider than the
   // longest cell needs — the old fixed padding forced 61 characters.
-  const body = out.split('\n').filter((l) => /^(RK|─|\s*\d)/.test(l))
+  const body = out
+    .split('\n')
+    .map((l) => l.replace(/`/g, ''))
+    .filter((l) => /^(RK|\s*\d)/.test(l))
   const widths = new Set(body.map((l) => l.length))
   assert.equal(widths.size, 1, 'table rows are not aligned to one width')
   assert.ok([...widths][0] < 61, `table is ${[...widths][0]} chars, expected narrower than 61`)
@@ -587,13 +593,41 @@ test('renderAlignedTable sizes each column to its widest cell', () => {
     ],
     [{ rk: 1, team: 'AB' }, { rk: 10, team: 'LONGER NAME' }],
   )
-  const lines = table.split('\n').filter((l) => l !== '```')
+  const lines = table.split('\n')
 
+  // Rows are inline code spans, not a fenced block: a ``` block is full-width
+  // in Discord, so its grey container ignored how narrow the table was.
+  assert.ok(!table.includes('```'))
+  for (const line of lines) {
+    assert.ok(line.startsWith('`') && line.endsWith('`'), `not an inline span: ${line}`)
+  }
+
+  const cells = lines.map((l) => l.slice(1, -1))
   // "RK" is 2 wide, "TEAM" widens to 11 for "LONGER NAME".
-  assert.equal(lines[0], 'RK  TEAM       ')
-  assert.equal(lines[2], ' 1  AB         ')
-  assert.equal(lines[3], '10  LONGER NAME')
-  assert.equal(lines[1], '─'.repeat(lines[0].length))
+  assert.equal(cells[0], 'RK  TEAM       ')
+  assert.equal(cells[1], ' 1  AB         ')
+  assert.equal(cells[2], '10  LONGER NAME')
+})
+
+test('a confirm can be rebuilt from the review table after a restart', () => {
+  const table = buildRoundScoreTable([
+    { rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID ESPORTS', kills: 58, totalPoints: 78 },
+    { rank: 10, slotCode: '04D', tag: 'SG', name: 'SEEK GREATNESS ESPORTS PH', kills: 49, totalPoints: 54 },
+    { rank: 21, slotCode: '07G', tag: 'RYLS', name: 'ROYALS FORTIS INVICTUS', kills: 0, totalPoints: 0 },
+  ])
+  const message = `📋 **PC SCRIM SCORE TALLY REVIEW — ROUND 1**\n*Please verify…*\n${table}`
+
+  const recovered = parseRoundTableFromMessage(message)
+  assert.equal(recovered.length, 3)
+  assert.deepEqual(recovered[0], { rank: 1, slotCode: '01A', teamQuery: '01A', kills: 58 })
+  // Team names contain spaces, so the parse anchors on the two numeric columns.
+  assert.deepEqual(recovered[1], { rank: 10, slotCode: '04D', teamQuery: '04D', kills: 49 })
+  // A zero-kill row is still a row.
+  assert.deepEqual(recovered[2], { rank: 21, slotCode: '07G', teamQuery: '07G', kills: 0 })
+
+  // Headings, prose and the header row are not mistaken for entries.
+  assert.deepEqual(parseRoundTableFromMessage('📋 **REVIEW**\n*verify*'), [])
+  assert.deepEqual(parseRoundTableFromMessage('`RK  SLOT  TEAM   KILLS  PTS`'), [])
 })
 
 test('each scrim scope reads screenshots from its own tally channel', async () => {
