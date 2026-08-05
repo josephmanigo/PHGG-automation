@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createSign } from 'node:crypto'
 
-export const DEFAULT_SPREADSHEET_ID = '1ehK9etINJbB39pbEB9n9NI0Kt5sAKRA1IRX9L9JlRNk'
+export const DEFAULT_SPREADSHEET_ID = '1N3oh4z2FbnWzfXg79UNvegoP44FO9TkYxic8fN8I17U'
 
 export const ROUND_COLUMNS = Object.freeze({
   1: { place: 'K', placementPoints: 'L', kills: 'M' },
@@ -46,6 +46,10 @@ const TITLE_DEVICE_PLACEHOLDER = '[DEVICE]'
 export function renderTitleBanner(deviceLabel) {
   return TITLE_BANNER_TEMPLATE.replace(TITLE_DEVICE_PLACEHOLDER, String(deviceLabel || 'PC').toUpperCase())
 }
+
+// H5 in the blank template. /clear puts this back rather than leaving the
+// header line empty, so a cleared sheet matches the default scoresheet exactly.
+export const DATE_HEADER_TEMPLATE = '[DD-Mmm-YYYY]   |   [HH:MM] PM   |   4 ROUNDS'
 
 /**
  * Team names as the scoresheet shows them: "NR • NIGHTRAID ESPORTS".
@@ -678,8 +682,8 @@ export function buildClearRanges(sheetName) {
   const first = SCORE_START_ROW
   const last = SCORE_END_ROW
   return [
-    `'${sheetName}'!H3`, // device title written by the bot
-    `'${sheetName}'!H5`, // date | time | rounds line written by the bot
+    `'${sheetName}'!H3`, // device title written by the bot (blank in the template)
+    // H4 and H5 are not blanked — they are reset to their placeholders below.
     `'${sheetName}'!${TEAM_COLUMN}${first}:${TEAM_COLUMN}${last}`, // team names
     `'${sheetName}'!K${first}:V${last}`, // all four rounds: place / points / kills
     `'${sheetName}'!Y${first}:Y${last}`, // total points deducted
@@ -693,13 +697,17 @@ export function buildClearRanges(sheetName) {
  * rather than a dead one. With every place cell blank the formula renders
  * blank, so the sheet reads as fresh instead of showing #N/A on every row.
  */
-export function buildPlacementFormulaRestore(sheetName) {
-  // H4 is not blanked by the clear — that would wipe the guild banner. It is
-  // reset to the template so the device reads "[DEVICE]" again until the next tally.
+export function buildTemplateRestore(sheetName) {
+  // Put the header placeholders back instead of blanking them, so a cleared
+  // sheet is byte-for-byte the default scoresheet again.
   const data = [
     {
       range: `'${sheetName}'!H4`,
       values: [[TITLE_BANNER_TEMPLATE]],
+    },
+    {
+      range: `'${sheetName}'!H5`,
+      values: [[DATE_HEADER_TEMPLATE]],
     },
   ]
   for (const { place, placementPoints } of Object.values(ROUND_COLUMNS)) {
@@ -756,7 +764,7 @@ export async function clearGoogleSheetScores({
         },
         body: JSON.stringify({
           valueInputOption: 'USER_ENTERED',
-          data: buildPlacementFormulaRestore(sheetName),
+          data: buildTemplateRestore(sheetName),
         }),
       },
     )

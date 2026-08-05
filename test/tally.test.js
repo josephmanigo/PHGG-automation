@@ -11,12 +11,13 @@ import {
   SCORE_START_ROW,
   SCORE_END_ROW,
   buildClearRanges,
-  buildPlacementFormulaRestore,
+  buildTemplateRestore,
   buildRankHighlightFormula,
   placementPointsFormula,
   formatSheetTeamName,
   renderTitleBanner,
   TITLE_BANNER_TEMPLATE,
+  DATE_HEADER_TEMPLATE,
 } from '../src/scrims/tally-sheet.js'
 
 const mockRegisteredTeams = [
@@ -203,13 +204,17 @@ test('team names are written in the sheet\'s "TAG • NAME" form', () => {
 test('clear wipes scrim data but leaves the sheet template intact', () => {
   const ranges = buildClearRanges('SHEET').join(' ')
 
-  // Team names, every round, penalties and the bot-written header lines.
+  // Team names, every round, penalties, and H3 (blank in the template).
   assert.match(ranges, /'SHEET'!J8:J32/)
   assert.match(ranges, /'SHEET'!K8:V32/)
   assert.match(ranges, /'SHEET'!Y8:Y32/)
   assert.match(ranges, /'SHEET'!AD8:AG32/)
   assert.match(ranges, /'SHEET'!H3/)
-  assert.match(ranges, /'SHEET'!H5/)
+
+  // H4 and H5 are reset to their placeholders instead, never blanked —
+  // blanking them would strip the guild banner and the date header line.
+  assert.doesNotMatch(ranges, /'SHEET'!H4/)
+  assert.doesNotMatch(ranges, /'SHEET'!H5/)
 
   // Columns the sheet computes for itself must survive a clear.
   assert.doesNotMatch(ranges, /!X\d/) // TOTAL POINTS EARNED
@@ -219,12 +224,20 @@ test('clear wipes scrim data but leaves the sheet template intact', () => {
   assert.doesNotMatch(ranges, /!AC\d/) // penalties slot numbering (template)
 })
 
-test('clear puts the placement-points formulas back after wiping K:V', () => {
-  const restore = buildPlacementFormulaRestore('SHEET')
+test('clear restores the header placeholders and the placement formulas', () => {
+  const restore = buildTemplateRestore('SHEET')
   const rowCount = SCORE_END_ROW - SCORE_START_ROW + 1
 
-  assert.equal(restore.length, 5) // the H4 banner + one column per round
+  assert.equal(restore.length, 6) // H4 banner + H5 date line + one column per round
   assert.equal(rowCount, 25)
+
+  // The cleared sheet reads as the untouched default scoresheet again.
+  const banner = restore.find((d) => d.range.endsWith('!H4'))
+  const dateLine = restore.find((d) => d.range.endsWith('!H5'))
+  assert.equal(banner.values[0][0], TITLE_BANNER_TEMPLATE)
+  assert.match(banner.values[0][0], /\[DEVICE\]/)
+  assert.equal(dateLine.values[0][0], DATE_HEADER_TEMPLATE)
+  assert.match(dateLine.values[0][0], /\[DD-Mmm-YYYY\]/)
 
   for (const round of [1, 2, 3, 4]) {
     const { place, placementPoints } = ROUND_COLUMNS[round]
