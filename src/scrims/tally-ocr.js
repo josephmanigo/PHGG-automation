@@ -310,7 +310,12 @@ export async function parseScreenshotWithOcr({
  * value. That distinction is the whole point — a flagged row costs a
  * scorekeeper a glance, a wrong row costs a team its placement.
  */
-export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType = 'image/png' } = {}) {
+export async function parseScreenshotWithGlyphs({
+  images = [],
+  buffer,
+  mimeType = 'image/png',
+  allowedLetters,
+} = {}) {
   const imageList = images.length > 0 ? images : buffer ? [{ buffer, mimeType }] : []
   if (imageList.length === 0) {
     throw new Error('No image provided for glyph parsing.')
@@ -321,7 +326,7 @@ export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType 
     const source = img.buffer || (img.base64 ? Buffer.from(img.base64, 'base64') : null)
     if (!source) continue
     const image = await Jimp.fromBuffer(source)
-    collected.push(...readCapture(image.bitmap, atlas))
+    collected.push(...readCapture(image.bitmap, atlas, { allowedLetters }))
   }
 
   if (collected.length === 0) {
@@ -368,6 +373,45 @@ export async function parseScreenshotWithGlyphs({ images = [], buffer, mimeType 
 
   for (const row of rankless) {
     uncertain.push({ rank: null, slotLetter: row.slotLetter, kills: row.kills })
+  }
+
+  // Every team occupies exactly one slot, so a letter already claimed by a
+  // confident row cannot belong to another. If that leaves a single unclaimed
+  // slot and a single row missing only its letter, the answer is forced — no
+  // guessing involved, it is the only value the board can hold.
+  if (allowedLetters) {
+    const claimed = new Set(entries.map((e) => e.teamQuery))
+    const free = [...allowedLetters].map((l) => String(l).toUpperCase()).filter((l) => !claimed.has(l))
+    const needsLetter = uncertain.filter((u) => !u.slotLetter && u.kills !== null && Number.isInteger(u.rank))
+
+    if (free.length === 1 && needsLetter.length === 1) {
+      const row = needsLetter[0]
+      entries.push({
+        rank: row.rank,
+        slotCode: slotCodeFromLetter(free[0]),
+        teamQuery: free[0],
+        kills: row.kills,
+        deduced: true,
+      })
+      entries.sort((a, b) => a.rank - b.rank)
+      uncertain.splice(uncertain.indexOf(row), 1)
+    }
+  }
+
+  // Two rows claiming the same slot means one of them is misread, and there is
+  // nothing in the image to say which. Both are pulled for checking rather than
+  // letting a team be scored twice and another not at all.
+  const seen = new Map()
+  for (const entry of entries) {
+    seen.set(entry.teamQuery, (seen.get(entry.teamQuery) || 0) + 1)
+  }
+  for (const [letter, count] of seen) {
+    if (count < 2) continue
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].teamQuery !== letter) continue
+      uncertain.push({ rank: entries[i].rank, slotLetter: letter, kills: entries[i].kills, duplicate: true })
+      entries.splice(i, 1)
+    }
   }
 
   // Placements run consecutively, so a hole between the lowest and highest rank

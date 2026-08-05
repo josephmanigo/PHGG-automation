@@ -521,6 +521,20 @@ export const MIN_MATCH_SCORE = 0.86
 // Two classes this close apart (O/D/Q, 8/B) is a coin flip, not a read.
 export const MIN_MATCH_MARGIN = 0.02
 
+/**
+ * Keep only the labels that are actually possible for this scrim. Falls back to
+ * the full set if the restriction is missing or would leave nothing to match.
+ */
+export function restrictTemplates(templates, allowed) {
+  if (!allowed) return templates
+  const keep = new Set([...allowed].map((l) => String(l).toUpperCase()))
+  const out = {}
+  for (const [label, list] of Object.entries(templates)) {
+    if (keep.has(label)) out[label] = list
+  }
+  return Object.keys(out).length > 0 ? out : templates
+}
+
 function readCell(mask, templates, segmentOptions) {
   const boxes = segmentGlyphs(mask, segmentOptions)
   return boxes.map((box) => matchGlyph(normalizeGlyph(mask, box), templates))
@@ -547,7 +561,12 @@ function confident(match, minScore = MIN_MATCH_SCORE, minMargin = MIN_MATCH_MARG
 export const MIN_RELIABLE_SCALE = 0.95
 
 export function readCapture(bitmap, atlas, thresholds = {}) {
-  const letters = loadTemplates(atlas.letters)
+  // Only slots with a team registered for this scrim can appear on the board.
+  // Narrowing the candidate set is not a shortcut — it removes letters that are
+  // impossible answers, which both widens the margin on every remaining match
+  // and makes a confident-but-wrong letter far less likely.
+  const allowed = thresholds.allowedLetters
+  const letters = restrictTemplates(loadTemplates(atlas.letters), allowed)
   const digits = loadTemplates(atlas.digits)
   // Rank digits are drawn far larger than kill digits. Normalisation aliases
   // an upscaled small glyph differently from a downscaled large one, so mixing

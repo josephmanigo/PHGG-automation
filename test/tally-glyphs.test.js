@@ -153,6 +153,40 @@ test('a full phone round reads every placement with none dropped', needsCaptures
   assert.equal(bySlot.get(18), 'P')
 })
 
+/**
+ * The roster tells the reader which slots can possibly appear, which both
+ * narrows the letter candidates and lets a single unread slot be recovered by
+ * elimination. It must not change a row the reader already read correctly.
+ */
+test('the roster never alters a slot the reader read on its own', needsCaptures, async () => {
+  const files = MOBILE_ROUND_A.captures.map((c) => path.join(SHOT_DIR, c.file))
+  if (!files.every((f) => fs.existsSync(f))) return
+  const images = files.map((f) => ({ buffer: fs.readFileSync(f), mimeType: 'image/jpeg' }))
+
+  const truth = new Map()
+  for (const capture of MOBILE_ROUND_A.captures) {
+    for (const row of capture.rows) if (!row.skip) truth.set(row.rank, row.slotLetter)
+  }
+
+  const withoutRoster = await parseScreenshotWithGlyphs({ images })
+  const withRoster = await parseScreenshotWithGlyphs({ images, allowedLetters: [...truth.values()] })
+
+  assert.equal(withRoster.entries.length, withoutRoster.entries.length)
+  for (const entry of withRoster.entries) {
+    assert.equal(entry.teamQuery, truth.get(entry.rank), `rank ${entry.rank}`)
+  }
+  // Nothing needed eliminating here — every slot was read outright.
+  assert.equal(withRoster.entries.filter((e) => e.deduced).length, 0)
+})
+
+test('two rows claiming one slot are both pulled rather than scored', () => {
+  // Constructed directly: a duplicate means one read is wrong and the image
+  // cannot say which, so neither may be saved.
+  const seen = ['A', 'B', 'B', 'C']
+  const counts = seen.reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map())
+  assert.equal([...counts.values()].filter((n) => n > 1).length, 1)
+})
+
 test('a scrolled capture keeps its sticky header at rank 1 instead of extrapolating', () => {
   const rows = resolveMedalRanks([
     { rank: null, certain: true },

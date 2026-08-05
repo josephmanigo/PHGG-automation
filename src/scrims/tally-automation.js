@@ -429,6 +429,15 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
           let parsed
           let degradedNotice = ''
+          // Only registered slots can appear on the board, so the reader is
+          // told which letters are possible rather than considering all 25.
+          const allowedLetters = (getScrimBoard ? getScrimBoard().getRegisteredTeams() : [])
+            .map((team) => team.slotLetter)
+            .filter(Boolean)
+          const localOptions = {
+            images: downloadedImages,
+            ...(allowedLetters.length > 0 ? { allowedLetters } : {}),
+          }
           // Tagged so the log and the review notice name the reader that
           // actually produced the round, not the one that was tried first.
           const callCloud = async () => ({
@@ -441,7 +450,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
           if (provider === 'local') {
             try {
-              parsed = await parseScreenshotLocally({ images: downloadedImages })
+              parsed = await parseScreenshotLocally(localOptions)
             } catch (localErr) {
               // The templates only know the current Bloodstrike endgame layout.
               // Anything else — a UI restyle, a cropped capture — is what cloud
@@ -458,7 +467,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
               parsed = await callCloud()
             } catch (visionErr) {
               console.warn(`[TALLY] Cloud vision failed, reading locally: ${visionErr.message}`)
-              parsed = await parseScreenshotLocally({ images: downloadedImages })
+              parsed = await parseScreenshotLocally(localOptions)
             }
           }
 
@@ -472,6 +481,17 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
               const ranks = parsed.uncertain.map((u) => `#${u.rank ?? '?'}`).join(', ')
               warnings.push(
                 `⚠️ **${parsed.uncertain.length} row(s) could not be read confidently** (${ranks}) and were left out. Add them manually before confirming.`,
+              )
+            }
+            // Deduction is only as good as the roster: if a team's slot changed
+            // and the board was not updated, elimination will confidently
+            // produce the wrong letter. It is still worth doing — it turns a
+            // dropped row into a filled one — but it always says so.
+            const deduced = parsed.entries?.filter((e) => e.deduced) || []
+            if (deduced.length) {
+              const which = deduced.map((e) => `#${e.rank} → ${e.slotCode}`).join(', ')
+              warnings.push(
+                `ℹ️ **Slot inferred by elimination** (${which}) — it was the only registered slot left unclaimed. Check it against the screenshot.`,
               )
             }
             // A hole in the placements means a row never made it in at all.
