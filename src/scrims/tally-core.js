@@ -414,7 +414,7 @@ export class TallyBoard {
       `*Active Rounds: ${activeRounds.length > 0 ? activeRounds.join(', ') : 'None'} | Total Teams: ${standings.length}*`,
       renderAlignedTable(
         [
-          { key: 'rk', label: 'RANK', align: 'right' },
+          { key: 'rk', label: 'PLACE', align: 'right' },
           { key: 'slot', label: 'SLOT' },
           { key: 'team', label: 'TEAM' },
           { key: 'kills', label: 'KILLS', align: 'right' },

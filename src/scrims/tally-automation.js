@@ -114,7 +114,7 @@ function canManageTally(member, allowedRoleIds = new Set()) {
 export function buildRoundScoreTable(entries = []) {
   return renderAlignedTable(
     [
-      { key: 'rk', label: 'RANK', align: 'right' },
+      { key: 'rk', label: 'PLACE', align: 'right' },
       { key: 'slot', label: 'SLOT' },
       { key: 'team', label: 'TEAM' },
       { key: 'kills', label: 'KILLS', align: 'right' },
