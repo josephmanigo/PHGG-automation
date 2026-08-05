@@ -793,3 +793,18 @@ test('the round table centres its values and keeps four columns', () => {
   // A single-digit place is not flush left any more.
   assert.ok(rows[1].startsWith(' '), 'value is not centred')
 })
+
+test('every button path ends in a response', async () => {
+  // Discord reports an unanswered interaction as "This interaction failed" with
+  // no detail, so the handler must never fall off the end silently.
+  const { readFile } = await import('node:fs/promises')
+  const source = await readFile(new URL('../src/scrims/tally-automation.js', import.meta.url), 'utf8')
+
+  // A catch-all after the known actions.
+  assert.match(source, /Unhandled button action/)
+  assert.match(source, /!interaction\.replied && !interaction\.deferred/)
+  // Reading the slot board is guarded, since it runs before any reply.
+  assert.match(source, /Could not read the slot board/)
+  // A repeat confirm is answered rather than ignored.
+  assert.match(source, /already saved/)
+})

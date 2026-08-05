@@ -594,7 +594,22 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       `[TALLY] ${scrimConfig.label} button "${action}" round=${roundStr} review=${reviewId} by ${interaction.user?.id}`,
     )
 
-    const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
+    // Reading the slot board must never take the interaction down with it: a
+    // throw here happens before any reply, which Discord reports as a failed
+    // interaction with no explanation.
+    let registeredTeams = []
+    try {
+      registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
+    } catch (boardErr) {
+      console.error('[TALLY] Could not read the slot board:', boardErr.message)
+      await interaction
+        .reply({
+          content: `⚠️ Could not read the ${scrimConfig.label} slot board: ${boardErr.message}`,
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => {})
+      return
+    }
 
     if (action === 'standings') {
       const standingsText = tallyBoard.formatStandingsMarkdown(
@@ -773,6 +788,21 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         content: `❌ **ROUND ${roundStr} TALLY REJECTED & DISCARDED.**`,
         components: [],
       }).catch(() => {})
+      return
+    }
+
+    // Nothing matched. An unanswered interaction is precisely what Discord
+    // shows as "This interaction failed", so acknowledge it rather than letting
+    // it fall off the end — most likely a button from an older message whose
+    // action no longer exists.
+    if (!interaction.replied && !interaction.deferred) {
+      console.warn(`[TALLY] Unhandled button action "${action}" on customId ${customId}`)
+      await interaction
+        .reply({
+          content: '⚠️ This button is from an older message and no longer works. Post the screenshot again.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => {})
     }
   })
 }
