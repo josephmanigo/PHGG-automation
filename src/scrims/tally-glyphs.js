@@ -29,6 +29,11 @@
 // always ~1.0 and the assumption was never tested. A 1920x1080 capture has the
 // same UI drawn at a different ratio, and width-derived scale put every crop in
 // the wrong place. The skull is the one element whose size IS the UI scale.
+// Slot letters in board order: mobile scrims use the first 20 (A..T), PC the
+// full 25 (A..Y). Defined here rather than imported from tally-ocr, which
+// imports this module.
+export const SLOT_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXY'
+
 const REF_SKULL_SIZE = 14
 // Distance between consecutive team rows at scale 1. Scale is derived from this
 // rather than from the skull: measuring a 14px icon to ±1px is a ±7% error,
@@ -517,9 +522,14 @@ export function loadTemplates(atlasSection = {}) {
 export const SMALL_MATCH_SCORE = 0.94
 export const SMALL_MATCH_MARGIN = 0.04
 
+// Byte-identical to a stored template. Unique by construction: see dropCollisions
+// in scripts/build-glyph-atlas.mjs.
+const EXACT_MATCH_SCORE = 1
+const EXACT_MATCH_MIN_MARGIN = 0.015
+
 export const MIN_MATCH_SCORE = 0.86
 // Two classes this close apart (O/D/Q, 8/B) is a coin flip, not a read.
-export const MIN_MATCH_MARGIN = 0.02
+export const MIN_MATCH_MARGIN = 0.05
 
 /**
  * Keep only the labels that are actually possible for this scrim. Falls back to
@@ -541,7 +551,17 @@ function readCell(mask, templates, segmentOptions) {
 }
 
 function confident(match, minScore = MIN_MATCH_SCORE, minMargin = MIN_MATCH_MARGIN) {
-  return Boolean(match) && match.score >= minScore && match.margin >= minMargin
+  if (!match) return false
+  // An exact match needs no margin. The atlas builder drops any template that
+  // appears under two labels, so a glyph identical to a stored template can
+  // only belong to that one label — a close runner-up just means two letters
+  // resemble each other at this size, not that the answer is in doubt.
+  // Still needs daylight over the runner-up. A degraded capture can normalise
+  // onto the wrong letter's template exactly, and when it does the true letter
+  // is usually just as close — so an exact match with no margin at all is a
+  // coin flip wearing a perfect score.
+  if (match.score >= EXACT_MATCH_SCORE && match.margin >= EXACT_MATCH_MIN_MARGIN) return true
+  return match.score >= minScore && match.margin >= minMargin
 }
 
 /**
@@ -565,7 +585,13 @@ export function readCapture(bitmap, atlas, thresholds = {}) {
   // Narrowing the candidate set is not a shortcut — it removes letters that are
   // impossible answers, which both widens the margin on every remaining match
   // and makes a confident-but-wrong letter far less likely.
-  const allowed = thresholds.allowedLetters
+  //
+  // A scrim's slot count sets both bounds: mobile runs 20 slots (A..T) and PC
+  // runs 25 (A..Y), so on mobile the letters U..Y and any placing past 20 are
+  // impossible answers rather than unlikely ones.
+  const maxSlots = Math.min(SLOT_LETTERS.length, Math.max(1, thresholds.maxSlots || SLOT_LETTERS.length))
+  const maxPlacing = maxSlots
+  const allowed = thresholds.allowedLetters || SLOT_LETTERS.slice(0, maxSlots)
   const letters = restrictTemplates(loadTemplates(atlas.letters), allowed)
   const digits = loadTemplates(atlas.digits)
   // Rank digits are drawn far larger than kill digits. Normalisation aliases
@@ -605,7 +631,9 @@ export function readCapture(bitmap, atlas, thresholds = {}) {
       const digitsOnly = rankMatches.slice(1)
       if (digitsOnly.every((m) => confident(m, minScore, minMargin) && /^\d$/.test(m.label))) {
         const value = Number(digitsOnly.map((m) => m.label).join(''))
-        if (value >= 1 && value <= 99) rank = value
+        // A placing cannot exceed the number of slots the scrim has — 20 on
+        // mobile, 25 on PC — so anything beyond that is a misread, not a team.
+        if (value >= 1 && value <= maxPlacing) rank = value
       }
     }
 

@@ -436,6 +436,9 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             .filter(Boolean)
           const localOptions = {
             images: downloadedImages,
+            // Mobile scrims run 20 slots (A..T), PC 25 (A..Y). Past that the
+            // letters and placings are impossible, not merely unlikely.
+            maxSlots: Number(scrimConfig.maxSlots) || undefined,
             ...(allowedLetters.length > 0 ? { allowedLetters } : {}),
           }
           // Tagged so the log and the review notice name the reader that

@@ -313,8 +313,9 @@ export async function parseScreenshotWithOcr({
 export async function parseScreenshotWithGlyphs({
   images = [],
   buffer,
-  mimeType = 'image/png',
+  mimeType = "image/png",
   allowedLetters,
+  maxSlots,
 } = {}) {
   const imageList = images.length > 0 ? images : buffer ? [{ buffer, mimeType }] : []
   if (imageList.length === 0) {
@@ -326,7 +327,7 @@ export async function parseScreenshotWithGlyphs({
     const source = img.buffer || (img.base64 ? Buffer.from(img.base64, 'base64') : null)
     if (!source) continue
     const image = await Jimp.fromBuffer(source)
-    collected.push(...readCapture(image.bitmap, atlas, { allowedLetters }))
+    collected.push(...readCapture(image.bitmap, atlas, { allowedLetters, maxSlots }))
   }
 
   if (collected.length === 0) {

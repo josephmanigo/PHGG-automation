@@ -64,6 +64,39 @@ export const ROUND_A = {
         { rank: 21, slotLetter: 'G', kills: 0 },
       ],
     },
+    // Second encodings of the same two captures. Same rows, different bytes —
+    // worth keeping, because re-encoding is exactly what Discord does to an
+    // upload and the templates should know both.
+    {
+      file: 'round-a-2b.png',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 58 },
+      rows: [
+        { rank: 11, slotLetter: 'J', kills: 31 },
+        { rank: 12, slotLetter: 'E', kills: 12 },
+        { rank: 13, slotLetter: 'N', kills: 24 },
+        { rank: 14, slotLetter: 'H', kills: 24 },
+        { rank: 15, slotLetter: 'C', kills: 11 },
+        { rank: 16, slotLetter: 'M', kills: 22 },
+        { rank: 17, slotLetter: 'B', kills: 5 },
+        { rank: 18, slotLetter: 'X', kills: 8 },
+        { rank: 19, slotLetter: 'Q', kills: 0 },
+      ],
+    },
+    {
+      file: 'round-a-3b.png',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 58 },
+      rows: [
+        { rank: 13, slotLetter: 'N', kills: 24 },
+        { rank: 14, slotLetter: 'H', kills: 24 },
+        { rank: 15, slotLetter: 'C', kills: 11 },
+        { rank: 16, slotLetter: 'M', kills: 22 },
+        { rank: 17, slotLetter: 'B', kills: 5 },
+        { rank: 18, slotLetter: 'X', kills: 8 },
+        { rank: 19, slotLetter: 'Q', kills: 0 },
+        { rank: 20, slotLetter: 'W', kills: 1 },
+        { rank: 21, slotLetter: 'G', kills: 0 },
+      ],
+    },
   ],
 }
 
@@ -113,6 +146,149 @@ export const ROUND_B = {
         { rank: 19, slotLetter: 'Y', kills: 3 },
         { rank: 20, slotLetter: 'D', kills: 6 },
         { rank: 21, slotLetter: 'H', kills: 5 },
+      ],
+    },
+    { // second encoding of round-b-2
+      file: 'round-b-2b.png',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 56 },
+      rows: [
+        { rank: 11, slotLetter: 'X', kills: 5 },
+        { rank: 12, slotLetter: 'B', kills: 8 },
+        { rank: 13, slotLetter: 'I', kills: 20 },
+        { rank: 14, slotLetter: 'K', kills: 7 },
+        { rank: 15, slotLetter: 'M', kills: 16 },
+        { rank: 16, slotLetter: 'Q', kills: 10 },
+        { rank: 17, slotLetter: 'C', kills: 7 },
+        { rank: 18, slotLetter: 'T', kills: 2 },
+        { rank: 19, slotLetter: 'Y', kills: 3 },
+      ],
+    },
+    { // second encoding of round-b-3
+      file: 'round-b-3b.png',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 56 },
+      rows: [
+        { rank: 13, slotLetter: 'I', kills: 20 },
+        { rank: 14, slotLetter: 'K', kills: 7 },
+        { rank: 15, slotLetter: 'M', kills: 16 },
+        { rank: 16, slotLetter: 'Q', kills: 10 },
+        { rank: 17, slotLetter: 'C', kills: 7 },
+        { rank: 18, slotLetter: 'T', kills: 2 },
+        { rank: 19, slotLetter: 'Y', kills: 3 },
+        { rank: 20, slotLetter: 'D', kills: 6 },
+        { rank: 21, slotLetter: 'H', kills: 5 },
+      ],
+    },
+  ],
+}
+
+/**
+ * A 22-team PC round. Cross-checked against the bot's own live tally of this
+ * round, which matched on all 21 rows it could read — the 22nd, rank 13, is the
+ * slot letter R.
+ *
+ * R is why this round matters. It existed in the atlas only from the phone
+ * captures at ~1.63x, and the harvest scales stop at 0.95x, so there was no R
+ * template anywhere near the 1.0x scale a PC capture sits at. The reader was
+ * right to refuse it.
+ */
+export const ROUND_C = {
+  label: 'round-c',
+  captures: [
+    {
+      file: 'round-c-1.png',
+      rows: [
+        { rank: 1, slotLetter: 'A', kills: 56 },
+        { rank: 2, slotLetter: 'U', kills: 16 },
+        { rank: 3, slotLetter: 'F', kills: 32 },
+        { rank: 4, slotLetter: 'H', kills: 28 },
+        { rank: 5, slotLetter: 'G', kills: 28 },
+        { rank: 6, slotLetter: 'C', kills: 23 },
+        { rank: 7, slotLetter: 'L', kills: 34 },
+        { rank: 8, slotLetter: 'D', kills: 43 },
+        { rank: 9, slotLetter: 'B', kills: 9 },
+        { rank: 10, slotLetter: 'X', kills: 15 },
+      ],
+    },
+    {
+      file: 'round-c-2.png',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 56 },
+      rows: [
+        { rank: 11, slotLetter: 'M', kills: 35 },
+        { rank: 12, slotLetter: 'V', kills: 20 },
+        { rank: 13, slotLetter: 'R', kills: 12 },
+        { rank: 14, slotLetter: 'O', kills: 14 },
+        { rank: 15, slotLetter: 'J', kills: 15 },
+        { rank: 16, slotLetter: 'N', kills: 11 },
+        { rank: 17, slotLetter: 'I', kills: 17 },
+        { rank: 18, slotLetter: 'Q', kills: 8 },
+        { rank: 19, slotLetter: 'Y', kills: 2 },
+      ],
+    },
+    {
+      file: 'round-c-3.png',
+      stickyRank1: { rank: 1, slotLetter: 'A', kills: 56 },
+      rows: [
+        { rank: 14, slotLetter: 'O', kills: 14 },
+        { rank: 15, slotLetter: 'J', kills: 15 },
+        { rank: 16, slotLetter: 'N', kills: 11 },
+        { rank: 17, slotLetter: 'I', kills: 17 },
+        { rank: 18, slotLetter: 'Q', kills: 8 },
+        { rank: 19, slotLetter: 'Y', kills: 2 },
+        { rank: 20, slotLetter: 'T', kills: 4 },
+        { rank: 21, slotLetter: 'E', kills: 13 },
+        { rank: 22, slotLetter: 'K', kills: 0 },
+      ],
+    },
+  ],
+}
+
+/** A 21-team PC round, also carrying R (rank 14). */
+export const ROUND_D = {
+  label: 'round-d',
+  captures: [
+    {
+      file: 'round-d-1.png',
+      rows: [
+        { rank: 1, slotLetter: 'G', kills: 72 },
+        { rank: 2, slotLetter: 'T', kills: 12 },
+        { rank: 3, slotLetter: 'M', kills: 33 },
+        { rank: 4, slotLetter: 'V', kills: 24 },
+        { rank: 5, slotLetter: 'X', kills: 18 },
+        { rank: 6, slotLetter: 'H', kills: 34 },
+        { rank: 7, slotLetter: 'U', kills: 10 },
+        { rank: 8, slotLetter: 'L', kills: 36 },
+        { rank: 9, slotLetter: 'E', kills: 21 },
+        { rank: 10, slotLetter: 'J', kills: 27 },
+      ],
+    },
+    {
+      file: 'round-d-2.png',
+      stickyRank1: { rank: 1, slotLetter: 'G', kills: 72 },
+      rows: [
+        { rank: 11, slotLetter: 'A', kills: 38 },
+        { rank: 12, slotLetter: 'D', kills: 40 },
+        { rank: 13, slotLetter: 'C', kills: 15 },
+        { rank: 14, slotLetter: 'R', kills: 10 },
+        { rank: 15, slotLetter: 'O', kills: 19 },
+        { rank: 16, slotLetter: 'N', kills: 14 },
+        { rank: 17, slotLetter: 'B', kills: 7 },
+        { rank: 18, slotLetter: 'Y', kills: 5 },
+        { rank: 19, slotLetter: 'F', kills: 12 },
+      ],
+    },
+    {
+      file: 'round-d-3.png',
+      stickyRank1: { rank: 1, slotLetter: 'G', kills: 72 },
+      rows: [
+        { rank: 13, slotLetter: 'C', kills: 15 },
+        { rank: 14, slotLetter: 'R', kills: 10 },
+        { rank: 15, slotLetter: 'O', kills: 19 },
+        { rank: 16, slotLetter: 'N', kills: 14 },
+        { rank: 17, slotLetter: 'B', kills: 7 },
+        { rank: 18, slotLetter: 'Y', kills: 5 },
+        { rank: 19, slotLetter: 'F', kills: 12 },
+        { rank: 20, slotLetter: 'I', kills: 10 },
+        { rank: 21, slotLetter: 'Q', kills: 1 },
       ],
     },
   ],
@@ -188,7 +364,7 @@ export const MOBILE_ROUND_A = {
   ],
 }
 
-export const ROUNDS = [ROUND_A, ROUND_B]
+export const ROUNDS = [ROUND_A, ROUND_B, ROUND_C, ROUND_D]
 
 /** Captures from a phone, kept separate: different scale, different encoding. */
 export const MOBILE_ROUNDS = [MOBILE_ROUND_A]
