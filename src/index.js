@@ -3,6 +3,7 @@ import { Client, Events, GatewayIntentBits, Partials } from 'discord.js'
 import { loadConfig } from './config.js'
 import { installAnnouncementAutomation } from './announcements.js'
 import { installAnnounceCommand } from './announce.js'
+import { installGuessTheEmojiCommand } from './guesstheemoji.js'
 import { installServerInviteAutomation } from './invite-links.js'
 import { installNicknameAutomation } from './nickname.js'
 import { installRulesAutomation } from './rules.js'
@@ -31,6 +32,7 @@ installAnnouncementAutomation(client, {
 })
 installServerInviteAutomation(client, config.serverInvite, config)
 installAnnounceCommand(client, config)
+installGuessTheEmojiCommand(client, config)
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`${config.brandName} bot connected as ${readyClient.user.tag}.`)
