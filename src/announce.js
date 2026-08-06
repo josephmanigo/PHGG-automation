@@ -129,11 +129,10 @@ export function installAnnounceCommand(client, botConfig) {
 
   client.once(Events.ClientReady, async (readyClient) => {
     try {
-      const guild = await readyClient.guilds.fetch(botConfig.guildId)
-      const commands = await guild.commands.fetch()
-      const existing = commands.find((command) => command.name === COMMAND_NAME)
-      if (existing) await existing.edit(definition)
-      else await guild.commands.create(definition)
+      const guild =
+        readyClient.guilds?.cache?.get(botConfig.guildId) ??
+        (await readyClient.guilds.fetch(botConfig.guildId))
+      await guild.commands.create(definition)
       console.log(`/${COMMAND_NAME} registered in ${guild.name}.`)
     } catch (reason) {
       console.error(

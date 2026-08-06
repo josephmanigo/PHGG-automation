@@ -509,18 +509,15 @@ export function installAnnouncementAutomation(client, config) {
 
   client.once(Events.ClientReady, async (readyClient) => {
     try {
-      const guild = await readyClient.guilds.fetch(config.guildId)
-      const commands = await guild.commands.fetch()
+      const guild =
+        readyClient.guilds?.cache?.get(config.guildId) ??
+        (await readyClient.guilds.fetch(config.guildId))
       const definition = {
         name: TEST_COMMAND_NAME,
         description: 'Test the weekly Mobile and PC scrim announcement flow now.',
         defaultMemberPermissions: null,
       }
-      const existing = commands.find(
-        (command) => command.name === TEST_COMMAND_NAME,
-      )
-      if (existing) await existing.edit(definition)
-      else await guild.commands.create(definition)
+      await guild.commands.create(definition)
       console.log(`/${TEST_COMMAND_NAME} registered in ${guild.name}.`)
     } catch (reason) {
       console.error(

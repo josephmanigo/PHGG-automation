@@ -77,3 +77,43 @@ test('the role prefix counts toward the length limit', () => {
     /Discord allows 2000/,
   )
 })
+
+test('installAnnounceCommand registers slash command in 1 fetch call directly', async () => {
+  const onceHandlers = new Map()
+  const createdCommands = []
+  let fetchCommandsCount = 0
+
+  const commandGuild = {
+    id: GUILD,
+    name: 'PHGG',
+    commands: {
+      fetch: async () => {
+        fetchCommandsCount++
+        return []
+      },
+      create: async (def) => {
+        createdCommands.push(def)
+      },
+    },
+  }
+
+  const client = {
+    guilds: {
+      cache: new Map([[GUILD, commandGuild]]),
+      fetch: async () => commandGuild,
+    },
+    once: (event, handler) => onceHandlers.set(event, handler),
+    on: () => {},
+  }
+
+  const { installAnnounceCommand } = await import('../src/announce.js')
+  installAnnounceCommand(client, { guildId: GUILD, brandName: 'PHGG' })
+
+  const readyHandler = onceHandlers.get('ClientReady') || onceHandlers.get('clientReady')
+  assert.ok(readyHandler, 'ClientReady handler should be registered')
+  await readyHandler(client)
+
+  assert.equal(createdCommands.length, 1)
+  assert.equal(createdCommands[0].name, 'announce')
+  assert.equal(fetchCommandsCount, 0, 'Should not do duplicate commands.fetch call')
+})
