@@ -202,3 +202,51 @@ test('recognizes an oversized attachment reposted as a direct GIF preview', () =
     announcementMessageSignature(posted),
   )
 })
+
+test('installAnnouncementAutomation registers /test command with optional date parameter', async () => {
+  const onceHandlers = []
+  const createdCommands = []
+
+  const commandGuild = {
+    id: '111',
+    name: 'PHGG',
+    commands: {
+      create: async (def) => {
+        createdCommands.push(def)
+      },
+    },
+  }
+
+  const client = {
+    guilds: {
+      cache: new Map([['111', commandGuild]]),
+      fetch: async () => commandGuild,
+    },
+    once: (event, handler) => onceHandlers.push(handler),
+    on: () => {},
+  }
+
+  const { installAnnouncementAutomation } = await import('../src/announcements.js')
+  installAnnouncementAutomation(client, {
+    guildId: '111',
+    timezone: 'Asia/Manila',
+    weekday: 'Tuesday',
+    time: '11:30',
+    groups: [{ label: 'PC', enabled: true }],
+  })
+
+  for (const handler of onceHandlers) {
+    await handler(client)
+  }
+
+  assert.equal(createdCommands.length, 1)
+  assert.equal(createdCommands[0].name, 'test')
+  assert.deepEqual(createdCommands[0].options, [
+    {
+      name: 'date',
+      description: 'Optional date (YYYY-MM-DD). Defaults to today in real time.',
+      type: 3,
+      required: false,
+    },
+  ])
+})

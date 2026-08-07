@@ -516,6 +516,14 @@ export function installAnnouncementAutomation(client, config) {
         name: TEST_COMMAND_NAME,
         description: 'Test the weekly Mobile and PC scrim announcement flow now.',
         defaultMemberPermissions: null,
+        options: [
+          {
+            name: 'date',
+            description: 'Optional date (YYYY-MM-DD). Defaults to today in real time.',
+            type: 3,
+            required: false,
+          },
+        ],
       }
       await guild.commands.create(definition)
       console.log(`/${TEST_COMMAND_NAME} registered in ${guild.name}.`)
@@ -545,7 +553,19 @@ export function installAnnouncementAutomation(client, config) {
     testActive = true
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral })
-      const runKey = nextScheduledRunKey(new Date(), config)
+      const inputDate = interaction.options?.getString?.('date')?.trim()
+      let runKey
+      if (inputDate) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(inputDate)) {
+          await interaction.editReply({
+            content: '❌ Invalid date format. Please use YYYY-MM-DD (e.g. 2026-08-07).',
+          })
+          return
+        }
+        runKey = inputDate
+      } else {
+        runKey = localDateTime(new Date(), config.timezone).dateKey
+      }
       const results = []
       for (const group of groups) {
         try {
