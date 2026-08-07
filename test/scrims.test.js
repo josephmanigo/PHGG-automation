@@ -107,11 +107,15 @@ test('accepts the exact displayed AMT registration format', () => {
   )
 })
 
-test('requires the Philippine flag at the end', () => {
+test('allows any country flag or label at the end', () => {
   assert.equal(validateRegistrationContent('ABC - ALPHA TEAM | 🇵🇭').valid, true)
   assert.equal(validateRegistrationContent('2EZ4 - TEST TEAM |🇵🇭').valid, true)
+  assert.equal(validateRegistrationContent('ABC - ALPHA TEAM | 🇺🇸').valid, true)
+  assert.equal(validateRegistrationContent('DEF - BRAVO TEAM | 🇲🇾').valid, true)
+  assert.equal(validateRegistrationContent('GHI - CHARLIE TEAM | 🇮🇩').valid, true)
+  assert.equal(validateRegistrationContent('JKL - DELTA TEAM | SG').valid, true)
+  assert.equal(validateRegistrationContent('MNO - ECHO TEAM').valid, true)
   assert.equal(validateRegistrationContent('🇵🇭 | ABC - ALPHA TEAM').valid, false)
-  assert.equal(validateRegistrationContent('ABC - ALPHA TEAM | 🇺🇸').valid, false)
 })
 
 test('recognizes only the configured registration starter asset', () => {

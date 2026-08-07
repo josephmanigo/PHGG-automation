@@ -16,23 +16,28 @@ export function normalize(value) {
     .toLowerCase()
 }
 
-export function makeTeam(tag, name) {
+export function makeTeam(tag, name, countryLabel) {
   const safeTag = cleanPart(tag, 12).toUpperCase()
   const safeName = cleanPart(name, 48).toUpperCase()
   if (!safeTag || !safeName) return null
-  return {
+  const team = {
     tag: safeTag,
     name: safeName,
     key: normalize(`${safeTag} ${safeName}`),
   }
+  const safeCountry = cleanPart(countryLabel, 16)
+  if (safeCountry) {
+    team.countryLabel = safeCountry
+  }
+  return team
 }
 
 function parseRegistrationLine(line) {
   const match =
-    /^\s*(.{1,16}?)\s*-\s*(.{1,64}?)\s*\|\s*🇵🇭\s*$/u.exec(
+    /^\s*([^|]{1,16}?)\s*-\s*([^|]{1,64}?)(?:\s*\|\s*(.+?))?\s*$/u.exec(
       line,
     )
-  return match ? makeTeam(match[1], match[2]) : null
+  return match ? makeTeam(match[1], match[2], match[3]) : null
 }
 
 export function validateRegistrationContent(content) {
