@@ -1371,6 +1371,22 @@ test('tables have no WWCD column and fit their contents', () => {
   assert.ok([...widths][0] < 61, `table is ${[...widths][0]} chars, expected narrower than 61`)
 })
 
+test('unregistered team in screenshot extraction is discarded and not extracted', () => {
+  const roster = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
+  ]
+  const board = new TallyBoard()
+  const entries = [
+    { rank: 1, slotCode: '01A', teamQuery: '01A', kills: 10 },
+    { rank: 2, slotCode: '02B', teamQuery: '02B', kills: 5 }, // Unregistered slot 2
+    { rank: 3, slotCode: '03C', teamQuery: 'UNREGISTERED TEAM', kills: 2 }, // Unregistered team
+  ]
+  const preview = board.previewRound(1, entries, roster)
+
+  assert.equal(preview.length, 1)
+  assert.equal(preview[0].slotCode, '01A')
+})
+
 test('renderAlignedTable sizes each column to its widest cell', () => {
   const table = renderAlignedTable(
     [

@@ -117,6 +117,12 @@ export function findMatchingTeam(query, registeredTeams = [], explicitSlot = nul
     if (teamBySlot) return teamBySlot
   }
 
+  // If the query is a slot designator (e.g. "02B", "2B", "B") but no registered team holds this slot,
+  // do not fall through to fuzzy name matching — return null so the unregistered team is discarded.
+  if (isSlotDesignator(target)) {
+    return null
+  }
+
   // 4. Exact match by tag or name or combined tag+name
   const exactMatch = registeredTeams.find(
     (t) =>
