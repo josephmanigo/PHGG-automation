@@ -32,7 +32,7 @@ export function parseTextScoreInput(text) {
       const killsVal = Number(tokens[killsTokenIdx])
 
       if (rank >= 1 && Number.isInteger(killsVal) && killsVal >= 0) {
-        entries.push({ rank, teamQuery: rawTeam, kills: killsVal })
+        entries.push({ rank, teamQuery: rawTeam, kills: killsVal, isManual: true })
         continue
       }
     }
@@ -45,12 +45,12 @@ export function parseTextScoreInput(text) {
       if (/^15-0$/i.test(rawTeam)) rawTeam = '15-O'
 
       if (rawTeam && Number.isInteger(killsVal) && killsVal >= 0) {
-        entries.push({ rank: null, teamQuery: rawTeam, kills: killsVal })
+        entries.push({ rank: null, teamQuery: rawTeam, kills: killsVal, isManual: true })
         continue
       }
     }
 
-    // 2. #1 NR - NIGHTRAID | 12 KILLS or 1. NR - NIGHTRAID - 12 KILLS
+    // 3. #1 NR - NIGHTRAID | 12 KILLS or 1. NR - NIGHTRAID - 12 KILLS
     const plain = /^(?:#|RANK\s*)?(\d+)[.\s\-:]+\s*(.+?)\s*(?:[|\-:]\s*)?(\d+)\s*(?:KILLS?|K|PTS?|POINTS?)?$/i.exec(trimmed)
     if (plain) {
       const rank = Number(plain[1])
@@ -59,12 +59,12 @@ export function parseTextScoreInput(text) {
       if (/^150$/i.test(teamQuery)) teamQuery = '15O'
       if (/^15-0$/i.test(teamQuery)) teamQuery = '15-O'
       if (rank >= 1 && teamQuery) {
-        entries.push({ rank, teamQuery, kills })
+        entries.push({ rank, teamQuery, kills, isManual: true })
         continue
       }
     }
 
-    // 3. 1-NR (12) or #1 NR (12 KILLS)
+    // 4. 1-NR (12) or #1 NR (12 KILLS)
     const parenthesized = /^(?:#|RANK\s*)?(\d+)[.\s\-:]+\s*(.+?)\s*\(\s*(\d+)\s*(?:KILLS?|K)?\s*\)$/i.exec(trimmed)
     if (parenthesized) {
       const rank = Number(parenthesized[1])
@@ -72,7 +72,7 @@ export function parseTextScoreInput(text) {
       const kills = Number(parenthesized[3])
       if (/^150$/i.test(teamQuery)) teamQuery = '15O'
       if (/^15-0$/i.test(teamQuery)) teamQuery = '15-O'
-      if (rank >= 1 && teamQuery) entries.push({ rank, teamQuery, kills })
+      if (rank >= 1 && teamQuery) entries.push({ rank, teamQuery, kills, isManual: true })
     }
   }
 

@@ -435,7 +435,7 @@ export function parseRoundTableFromMessage(content) {
     if (!Number.isInteger(kills) || kills < 0 || kills > 999) continue
     if (!Number.isInteger(points) || points !== getPlacementPoints(rank) + kills) continue
 
-    entries.push({ rank, slotCode, teamQuery: slotCode, kills })
+    entries.push({ rank, slotCode, teamQuery: slotCode, kills, isManual: true })
   }
   return entries
 }
@@ -1199,6 +1199,7 @@ export function installTallyAutomation(
               teamQuery: newEntry.teamQuery,
               kills: newEntry.kills,
               slotCode: slot,
+              isManual: true,
             })
             if (upperSlot) entryMapBySlot.set(upperSlot, targetRank)
             const idx = missingRanksList.indexOf(targetRank)

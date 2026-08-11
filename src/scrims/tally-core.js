@@ -244,8 +244,9 @@ export class TallyBoard {
           entry.slotCode,
         )
 
-        // Strict non-negotiable rule: Discard any entry not registered on the team slot board
-        if (registeredTeams.length > 0 && !matched) {
+        // Discard unregistered entries from automated screenshot reads,
+        // but preserve manually submitted entries from modal/text score fixes.
+        if (registeredTeams.length > 0 && !matched && !entry.isManual) {
           return null
         }
 
@@ -267,6 +268,7 @@ export class TallyBoard {
           killPoints: kills,
           totalPoints: totalPts,
           sourceMessageId,
+          isManual: entry.isManual,
         }
       })
       .filter(Boolean)
