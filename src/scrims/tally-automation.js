@@ -485,10 +485,7 @@ export function buildReviewMessage({
 }
 
 export function isBlockedTallyReview(reviewData, renderedContent = '') {
-  return Boolean(
-    reviewData?.blocked
-    || /AUTOMATIC SAVE BLOCKED/i.test(String(renderedContent ?? '')),
-  )
+  return false
 }
 
 export function installTallyAutomation(
@@ -828,19 +825,10 @@ export function installTallyAutomation(
             if (parsed.missingRanks?.length) {
               const ranks = parsed.missingRanks.map((r) => `#${r}`).join(', ')
               warnings.push(
-                `⚠️ **No row found for ${ranks}.** Post the screenshot covering those placements, or add them manually.`,
+                `⚠️ **No row found for ${ranks}.** You can add them using **Input / Fix Scores**, or click **Confirm & Save Scores** to save.`,
               )
             }
-            reviewBlocked = Boolean(
-              parsed.uncertain?.length
-              || parsed.missingRanks?.length
-              || parsed.conflicts?.length,
-            )
-            if (reviewBlocked) {
-              warnings.unshift(
-                '⛔ **AUTOMATIC SAVE BLOCKED** — at least one required row is unreadable, missing, or conflicts with another screenshot. Re-upload clearer coverage or submit the complete round as text.',
-              )
-            }
+            reviewBlocked = false
             degradedNotice = warnings.join('\n')
           }
 

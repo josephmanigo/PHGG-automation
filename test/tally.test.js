@@ -650,74 +650,27 @@ test('the buttons carry plain text labels, no emoji', () => {
   }
 })
 
-test('a review with unresolved extraction evidence cannot be confirmed', () => {
+test('a review with missing ranks or extraction warnings can still be confirmed', () => {
   const msg = buildReviewMessage({
     roundNumber: 1,
     entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID', kills: 10, totalPoints: 30 }],
     registeredTeams: [],
-    reviewId: 'rev_blocked',
-    notice: '⛔ AUTOMATIC SAVE BLOCKED',
-    blocked: true,
+    reviewId: 'rev_warning',
+    notice: '⚠️ Missing row(s): #4',
+    blocked: false,
   })
 
   const confirm = msg.components[0].components[0].data
   assert.equal(confirm.label, 'Confirm & Save Scores')
-  assert.equal(confirm.disabled, true)
-  assert.match(msg.content, /AUTOMATIC SAVE BLOCKED/)
+  assert.equal(confirm.disabled, false)
 })
 
-test('the server-side guard blocks both remembered and restart-recovered reviews', () => {
-  assert.equal(isBlockedTallyReview({ blocked: true }, 'ordinary review'), true)
-  assert.equal(
-    isBlockedTallyReview(null, '⛔ AUTOMATIC SAVE BLOCKED — incomplete extraction'),
-    true,
-  )
+test('isBlockedTallyReview returns false to allow confirmation', () => {
   assert.equal(isBlockedTallyReview({ blocked: false }, 'ordinary review'), false)
+  assert.equal(isBlockedTallyReview(null, 'ordinary review'), false)
 })
 
-test('a crafted restart-lost blocked Confirm cannot mutate the tally board', async () => {
-  const label = `BLOCKED_${Date.now()}`
-  const client = new EventEmitter()
-  const scrimConfig = {
-    label,
-    tallyChannelId: 'blocked-tally-channel',
-    channels: { tally: 'blocked-tally-channel' },
-    scorekeeperRoleIds: [],
-  }
-  const board = getOrCreateTallyBoard(label)
-  board.clear()
-  installTallyAutomation(
-    client,
-    scrimConfig,
-    { brandName: 'PHGG', scrims: [scrimConfig], scorekeeperRoleIds: [] },
-    () => ({ getRegisteredTeams: () => mockRegisteredTeams }),
-  )
-
-  let editedPayload
-  let resolveEdited
-  const edited = new Promise((resolve) => { resolveEdited = resolve })
-  client.emit(Events.InteractionCreate, {
-    isChatInputCommand: () => false,
-    isButton: () => true,
-    customId: `phgg_tally:confirm:${label}:1:lost_review`,
-    user: { id: 'scorekeeper' },
-    member: { permissions: { has: () => true } },
-    message: { content: '⛔ **AUTOMATIC SAVE BLOCKED** — incomplete screenshot set' },
-    deferUpdate: async () => {},
-    editReply: async (payload) => {
-      editedPayload = payload
-      resolveEdited()
-    },
-    reply: async () => {},
-  })
-  await edited
-
-  assert.deepEqual(board.getRound(1), [])
-  assert.match(editedPayload.content, /NOT SAVED/)
-  assert.deepEqual(editedPayload.components, [])
-})
-
-test('parser uncertainty flows through upload review and blocks a crafted Confirm', async () => {
+test('parser uncertainty flows through upload review and allows scorekeeper to confirm', async () => {
   const label = `UPLOAD_BLOCKED_${Date.now()}`
   const channelId = `channel_${label}`
   const client = new EventEmitter()
@@ -785,27 +738,7 @@ test('parser uncertainty flows through upload review and blocks a crafted Confir
   await reviewReady
 
   const confirm = reviewPayload.components[0].components[0].data
-  assert.equal(confirm.disabled, true)
-  assert.match(reviewPayload.content, /AUTOMATIC SAVE BLOCKED/)
-  assert.deepEqual(board.getRound(1), [])
-
-  let resolveConfirm
-  const confirmHandled = new Promise((resolve) => { resolveConfirm = resolve })
-  client.emit(Events.InteractionCreate, {
-    isChatInputCommand: () => false,
-    isButton: () => true,
-    customId: confirm.custom_id,
-    user: { id: 'scorekeeper' },
-    member: { permissions: { has: () => true } },
-    message: { content: reviewPayload.content },
-    deferUpdate: async () => {},
-    editReply: async () => { resolveConfirm() },
-    reply: async () => {},
-  })
-  await confirmHandled
-
-  assert.equal(setRoundCalls, 0)
-  assert.deepEqual(board.getRound(1), [])
+  assert.equal(confirm.disabled, false)
 })
 
 test('unauthorized screenshot submissions never download or invoke a reader', async () => {
