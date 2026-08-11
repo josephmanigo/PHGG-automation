@@ -221,6 +221,9 @@ function rememberReview(reviewId, data) {
  */
 function clearAllTallyBoards() {
   for (const board of activeTallyBoards.values()) board.clear()
+  pendingReviews.clear()
+  completedReviews.clear()
+  activeConfirmations.clear()
 }
 
 async function clearTallyAndSheet(scrimConfig = {}) {
