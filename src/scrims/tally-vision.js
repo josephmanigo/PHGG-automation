@@ -37,6 +37,19 @@ export function parseTextScoreInput(text) {
       }
     }
 
+    // 2. 2-token row: slot/team kills (e.g. "2B 25" or "02B 25" or "05E 10")
+    if (tokens.length === 2) {
+      let rawTeam = tokens[0]
+      const killsVal = Number(tokens[1])
+      if (/^150$/i.test(rawTeam)) rawTeam = '15O'
+      if (/^15-0$/i.test(rawTeam)) rawTeam = '15-O'
+
+      if (rawTeam && Number.isInteger(killsVal) && killsVal >= 0) {
+        entries.push({ rank: null, teamQuery: rawTeam, kills: killsVal })
+        continue
+      }
+    }
+
     // 2. #1 NR - NIGHTRAID | 12 KILLS or 1. NR - NIGHTRAID - 12 KILLS
     const plain = /^(?:#|RANK\s*)?(\d+)[.\s\-:]+\s*(.+?)\s*(?:[|\-:]\s*)?(\d+)\s*(?:KILLS?|K|PTS?|POINTS?)?$/i.exec(trimmed)
     if (plain) {

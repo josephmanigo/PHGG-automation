@@ -10,7 +10,7 @@ import {
   TextInputStyle,
 } from 'discord.js'
 import { createHash } from 'node:crypto'
-import { TallyBoard, TALLY_EMOJI, renderAlignedTable, getPlacementPoints } from './tally-core.js'
+import { TallyBoard, TALLY_EMOJI, renderAlignedTable, getPlacementPoints, findMatchingTeam } from './tally-core.js'
 import { parseScreenshotWithGemini } from './tally-gemini.js'
 import { parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotLocally } from './tally-ocr.js'
@@ -1135,17 +1135,78 @@ export function installTallyAutomation(
         }
 
         const existingEntries = reviewData?.entries || []
-        const mergedEntriesMap = new Map()
+        const entryMapByRank = new Map()
+        const entryMapBySlot = new Map()
 
         for (const entry of existingEntries) {
-          mergedEntriesMap.set(entry.rank, entry)
+          const r = Number(entry.rank || 0)
+          if (r > 0) {
+            entryMapByRank.set(r, { ...entry })
+          }
+          const matched = findMatchingTeam(
+            entry.slotCode || entry.teamQuery || entry.tag || entry.name,
+            registeredTeams,
+            entry.slotCode,
+          )
+          const slot = matched ? matched.slotCode : (entry.slotCode || entry.teamQuery)
+          if (slot && slot !== '??') {
+            entryMapBySlot.set(slot.toUpperCase(), r)
+          }
+        }
+
+        const maxTableRank = Math.max(registeredTeams.length || 0, ...existingEntries.map((e) => e.rank || 0), 20)
+        const missingRanksList = []
+        for (let r = 1; r <= maxTableRank; r++) {
+          if (!entryMapByRank.has(r)) missingRanksList.push(r)
         }
 
         for (const newEntry of parsedInput.entries) {
-          mergedEntriesMap.set(newEntry.rank, newEntry)
+          const matched = findMatchingTeam(
+            newEntry.slotCode || newEntry.teamQuery || newEntry.tag || newEntry.name,
+            registeredTeams,
+            newEntry.slotCode,
+          )
+          const slot = matched ? matched.slotCode : (newEntry.slotCode || newEntry.teamQuery)
+          const upperSlot = slot ? slot.toUpperCase() : null
+
+          if (upperSlot && entryMapBySlot.has(upperSlot)) {
+            // Existing team: update its kills and query at its existing rank
+            const existingRank = entryMapBySlot.get(upperSlot)
+            const prev = entryMapByRank.get(existingRank) || {}
+            entryMapByRank.set(existingRank, {
+              ...prev,
+              kills: newEntry.kills,
+              teamQuery: newEntry.teamQuery || prev.teamQuery,
+            })
+          } else {
+            // New team not yet in existing review table:
+            let targetRank = null
+            if (
+              newEntry.rank
+              && Number.isInteger(newEntry.rank)
+              && newEntry.rank >= 1
+              && !entryMapByRank.has(newEntry.rank)
+            ) {
+              targetRank = newEntry.rank
+            } else if (missingRanksList.length > 0) {
+              targetRank = missingRanksList.shift()
+            } else {
+              targetRank = newEntry.rank || (maxTableRank + 1)
+            }
+
+            entryMapByRank.set(targetRank, {
+              rank: targetRank,
+              teamQuery: newEntry.teamQuery,
+              kills: newEntry.kills,
+              slotCode: slot,
+            })
+            if (upperSlot) entryMapBySlot.set(upperSlot, targetRank)
+            const idx = missingRanksList.indexOf(targetRank)
+            if (idx !== -1) missingRanksList.splice(idx, 1)
+          }
         }
 
-        const updatedEntries = [...mergedEntriesMap.values()].sort((a, b) => a.rank - b.rank)
+        const updatedEntries = [...entryMapByRank.values()].sort((a, b) => a.rank - b.rank)
 
         const resolvedPreview = tallyBoard.previewRound(
           Number(roundStr || 1),

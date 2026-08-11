@@ -1266,6 +1266,55 @@ test('Input / Fix Scores modal submission with single row like "4 2B 25" resolve
   assert.match(repliedContent, /Added 1 score row\(s\)/)
 })
 
+test('Input / Fix Scores modal with "2B 25" fills missing rank without overwriting rank 1', async () => {
+  const client = new EventEmitter()
+  const scrimConfig = {
+    label: 'PC',
+    tallyChannelId: 'channel-modal-test-3',
+    channels: { tally: 'channel-modal-test-3' },
+  }
+  const mockRegisteredTeams = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
+    { slotIndex: 1, slotCode: '02B', slotLetter: 'B', tag: 'SS', name: 'RAMPAGE' },
+  ]
+  const board = getOrCreateTallyBoard('PC')
+  board.clear()
+
+  installTallyAutomation(
+    client,
+    scrimConfig,
+    { brandName: 'PHGG', scrims: [scrimConfig], scorekeeperRoleIds: [] },
+    () => ({ getRegisteredTeams: () => mockRegisteredTeams }),
+  )
+
+  let editedMessage = ''
+  const modalInteraction = {
+    type: 5,
+    customId: 'phgg_tally_modal:input:PC:4:rev_1234567890_abcde_1234567890abcdef',
+    isButton: () => false,
+    isModalSubmit: () => true,
+    member: { permissions: { has: () => true } },
+    user: { id: 'user-1' },
+    fields: {
+      getTextInputValue: () => '2B 25',
+    },
+    message: {
+      content: '📋 **PC SCRIM SCORE TALLY REVIEW — ROUND 4**\n`PLACE  SLOT  KILLS  PTS`\n`  1    01A     10    22`',
+      edit: async (payload) => {
+        editedMessage = payload.content
+      },
+    },
+    reply: async () => {},
+  }
+
+  client.emit(Events.InteractionCreate, modalInteraction)
+
+  await new Promise((r) => setTimeout(r, 50))
+
+  assert.match(editedMessage, /01A/)
+  assert.match(editedMessage, /02B/)
+})
+
 test('empty slots with no registered team do not block review when all registered teams are present', () => {
   const roster = [
     { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
