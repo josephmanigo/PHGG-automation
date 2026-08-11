@@ -1162,6 +1162,110 @@ test('Input / Fix Scores modal text updates missing row entries correctly', () =
   assert.equal(parsed.entries[0].kills, 10)
 })
 
+test('Input / Fix Scores modal submission updates entries without ReferenceError', async () => {
+  const client = new EventEmitter()
+  const scrimConfig = {
+    label: 'PC',
+    tallyChannelId: 'channel-modal-test',
+    channels: { tally: 'channel-modal-test' },
+  }
+  const mockRegisteredTeams = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
+    { slotIndex: 1, slotCode: '02B', slotLetter: 'B', tag: 'SS', name: 'RAMPAGE' },
+  ]
+  const board = getOrCreateTallyBoard('PC')
+  board.clear()
+
+  installTallyAutomation(
+    client,
+    scrimConfig,
+    { brandName: 'PHGG', scrims: [scrimConfig], scorekeeperRoleIds: [] },
+    () => ({ getRegisteredTeams: () => mockRegisteredTeams }),
+  )
+
+  let repliedContent = ''
+  let editedContent = ''
+  const modalInteraction = {
+    type: 5,
+    customId: 'phgg_tally_modal:input:PC:1:rev_1234567890_abcde_1234567890abcdef',
+    isButton: () => false,
+    isModalSubmit: () => true,
+    member: { permissions: { has: () => true } },
+    user: { id: 'user-1' },
+    fields: {
+      getTextInputValue: () => '1 01A 10\n2 02B 25',
+    },
+    message: {
+      content: '📋 **PC SCRIM SCORE TALLY REVIEW — ROUND 1**',
+      edit: async (payload) => {
+        editedContent = payload.content
+      },
+    },
+    reply: async (payload) => {
+      repliedContent = payload.content
+    },
+  }
+
+  client.emit(Events.InteractionCreate, modalInteraction)
+
+  await new Promise((r) => setTimeout(r, 50))
+
+  assert.match(repliedContent, /✅ \*\*Added 2 score row\(s\)\.\*\*/)
+})
+
+test('Input / Fix Scores modal submission with single row like "4 2B 25" resolves rank and updates review table', async () => {
+  const client = new EventEmitter()
+  const scrimConfig = {
+    label: 'PC',
+    tallyChannelId: 'channel-modal-test-2',
+    channels: { tally: 'channel-modal-test-2' },
+  }
+  const mockRegisteredTeams = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
+    { slotIndex: 1, slotCode: '02B', slotLetter: 'B', tag: 'SS', name: 'RAMPAGE' },
+    { slotIndex: 2, slotCode: '03C', slotLetter: 'C', tag: 'TT', name: 'TITANS' },
+    { slotIndex: 3, slotCode: '04D', slotLetter: 'D', tag: 'DD', name: 'DELTA' },
+  ]
+  const board = getOrCreateTallyBoard('PC')
+  board.clear()
+
+  installTallyAutomation(
+    client,
+    scrimConfig,
+    { brandName: 'PHGG', scrims: [scrimConfig], scorekeeperRoleIds: [] },
+    () => ({ getRegisteredTeams: () => mockRegisteredTeams }),
+  )
+
+  let repliedContent = ''
+  let editedContent = ''
+  const modalInteraction = {
+    type: 5,
+    customId: 'phgg_tally_modal:input:PC:4:rev_1234567890_abcde_1234567890abcdef',
+    isButton: () => false,
+    isModalSubmit: () => true,
+    member: { permissions: { has: () => true } },
+    user: { id: 'user-1' },
+    fields: {
+      getTextInputValue: () => '4 02B 25',
+    },
+    message: {
+      content: '📋 **PC SCRIM SCORE TALLY REVIEW — ROUND 4**\nRK | SLOT | TEAM | KILLS | PTS\n1 | 01A | NIGHTRAID | 10 | 22\n2 | 03C | TITANS | 5 | 17\n3 | 04D | DELTA | 2 | 12',
+      edit: async (payload) => {
+        editedContent = payload.content
+      },
+    },
+    reply: async (payload) => {
+      repliedContent = payload.content
+    },
+  }
+
+  client.emit(Events.InteractionCreate, modalInteraction)
+
+  await new Promise((r) => setTimeout(r, 50))
+
+  assert.match(repliedContent, /Added 1 score row\(s\)/)
+})
+
 test('empty slots with no registered team do not block review when all registered teams are present', () => {
   const roster = [
     { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },

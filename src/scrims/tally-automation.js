@@ -981,7 +981,7 @@ export function installTallyAutomation(
   // Handle Discord Button & Slash Command Interactions
   client.on(Events.InteractionCreate, async (interaction) => {
     // Only the PC listener handles slash commands (they are registered once by PC)
-    if (interaction.isChatInputCommand() && scrimConfig.label.toUpperCase() === 'PC') {
+    if (typeof interaction.isChatInputCommand === 'function' && interaction.isChatInputCommand() && scrimConfig.label.toUpperCase() === 'PC') {
       const cmdName = interaction.commandName
 
       // Answer for the scrim whose channel the command was run in, so the
@@ -1106,107 +1106,124 @@ export function installTallyAutomation(
     }
 
     if (isModal && action === 'input') {
-      const textValue = interaction.fields.getTextInputValue('score_text') || ''
-      const parsedInput = parseTextScoreInput(textValue)
+      try {
+        const textValue = interaction.fields.getTextInputValue('score_text') || ''
+        const parsedInput = parseTextScoreInput(textValue)
 
-      if (parsedInput.entries.length === 0) {
+        if (parsedInput.entries.length === 0) {
+          await interaction.reply({
+            content: '⚠️ No valid score rows were recognized from your text input. Example format: `4 05E 10` or `1 04D 98 118`.',
+            flags: MessageFlags.Ephemeral,
+          }).catch(() => {})
+          return
+        }
+
+        const reviewToken = parseReviewId(reviewId)
+        let reviewData = pendingReviews.get(reviewId)
+        if (!reviewData && interaction.message) {
+          const recovered = parseRoundTableFromMessage(interaction.message.content)
+          if (recovered.length > 0) {
+            reviewData = {
+              roundNumber: Number(roundStr || 1),
+              entries: recovered,
+              scrimLabel: scrimConfig.label,
+              rosterFingerprint: reviewToken?.rosterFingerprint,
+              createdAt: reviewToken?.createdAt,
+              blocked: true,
+            }
+          }
+        }
+
+        const existingEntries = reviewData?.entries || []
+        const mergedEntriesMap = new Map()
+
+        for (const entry of existingEntries) {
+          mergedEntriesMap.set(entry.rank, entry)
+        }
+
+        for (const newEntry of parsedInput.entries) {
+          mergedEntriesMap.set(newEntry.rank, newEntry)
+        }
+
+        const updatedEntries = [...mergedEntriesMap.values()].sort((a, b) => a.rank - b.rank)
+
+        const resolvedPreview = tallyBoard.previewRound(
+          Number(roundStr || 1),
+          updatedEntries,
+          registeredTeams,
+        )
+
+        const registeredLetters = new Set(registeredTeams.map((t) => t.slotLetter).filter(Boolean))
+        const extractedLetters = new Set(resolvedPreview.map((e) => (e.slotCode ? e.slotCode.slice(-1) : e.teamQuery)))
+        const missingRegisteredTeams = [...registeredLetters].filter((l) => !extractedLetters.has(l))
+
+        const maxRank = Math.max(registeredTeams.length || 0, ...resolvedPreview.map((e) => e.rank || 0))
+        const presentRanks = new Set(resolvedPreview.map((e) => e.rank))
+        const rawMissingRanks = []
+        for (let r = 1; r <= maxRank; r++) {
+          if (!presentRanks.has(r)) rawMissingRanks.push(r)
+        }
+
+        const effectiveMissingRanks = (registeredTeams.length > 0 && missingRegisteredTeams.length === 0)
+          ? []
+          : rawMissingRanks
+
+        const reviewBlocked = effectiveMissingRanks.length > 0 || resolvedPreview.length !== updatedEntries.length
+
+        let notice = ''
+        if (reviewBlocked) {
+          const warnings = []
+          if (effectiveMissingRanks.length > 0) {
+            warnings.push(`⚠️ **Missing row(s)**: #${effectiveMissingRanks.join(', #')}. Use the **Input / Fix Scores** button to add them.`)
+          }
+          if (resolvedPreview.length !== updatedEntries.length) {
+            warnings.push('⚠️ **Unregistered slot**: At least one entered slot does not match the registered team roster.')
+          }
+          warnings.unshift('⛔ **AUTOMATIC SAVE BLOCKED** — row coverage is incomplete.')
+          notice = warnings.join('\n')
+        }
+
+        rememberReview(reviewId, {
+          roundNumber: Number(roundStr || 1),
+          entries: resolvedPreview,
+          scrimLabel: scrimConfig.label,
+          blocked: reviewBlocked,
+          rosterFingerprint: tallyRosterFingerprint(registeredTeams),
+        })
+
+        const updatedMessagePayload = buildReviewMessage({
+          roundNumber: Number(roundStr || 1),
+          entries: resolvedPreview,
+          registeredTeams,
+          reviewId,
+          scrimLabel: scrimConfig.label,
+          notice,
+          blocked: reviewBlocked,
+        })
+
+        try {
+          if (interaction.message) {
+            await interaction.message.edit(updatedMessagePayload).catch(() => {})
+          }
+        } catch (editErr) {
+          console.error('[TALLY] Failed to edit review message after modal submit:', editErr)
+        }
+
         await interaction.reply({
-          content: '⚠️ No valid score rows were recognized from your text input. Example format: `4 05E 10` or `1 04D 98 118`.',
+          content: reviewBlocked
+            ? `⚠️ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated, but some required rows are still missing (#${effectiveMissingRanks.join(', #')}).`
+            : `✅ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated and is now complete! You can click **Confirm & Save Scores**.`,
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {})
+        return
+      } catch (err) {
+        console.error('[TALLY] Error handling score input modal:', err)
+        await interaction.reply({
+          content: `❌ Error processing score input: ${err.message}`,
           flags: MessageFlags.Ephemeral,
         }).catch(() => {})
         return
       }
-
-      const reviewToken = parseReviewId(reviewId)
-      let reviewData = pendingReviews.get(reviewId)
-      if (!reviewData && interaction.message) {
-        const recovered = parseRoundTableFromMessage(interaction.message.content)
-        if (recovered.length > 0) {
-          reviewData = {
-            roundNumber: Number(roundStr || 1),
-            entries: recovered,
-            scrimLabel: scrimConfig.label,
-            rosterFingerprint: reviewToken?.rosterFingerprint,
-            createdAt: reviewToken?.createdAt,
-            blocked: true,
-          }
-        }
-      }
-
-      const existingEntries = reviewData?.entries || []
-      const mergedEntriesMap = new Map()
-
-      for (const entry of existingEntries) {
-        mergedEntriesMap.set(entry.rank, entry)
-      }
-
-      for (const newEntry of parsedInput.entries) {
-        mergedEntriesMap.set(newEntry.rank, newEntry)
-      }
-
-      const updatedEntries = [...mergedEntriesMap.values()].sort((a, b) => a.rank - b.rank)
-
-      const resolvedPreview = tallyBoard.previewRound(
-        Number(roundStr || 1),
-        updatedEntries,
-        registeredTeams,
-      )
-
-      const registeredLetters = new Set(registeredTeams.map((t) => t.slotLetter).filter(Boolean))
-      const extractedLetters = new Set(resolvedPreview.map((e) => (e.slotCode ? e.slotCode.slice(-1) : e.teamQuery)))
-      const missingRegisteredTeams = [...registeredLetters].filter((l) => !extractedLetters.has(l))
-      const effectiveMissingRanks = (registeredTeams.length > 0 && missingRegisteredTeams.length === 0)
-        ? []
-        : missingRanks
-
-      const reviewBlocked = effectiveMissingRanks.length > 0 || resolvedPreview.length !== updatedEntries.length
-
-      let notice = ''
-      if (reviewBlocked) {
-        const warnings = []
-        if (effectiveMissingRanks.length > 0) {
-          warnings.push(`⚠️ **Missing row(s)**: #${effectiveMissingRanks.join(', #')}. Use the **Input / Fix Scores** button to add them.`)
-        }
-        if (resolvedPreview.length !== updatedEntries.length) {
-          warnings.push('⚠️ **Unregistered slot**: At least one entered slot does not match the registered team roster.')
-        }
-        warnings.unshift('⛔ **AUTOMATIC SAVE BLOCKED** — row coverage is incomplete.')
-        notice = warnings.join('\n')
-      }
-
-      rememberReview(reviewId, {
-        roundNumber: Number(roundStr || 1),
-        entries: resolvedPreview,
-        scrimLabel: scrimConfig.label,
-        blocked: reviewBlocked,
-        rosterFingerprint: tallyRosterFingerprint(registeredTeams),
-      })
-
-      const updatedMessagePayload = buildReviewMessage({
-        roundNumber: Number(roundStr || 1),
-        entries: resolvedPreview,
-        registeredTeams,
-        reviewId,
-        scrimLabel: scrimConfig.label,
-        notice,
-        blocked: reviewBlocked,
-      })
-
-      try {
-        if (interaction.message) {
-          await interaction.message.edit(updatedMessagePayload).catch(() => {})
-        }
-      } catch (editErr) {
-        console.error('[TALLY] Failed to edit review message after modal submit:', editErr)
-      }
-
-      await interaction.reply({
-        content: reviewBlocked
-          ? `⚠️ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated, but some required rows are still missing (#${effectiveMissingRanks.join(', #')}).`
-          : `✅ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated and is now complete! You can click **Confirm & Save Scores**.`,
-        flags: MessageFlags.Ephemeral,
-      }).catch(() => {})
-      return
     }
 
     if (action === 'confirm') {
