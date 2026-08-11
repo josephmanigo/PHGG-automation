@@ -5,6 +5,9 @@ import {
   Events,
   MessageFlags,
   PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js'
 import { createHash } from 'node:crypto'
 import { TallyBoard, TALLY_EMOJI, renderAlignedTable, getPlacementPoints } from './tally-core.js'
@@ -462,6 +465,10 @@ export function buildReviewMessage({
       .setLabel('Confirm & Save Scores')
       .setStyle(ButtonStyle.Success)
       .setDisabled(blocked),
+    new ButtonBuilder()
+      .setCustomId(`phgg_tally:input:${scopeToken}:${roundNumber}:${reviewId}`)
+      .setLabel('Input / Fix Scores')
+      .setStyle(ButtonStyle.Primary),
     // Link buttons open the scoresheet directly; they carry a URL instead of a
     // custom id and so never round-trip to the bot.
     new ButtonBuilder()
@@ -1007,10 +1014,12 @@ export function installTallyAutomation(
       }
     }
 
-    if (!interaction.isButton()) return
-    const { customId } = interaction
+    const isBtn = typeof interaction.isButton === 'function' && interaction.isButton()
+    const isModal = typeof interaction.isModalSubmit === 'function' && interaction.isModalSubmit()
+    if (!isBtn && !isModal) return
+    const customId = String(interaction.customId || '')
 
-    if (!customId.startsWith('phgg_tally:')) return
+    if (!customId.startsWith('phgg_tally:') && !customId.startsWith('phgg_tally_modal:')) return
 
     const parts = customId.split(':')
     const [, action, targetLabel, roundStr, reviewId] = parts
@@ -1022,15 +1031,12 @@ export function installTallyAutomation(
       ].includes(targetLabel.toUpperCase())
     ) return
 
-    // Log every button this scope accepts. "This interaction failed" in Discord
-    // gives no detail, so without this there is nothing to diagnose from.
+    // Log every button/modal this scope accepts.
     console.log(
-      `[TALLY] ${scrimConfig.label} button "${action}" round=${roundStr} review=${reviewId} by ${interaction.user?.id}`,
+      `[TALLY] ${scrimConfig.label} ${interaction.type} "${action}" round=${roundStr} review=${reviewId} by ${interaction.user?.id}`,
     )
 
-    // Reading the slot board must never take the interaction down with it: a
-    // throw here happens before any reply, which Discord reports as a failed
-    // interaction with no explanation.
+    // Reading the slot board must never take the interaction down with it
     let registeredTeams = []
     try {
       registeredTeams = clonedRoster(
@@ -1058,6 +1064,140 @@ export function installTallyAutomation(
 
     if (!canManageTally(interaction.member, allowedRoleIds)) {
       await interaction.reply({ content: '❌ You do not have permission to modify tally scores.', flags: MessageFlags.Ephemeral }).catch(() => {})
+      return
+    }
+
+    if (action === 'input' && isBtn) {
+      if (
+        /SCORES CONFIRMED/i.test(interaction.message?.content || '')
+        || completedReviews.has(reviewId)
+      ) {
+        await interaction.reply({
+          content: `✅ Round ${roundStr} is already saved and cannot be edited.`,
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {})
+        return
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId(`phgg_tally_modal:input:${scrimConfig.label}:${roundStr}:${reviewId}`)
+        .setTitle(`Input / Fix Round ${roundStr} Scores`)
+
+      const scoreInput = new TextInputBuilder()
+        .setCustomId('score_text')
+        .setLabel('Paste missing row(s) or full table text')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('Example:\n4 05E 10\nOr full table:\n1 04D 98 118\n2 08H 22 38\n...')
+        .setRequired(true)
+
+      modal.addComponents(new ActionRowBuilder().addComponents(scoreInput))
+      await interaction.showModal(modal).catch((err) => {
+        console.error('[TALLY] Failed to show score input modal:', err)
+      })
+      return
+    }
+
+    if (isModal && action === 'input') {
+      const textValue = interaction.fields.getTextInputValue('score_text') || ''
+      const parsedInput = parseTextScoreInput(textValue)
+
+      if (parsedInput.entries.length === 0) {
+        await interaction.reply({
+          content: '⚠️ No valid score rows were recognized from your text input. Example format: `4 05E 10` or `1 04D 98 118`.',
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {})
+        return
+      }
+
+      const reviewToken = parseReviewId(reviewId)
+      let reviewData = pendingReviews.get(reviewId)
+      if (!reviewData && interaction.message) {
+        const recovered = parseRoundTableFromMessage(interaction.message.content)
+        if (recovered.length > 0) {
+          reviewData = {
+            roundNumber: Number(roundStr || 1),
+            entries: recovered,
+            scrimLabel: scrimConfig.label,
+            rosterFingerprint: reviewToken?.rosterFingerprint,
+            createdAt: reviewToken?.createdAt,
+            blocked: true,
+          }
+        }
+      }
+
+      const existingEntries = reviewData?.entries || []
+      const mergedEntriesMap = new Map()
+
+      for (const entry of existingEntries) {
+        mergedEntriesMap.set(entry.rank, entry)
+      }
+
+      for (const newEntry of parsedInput.entries) {
+        mergedEntriesMap.set(newEntry.rank, newEntry)
+      }
+
+      const updatedEntries = [...mergedEntriesMap.values()].sort((a, b) => a.rank - b.rank)
+
+      const resolvedPreview = tallyBoard.previewRound(
+        Number(roundStr || 1),
+        updatedEntries,
+        registeredTeams,
+      )
+
+      const ranks = resolvedPreview.map((e) => e.rank)
+      const maxRank = ranks.length > 0 ? Math.max(...ranks) : 0
+      const missingRanks = []
+      for (let r = 1; r <= maxRank; r += 1) {
+        if (!ranks.includes(r)) missingRanks.push(r)
+      }
+
+      const reviewBlocked = missingRanks.length > 0 || resolvedPreview.length !== updatedEntries.length
+
+      let notice = ''
+      if (reviewBlocked) {
+        const warnings = []
+        if (missingRanks.length > 0) {
+          warnings.push(`⚠️ **Missing row(s)**: #${missingRanks.join(', #')}. Use the **Input / Fix Scores** button to add them.`)
+        }
+        if (resolvedPreview.length !== updatedEntries.length) {
+          warnings.push('⚠️ **Unregistered slot**: At least one entered slot does not match the registered team roster.')
+        }
+        warnings.unshift('⛔ **AUTOMATIC SAVE BLOCKED** — row coverage is incomplete.')
+        notice = warnings.join('\n')
+      }
+
+      rememberReview(reviewId, {
+        roundNumber: Number(roundStr || 1),
+        entries: resolvedPreview,
+        scrimLabel: scrimConfig.label,
+        blocked: reviewBlocked,
+        rosterFingerprint: tallyRosterFingerprint(registeredTeams),
+      })
+
+      const updatedMessagePayload = buildReviewMessage({
+        roundNumber: Number(roundStr || 1),
+        entries: resolvedPreview,
+        registeredTeams,
+        reviewId,
+        scrimLabel: scrimConfig.label,
+        notice,
+        blocked: reviewBlocked,
+      })
+
+      try {
+        if (interaction.message) {
+          await interaction.message.edit(updatedMessagePayload).catch(() => {})
+        }
+      } catch (editErr) {
+        console.error('[TALLY] Failed to edit review message after modal submit:', editErr)
+      }
+
+      await interaction.reply({
+        content: reviewBlocked
+          ? `⚠️ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated, but some required rows are still missing (#${missingRanks.join(', #')}).`
+          : `✅ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated and is now complete! You can click **Confirm & Save Scores**.`,
+        flags: MessageFlags.Ephemeral,
+      }).catch(() => {})
       return
     }
 

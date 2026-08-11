@@ -641,7 +641,7 @@ test('the buttons carry plain text labels, no emoji', () => {
   })
 
   const labels = msg.components[0].components.map((c) => c.data.label)
-  assert.deepEqual(labels, ['Confirm & Save Scores', 'View Standings', 'Reject'])
+  assert.deepEqual(labels, ['Confirm & Save Scores', 'Input / Fix Scores', 'View Standings', 'Reject'])
 
   // Colour already conveys the action, so no pictographs belong in the labels.
   const hasEmoji = /\p{Extended_Pictographic}/u
@@ -1138,7 +1138,7 @@ test('View Standings is a link straight to the scoresheet', () => {
     reviewId: 'rev_x',
   })
 
-  const [confirm, standings, reject] = msg.components[0].components.map((c) => c.data)
+  const [confirm, inputScores, standings, reject] = msg.components[0].components.map((c) => c.data)
 
   // Link buttons carry a url and no custom_id, so Discord opens them directly.
   assert.equal(standings.label, 'View Standings')
@@ -1147,9 +1147,19 @@ test('View Standings is a link straight to the scoresheet', () => {
   assert.match(standings.url, /1N3oh4z2FbnWzfXg79UNvegoP44FO9TkYxic8fN8I17U/)
   assert.equal(standings.custom_id, undefined)
 
-  // The other two still post back to the bot.
+  // The other buttons still post back to the bot.
   assert.ok(confirm.custom_id.startsWith('phgg_tally:confirm:'))
+  assert.ok(inputScores.custom_id.startsWith('phgg_tally:input:'))
   assert.ok(reject.custom_id.startsWith('phgg_tally:reject:'))
+})
+
+test('Input / Fix Scores modal text updates missing row entries correctly', () => {
+  const input = `4 05E 10 20`
+  const parsed = parseTextScoreInput(input)
+  assert.equal(parsed.entries.length, 1)
+  assert.equal(parsed.entries[0].rank, 4)
+  assert.equal(parsed.entries[0].teamQuery, '05E')
+  assert.equal(parsed.entries[0].kills, 10)
 })
 
 test('the sheet link follows the spreadsheet the bot actually writes to', () => {
