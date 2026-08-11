@@ -865,17 +865,7 @@ export function installTallyAutomation(
             message.id,
           )
           if (previewEntries.length !== parsed.entries.length) {
-            reviewBlocked = true
-            const rosterWarning =
-              '⚠️ **At least one extracted slot did not resolve against the reviewed roster snapshot.** ' +
-              'Refresh the slot board and re-upload the complete round.'
-            const blockedWarning =
-              '⛔ **AUTOMATIC SAVE BLOCKED** — the extraction cannot be mapped one-to-one to the reviewed roster.'
-            degradedNotice = [
-              ...(degradedNotice.includes('AUTOMATIC SAVE BLOCKED') ? [] : [blockedWarning]),
-              rosterWarning,
-              degradedNotice,
-            ].filter(Boolean).join('\n')
+            // Unregistered slots or missing empty slots do not block confirmation.
           }
 
           const reviewId = createReviewId(registeredTeams)
@@ -1230,16 +1220,13 @@ export function installTallyAutomation(
           ? []
           : rawMissingRanks
 
-        const reviewBlocked = effectiveMissingRanks.length > 0 || resolvedPreview.length !== updatedEntries.length
+        const reviewBlocked = effectiveMissingRanks.length > 0
 
         let notice = ''
         if (reviewBlocked) {
           const warnings = []
           if (effectiveMissingRanks.length > 0) {
             warnings.push(`⚠️ **Missing row(s)**: #${effectiveMissingRanks.join(', #')}. Use the **Input / Fix Scores** button to add them.`)
-          }
-          if (resolvedPreview.length !== updatedEntries.length) {
-            warnings.push('⚠️ **Unregistered slot**: At least one entered slot does not match the registered team roster.')
           }
           warnings.unshift('⛔ **AUTOMATIC SAVE BLOCKED** — row coverage is incomplete.')
           notice = warnings.join('\n')
