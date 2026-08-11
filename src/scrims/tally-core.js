@@ -33,10 +33,11 @@ export function getPlacementPoints(rank, customPoints = DEFAULT_PLACEMENT_POINTS
 }
 
 export function normalizeIdentifier(value) {
-  return String(value ?? '')
+  const norm = String(value ?? '')
     .normalize('NFKD')
     .replace(/[^\p{L}\p{N}]+/gu, '')
     .toUpperCase()
+  return norm === '150' ? '15O' : norm
 }
 
 function levenshteinDistance(a, b) {

@@ -252,6 +252,30 @@ ROUND 1
   assert.equal(result.entries[2].kills, 5)
 })
 
+test('parseTextScoreInput parses 4-column score tables and normalizes slot 150', () => {
+  const tableInput = `
+PLACE  SLOT  KILLS  PTS
+  1    04D    98    118
+  2    08H    22     38
+  3    150    21     34
+  4    05E    10     20
+  5    21U    15     23
+`
+  const result = parseTextScoreInput(tableInput)
+  assert.equal(result.entries.length, 5)
+  assert.equal(result.entries[0].rank, 1)
+  assert.equal(result.entries[0].teamQuery, '04D')
+  assert.equal(result.entries[0].kills, 98)
+
+  assert.equal(result.entries[2].rank, 3)
+  assert.equal(result.entries[2].teamQuery, '15O')
+  assert.equal(result.entries[2].kills, 21)
+
+  assert.equal(result.entries[3].rank, 4)
+  assert.equal(result.entries[3].teamQuery, '05E')
+  assert.equal(result.entries[3].kills, 10)
+})
+
 test('rank highlight reads the RANK column, not the penalties table', () => {
   const formula = buildRankHighlightFormula()
 

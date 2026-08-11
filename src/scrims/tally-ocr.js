@@ -196,11 +196,13 @@ export function parseStripRow(row) {
   let kills = null
 
   for (const token of tokens) {
-    const isLetter = /^[A-Z]$/.test(token.clean)
+    let cleanChar = token.clean
+    if (cleanChar === '0' && slotLetter === null && rank !== null) cleanChar = 'O'
+    const isLetter = /^[A-Z]$/.test(cleanChar)
     const isNumber = /^\d{1,3}$/.test(token.clean)
 
-    if (slotLetter === null && isLetter && SLOT_LETTERS.includes(token.clean)) {
-      slotLetter = token.clean
+    if (slotLetter === null && isLetter && SLOT_LETTERS.includes(cleanChar)) {
+      slotLetter = cleanChar
       continue
     }
     if (isNumber) {

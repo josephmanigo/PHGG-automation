@@ -488,9 +488,10 @@ const SCORE_FIELDS = Object.freeze([
 function normalizedScoreValue(field, value, { maxSlots }) {
   if (value === null || value === undefined) return null
   if (field.output === 'teamCode') {
-    const code = typeof value === 'string'
+    let code = typeof value === 'string'
       ? value.normalize('NFKC').trim().toUpperCase()
       : ''
+    if (code === '0') code = 'O'
     if (!/^[A-Y]$/.test(code)) return null
     if (SLOT_LETTERS.indexOf(code) >= maxSlots) return null
     return code
@@ -531,6 +532,61 @@ function serializeVisionTeam(team, context) {
     result[field.output] = normalized
   }
   return result
+}
+
+function inferMissingRanksInTeams(teams) {
+  if (!Array.isArray(teams) || teams.length === 0) return teams
+
+  const byY = teams
+    .map((team, index) => {
+      const yCenter = Array.isArray(team.bbox) && team.bbox.length === 4
+        ? team.bbox[1] + team.bbox[3] / 2
+        : index * 40
+      return { team, yCenter, origIndex: index }
+    })
+    .sort((a, b) => a.yCenter - b.yCenter)
+
+  for (let i = 0; i < byY.length; i += 1) {
+    const cur = byY[i].team
+    if (Number.isInteger(cur.rank) && cur.rank >= 1) continue
+
+    const prev = byY.slice(0, i).reverse().find((item) => Number.isInteger(item.team.rank) && item.team.rank >= 1)
+    const next = byY.slice(i + 1).find((item) => Number.isInteger(item.team.rank) && item.team.rank >= 1)
+
+    let inferredRank = null
+    if (prev && next) {
+      const prevIdx = byY.indexOf(prev)
+      const nextIdx = byY.indexOf(next)
+      const prevRank = prev.team.rank
+      const nextRank = next.team.rank
+      if (nextRank - prevRank === nextIdx - prevIdx && nextRank - prevRank > 0) {
+        inferredRank = prevRank + (i - prevIdx)
+      }
+    } else if (prev) {
+      const prevIdx = byY.indexOf(prev)
+      const prevRank = prev.team.rank
+      inferredRank = prevRank + (i - prevIdx)
+    } else if (next) {
+      const nextIdx = byY.indexOf(next)
+      const nextRank = next.team.rank
+      const offset = nextIdx - i
+      if (nextRank - offset >= 1) {
+        inferredRank = nextRank - offset
+      }
+    } else {
+      inferredRank = i + 1
+    }
+
+    if (inferredRank !== null && inferredRank >= 1 && inferredRank <= 25) {
+      cur.rank = inferredRank
+      cur.confidence.rank = Math.max(0.85, Number(cur.confidence.rank || 0))
+      const idx = cur.unresolvedFields.indexOf('rank')
+      if (idx !== -1) cur.unresolvedFields.splice(idx, 1)
+      if (!cur.recoveredFields.includes('rank')) cur.recoveredFields.push('rank')
+    }
+  }
+
+  return teams
 }
 
 function screenshotGeometryIssue(rowHints, teams) {
@@ -1117,6 +1173,7 @@ export async function parseScreenshotWithGemini(options = {}) {
         throw new Error('Gemini returned no leaderboard rows for this screenshot.')
       }
       const teams = output.teams.map((team) => serializeVisionTeam(team, context))
+      inferMissingRanksInTeams(teams)
       const geometryIssue = screenshotGeometryIssue(prepared.rowHints, teams)
       if (geometryIssue) {
         readFailures.push({

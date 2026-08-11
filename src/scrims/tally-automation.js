@@ -421,7 +421,8 @@ export function parseRoundTableFromMessage(content) {
     if (tokens.length < 4) continue
 
     const rank = Number(tokens[0])
-    const slotCode = tokens[1]
+    let slotCode = tokens[1]
+    if (/^150$/i.test(slotCode)) slotCode = '15O'
     const kills = Number(tokens[tokens.length - 2])
     const points = Number(tokens[tokens.length - 1])
 
