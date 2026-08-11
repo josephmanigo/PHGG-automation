@@ -631,7 +631,7 @@ export async function syncScoresToGoogleSheet({
       // A team on the sheet that sat this round out gets blank cells. A row with
       // no team on it at all — unused slot, or a registered team that has played
       // nothing — gets the sheet's 'X' marker.
-      const marker = showTeamName ? '' : 'X'
+      const marker = 'X'
       if (registered) {
         registeredNotInScreenshot.push(`${slotCode} ${formatSheetTeamName(registered)}`)
       }
