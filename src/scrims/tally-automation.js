@@ -816,7 +816,15 @@ export function installTallyAutomation(
               )
             }
             // A hole in the placements means a row never made it in at all.
-            // Saying so beats leaving the scorekeeper to spot it by eye.
+            // Empty slots with no registered team do not count as missing ranks.
+            if (parsed.missingRanks?.length && registeredTeams.length > 0) {
+              const registeredLetters = new Set(registeredTeams.map((t) => t.slotLetter).filter(Boolean))
+              const extractedLetters = new Set((parsed.entries || []).map((e) => (e.slotCode ? e.slotCode.slice(-1) : e.teamQuery)))
+              const missingRegisteredLetters = [...registeredLetters].filter((l) => !extractedLetters.has(l))
+              if (missingRegisteredLetters.length === 0) {
+                parsed.missingRanks = []
+              }
+            }
             if (parsed.missingRanks?.length) {
               const ranks = parsed.missingRanks.map((r) => `#${r}`).join(', ')
               warnings.push(
@@ -1144,20 +1152,20 @@ export function installTallyAutomation(
         registeredTeams,
       )
 
-      const ranks = resolvedPreview.map((e) => e.rank)
-      const maxRank = ranks.length > 0 ? Math.max(...ranks) : 0
-      const missingRanks = []
-      for (let r = 1; r <= maxRank; r += 1) {
-        if (!ranks.includes(r)) missingRanks.push(r)
-      }
+      const registeredLetters = new Set(registeredTeams.map((t) => t.slotLetter).filter(Boolean))
+      const extractedLetters = new Set(resolvedPreview.map((e) => (e.slotCode ? e.slotCode.slice(-1) : e.teamQuery)))
+      const missingRegisteredTeams = [...registeredLetters].filter((l) => !extractedLetters.has(l))
+      const effectiveMissingRanks = (registeredTeams.length > 0 && missingRegisteredTeams.length === 0)
+        ? []
+        : missingRanks
 
-      const reviewBlocked = missingRanks.length > 0 || resolvedPreview.length !== updatedEntries.length
+      const reviewBlocked = effectiveMissingRanks.length > 0 || resolvedPreview.length !== updatedEntries.length
 
       let notice = ''
       if (reviewBlocked) {
         const warnings = []
-        if (missingRanks.length > 0) {
-          warnings.push(`⚠️ **Missing row(s)**: #${missingRanks.join(', #')}. Use the **Input / Fix Scores** button to add them.`)
+        if (effectiveMissingRanks.length > 0) {
+          warnings.push(`⚠️ **Missing row(s)**: #${effectiveMissingRanks.join(', #')}. Use the **Input / Fix Scores** button to add them.`)
         }
         if (resolvedPreview.length !== updatedEntries.length) {
           warnings.push('⚠️ **Unregistered slot**: At least one entered slot does not match the registered team roster.')
@@ -1194,7 +1202,7 @@ export function installTallyAutomation(
 
       await interaction.reply({
         content: reviewBlocked
-          ? `⚠️ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated, but some required rows are still missing (#${missingRanks.join(', #')}).`
+          ? `⚠️ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated, but some required rows are still missing (#${effectiveMissingRanks.join(', #')}).`
           : `✅ **Added ${parsedInput.entries.length} score row(s).** The review table has been updated and is now complete! You can click **Confirm & Save Scores**.`,
         flags: MessageFlags.Ephemeral,
       }).catch(() => {})

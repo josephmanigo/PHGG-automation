@@ -1264,6 +1264,11 @@ export async function parseScreenshotWithGemini(options = {}) {
       })
       merged.entries.splice(index, 1)
     }
+    const extractedLetters = new Set(merged.entries.map((e) => e.teamQuery))
+    const missingRegisteredLetters = [...allowedLetters].filter((l) => !extractedLetters.has(l))
+    if (missingRegisteredLetters.length === 0) {
+      merged.missingRanks = []
+    }
   }
   if (merged.entries.length === 0) {
     throw new Error('Gemini found scoreboard rows, but none passed the strict score checks.')

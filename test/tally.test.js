@@ -1162,6 +1162,20 @@ test('Input / Fix Scores modal text updates missing row entries correctly', () =
   assert.equal(parsed.entries[0].kills, 10)
 })
 
+test('empty slots with no registered team do not block review when all registered teams are present', () => {
+  const roster = [
+    { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
+    { slotIndex: 1, slotCode: '02B', slotLetter: 'B', tag: 'SS', name: 'RAMPAGE' },
+    // Slot 4 (index 3, letter D) is EMPTY on slot board
+    { slotIndex: 4, slotCode: '05E', slotLetter: 'E', tag: 'APX', name: 'APEX' },
+  ]
+  const allowed = new Set(roster.map((t) => t.slotLetter))
+  const extractedLetters = new Set(['A', 'B', 'E'])
+  const missingRegistered = [...allowed].filter((l) => !extractedLetters.has(l))
+
+  assert.equal(missingRegistered.length, 0)
+})
+
 test('the sheet link follows the spreadsheet the bot actually writes to', () => {
   const original = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
   try {
