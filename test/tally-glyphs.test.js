@@ -4,9 +4,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Jimp } from 'jimp'
 import { readCapture, resolveMedalRanks } from '../src/scrims/tally-glyphs.js'
-import { parseScreenshotWithGlyphs } from '../src/scrims/tally-ocr.js'
+import { parseScreenshotWithGlyphs, partitionDuplicateSlotEntries } from '../src/scrims/tally-ocr.js'
 import atlas from '../src/scrims/glyph-atlas.json' with { type: 'json' }
-import { ALL_ROUNDS, MOBILE_ROUND_A, ROUND_C, ROUNDS } from './fixtures/scoreboard-ground-truth.js'
+import {
+  ALL_ROUNDS,
+  MOBILE_ROUND_A,
+  ROUND_A,
+  ROUND_C,
+  ROUND_D,
+  ROUNDS,
+  expectedRoundRows,
+} from './fixtures/scoreboard-ground-truth.js'
 
 const SHOT_DIR = path.join(process.cwd(), 'test', 'fixtures', 'screenshots')
 const expectedRows = (capture) => [
@@ -124,6 +132,50 @@ test('reads at any capture size, and never answers wrongly at any of them', need
   }
 })
 
+test('systematic 0.96x overlap errors are flagged instead of corroborated into scores', needsCaptures, async () => {
+  const files = ROUND_D.captures.map((capture) => path.join(SHOT_DIR, capture.file))
+  if (!files.every((file) => fs.existsSync(file))) return
+
+  const images = []
+  for (const file of files) {
+    const image = await Jimp.read(file)
+    image.scale(0.96)
+    images.push({ buffer: await image.getBuffer('image/png'), mimeType: 'image/png' })
+  }
+  const parsed = await parseScreenshotWithGlyphs({ images })
+  const truth = new Map(expectedRoundRows(ROUND_D).map((row) => [row.rank, row]))
+
+  for (const entry of parsed.entries) {
+    assert.equal(entry.teamQuery, truth.get(entry.rank)?.slotLetter, `rank ${entry.rank}: wrong slot accepted`)
+    assert.equal(entry.kills, truth.get(entry.rank)?.kills, `rank ${entry.rank}: wrong kills accepted`)
+  }
+  assert.equal(parsed.entries.some((entry) => entry.rank === 15 && entry.kills === 18), false)
+  const acceptedRank15 = parsed.entries.find((entry) => entry.rank === 15)
+  assert.ok(
+    (acceptedRank15?.teamQuery === truth.get(15).slotLetter && acceptedRank15?.kills === truth.get(15).kills)
+      || parsed.uncertain.some((row) => row.rank === 15 || row.rank === null)
+      || parsed.missingRanks.includes(15),
+    'rank 15 must be exactly correct or make the extraction explicitly incomplete',
+  )
+})
+
+test('a clean top-only local capture is incomplete against the registered roster', needsCaptures, async () => {
+  const capture = ROUND_A.captures[0]
+  const file = path.join(SHOT_DIR, capture.file)
+  if (!fs.existsSync(file)) return
+  const allowedLetters = [...new Set(expectedRoundRows(ROUND_A).map((row) => row.slotLetter))]
+  const parsed = await parseScreenshotWithGlyphs({
+    images: [{ buffer: fs.readFileSync(file), mimeType: 'image/png' }],
+    allowedLetters,
+  })
+
+  assert.deepEqual(parsed.entries.map((entry) => entry.rank), Array.from({ length: 10 }, (_v, i) => i + 1))
+  assert.equal(
+    parsed.uncertain.some((row) => row.reason === 'leaderboard_end_not_visible'),
+    true,
+  )
+})
+
 /**
  * The real phone round that exposed all of this: five 1919x1079 JPEGs, scrolled
  * so they overlap and each repeats rank 1. Every placement from 1 to 19 must
@@ -154,9 +206,8 @@ test('a full phone round reads every placement with none dropped', needsCaptures
 })
 
 /**
- * The roster tells the reader which slots can possibly appear, which both
- * narrows the letter candidates and lets a single unread slot be recovered by
- * elimination. It must not change a row the reader already read correctly.
+ * The roster validates a visually read slot after classification. It must not
+ * narrow the classifier or change a row the reader already read correctly.
  */
 test('the roster never alters a slot the reader read on its own', needsCaptures, async () => {
   const files = MOBILE_ROUND_A.captures.map((c) => path.join(SHOT_DIR, c.file))
@@ -180,11 +231,16 @@ test('the roster never alters a slot the reader read on its own', needsCaptures,
 })
 
 test('two rows claiming one slot are both pulled rather than scored', () => {
-  // Constructed directly: a duplicate means one read is wrong and the image
-  // cannot say which, so neither may be saved.
-  const seen = ['A', 'B', 'B', 'C']
-  const counts = seen.reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map())
-  assert.equal([...counts.values()].filter((n) => n > 1).length, 1)
+  const partitioned = partitionDuplicateSlotEntries([
+    { rank: 1, teamQuery: 'A', kills: 44 },
+    { rank: 2, teamQuery: 'B', kills: 20 },
+    { rank: 3, teamQuery: 'B', kills: 19 },
+    { rank: 4, teamQuery: 'C', kills: 10 },
+  ])
+
+  assert.deepEqual(partitioned.entries.map((entry) => entry.teamQuery), ['A', 'C'])
+  assert.deepEqual(partitioned.uncertain.map((entry) => entry.rank), [2, 3])
+  assert.ok(partitioned.uncertain.every((entry) => entry.reason === 'duplicate_teamCode'))
 })
 
 /**

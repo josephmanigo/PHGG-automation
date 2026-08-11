@@ -1,5 +1,6 @@
 import test from 'node:test'
-import { ButtonStyle } from 'discord.js'
+import { EventEmitter } from 'node:events'
+import { ButtonStyle, Events } from 'discord.js'
 import assert from 'node:assert/strict'
 import {
   findMatchingTeam,
@@ -22,11 +23,24 @@ import {
   formatSheetTeamName,
   renderTitleBanner,
   slotIndexFromCode,
+  syncScoresToGoogleSheet,
   TITLE_BANNER_TEMPLATE,
   DATE_HEADER_TEMPLATE,
   getSpreadsheetUrl,
 } from '../src/scrims/tally-sheet.js'
-import { buildReviewMessage, buildRoundScoreTable, formatClearReply, parseRoundTableFromMessage } from '../src/scrims/tally-automation.js'
+import {
+  buildReviewMessage,
+  buildRoundScoreTable,
+  downloadScoreboardAttachment,
+  formatClearReply,
+  getOrCreateTallyBoard,
+  installTallyAutomation,
+  isBlockedTallyReview,
+  isSupportedScoreboardAttachment,
+  parseRoundTableFromMessage,
+  readScoreboardScreenshots,
+  tallyRosterFingerprint,
+} from '../src/scrims/tally-automation.js'
 
 const mockRegisteredTeams = [
   { slotIndex: 0, slotCode: '01A', slotLetter: 'A', tag: 'NR', name: 'NIGHTRAID' },
@@ -34,6 +48,100 @@ const mockRegisteredTeams = [
   { slotIndex: 2, slotCode: '03C', slotLetter: 'C', tag: 'APXS', name: 'SYNDICATE' },
   { slotIndex: 3, slotCode: '04D', slotLetter: 'D', tag: 'M7', name: 'M7 ESPORTS' },
 ]
+
+function createTallyHandlerHarness({
+  name,
+  getRegisteredTeams = () => mockRegisteredTeams,
+  reader = async () => ({
+    roundNumber: 1,
+    source: 'gemini',
+    entries: [{ rank: 1, teamQuery: 'A', slotCode: '1-A', kills: 44 }],
+    uncertain: [],
+    missingRanks: [],
+    conflicts: [],
+  }),
+  downloader = async () => ({
+    buffer: Buffer.from('injected-image'),
+    mimeType: 'image/png',
+  }),
+  sheetSync = async ({ entries }) => ({
+    success: true,
+    teamsTallied: entries.length,
+    verificationStatus: 'PASSED',
+  }),
+} = {}) {
+  const label = `${name}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  const channelId = `channel_${label}`
+  const client = new EventEmitter()
+  const scrimConfig = {
+    label,
+    tallyChannelId: channelId,
+    channels: { tally: channelId },
+    scorekeeperRoleIds: [],
+    maxSlots: 25,
+  }
+  const board = getOrCreateTallyBoard(label)
+  board.clear()
+  installTallyAutomation(
+    client,
+    scrimConfig,
+    { brandName: 'PHGG', scrims: [scrimConfig], scorekeeperRoleIds: [] },
+    () => ({ getRegisteredTeams }),
+    {
+      downloadScoreboardAttachment: downloader,
+      readScoreboardScreenshots: reader,
+      syncScoresToGoogleSheet: sheetSync,
+    },
+  )
+  return { board, channelId, client, label }
+}
+
+async function emitTallyUpload(client, channelId, { content = 'ROUND 1', member } = {}) {
+  return new Promise((resolve) => {
+    client.emit(Events.MessageCreate, {
+      id: `upload_${Date.now()}_${Math.random()}`,
+      author: { bot: false },
+      content,
+      member: member ?? { permissions: { has: () => true } },
+      attachments: new Map([['image', {
+        name: 'round.png',
+        contentType: 'image/png',
+        url: 'https://example.test/round.png',
+      }]]),
+      channel: { id: channelId, sendTyping: async () => {} },
+      reply: async (payload) => {
+        if (typeof payload === 'string' && !payload.includes('Reading')) {
+          resolve({ directReply: payload })
+          return { edit: async () => {} }
+        }
+        return {
+          edit: async (reviewPayload) => resolve({ reviewPayload }),
+        }
+      },
+    })
+  })
+}
+
+async function emitTallyButton(client, {
+  customId,
+  content,
+  createdTimestamp,
+  actionMember,
+} = {}) {
+  return new Promise((resolve) => {
+    client.emit(Events.InteractionCreate, {
+      isChatInputCommand: () => false,
+      isButton: () => true,
+      customId,
+      user: { id: 'scorekeeper' },
+      member: actionMember ?? { permissions: { has: () => true } },
+      message: { content, createdTimestamp },
+      deferUpdate: async () => {},
+      editReply: async (payload) => resolve({ editPayload: payload }),
+      reply: async (payload) => resolve({ replyPayload: payload }),
+    })
+  })
+}
 
 test('getPlacementPoints returns expected points for ranks', () => {
   assert.equal(getPlacementPoints(1), 20)
@@ -224,6 +332,21 @@ test('unregistered screenshot teams are discarded, not scored', () => {
   assert.equal(entries.length, 1)
   assert.equal(entries[0].tag, 'NR')
   assert.ok(!entries.some((e) => e.kills === 30))
+})
+
+test('previewing an extracted round does not mutate standings before confirmation', () => {
+  const board = new TallyBoard()
+  const preview = board.previewRound(
+    1,
+    [{ rank: 1, slotCode: '01A', teamQuery: 'A', kills: 10 }],
+    mockRegisteredTeams,
+  )
+
+  assert.equal(preview.length, 1)
+  assert.deepEqual(board.getRound(1), [])
+
+  board.setRound(1, preview, mockRegisteredTeams)
+  assert.equal(board.getRound(1).length, 1)
 })
 
 test('the visible title banner resolves the [DEVICE] placeholder', () => {
@@ -501,6 +624,486 @@ test('the buttons carry plain text labels, no emoji', () => {
   for (const label of labels) {
     assert.ok(!hasEmoji.test(label), `"${label}" still contains an emoji`)
   }
+})
+
+test('a review with unresolved extraction evidence cannot be confirmed', () => {
+  const msg = buildReviewMessage({
+    roundNumber: 1,
+    entries: [{ rank: 1, slotCode: '01A', tag: 'NR', name: 'NIGHTRAID', kills: 10, totalPoints: 30 }],
+    registeredTeams: [],
+    reviewId: 'rev_blocked',
+    notice: '⛔ AUTOMATIC SAVE BLOCKED',
+    blocked: true,
+  })
+
+  const confirm = msg.components[0].components[0].data
+  assert.equal(confirm.label, 'Confirm & Save Scores')
+  assert.equal(confirm.disabled, true)
+  assert.match(msg.content, /AUTOMATIC SAVE BLOCKED/)
+})
+
+test('the server-side guard blocks both remembered and restart-recovered reviews', () => {
+  assert.equal(isBlockedTallyReview({ blocked: true }, 'ordinary review'), true)
+  assert.equal(
+    isBlockedTallyReview(null, '⛔ AUTOMATIC SAVE BLOCKED — incomplete extraction'),
+    true,
+  )
+  assert.equal(isBlockedTallyReview({ blocked: false }, 'ordinary review'), false)
+})
+
+test('a crafted restart-lost blocked Confirm cannot mutate the tally board', async () => {
+  const label = `BLOCKED_${Date.now()}`
+  const client = new EventEmitter()
+  const scrimConfig = {
+    label,
+    tallyChannelId: 'blocked-tally-channel',
+    channels: { tally: 'blocked-tally-channel' },
+    scorekeeperRoleIds: [],
+  }
+  const board = getOrCreateTallyBoard(label)
+  board.clear()
+  installTallyAutomation(
+    client,
+    scrimConfig,
+    { brandName: 'PHGG', scrims: [scrimConfig], scorekeeperRoleIds: [] },
+    () => ({ getRegisteredTeams: () => mockRegisteredTeams }),
+  )
+
+  let editedPayload
+  let resolveEdited
+  const edited = new Promise((resolve) => { resolveEdited = resolve })
+  client.emit(Events.InteractionCreate, {
+    isChatInputCommand: () => false,
+    isButton: () => true,
+    customId: `phgg_tally:confirm:${label}:1:lost_review`,
+    user: { id: 'scorekeeper' },
+    member: { permissions: { has: () => true } },
+    message: { content: '⛔ **AUTOMATIC SAVE BLOCKED** — incomplete screenshot set' },
+    deferUpdate: async () => {},
+    editReply: async (payload) => {
+      editedPayload = payload
+      resolveEdited()
+    },
+    reply: async () => {},
+  })
+  await edited
+
+  assert.deepEqual(board.getRound(1), [])
+  assert.match(editedPayload.content, /NOT SAVED/)
+  assert.deepEqual(editedPayload.components, [])
+})
+
+test('parser uncertainty flows through upload review and blocks a crafted Confirm', async () => {
+  const label = `UPLOAD_BLOCKED_${Date.now()}`
+  const channelId = `channel_${label}`
+  const client = new EventEmitter()
+  const scrimConfig = {
+    label,
+    tallyChannelId: channelId,
+    channels: { tally: channelId },
+    scorekeeperRoleIds: [],
+    maxSlots: 25,
+  }
+  const board = getOrCreateTallyBoard(label)
+  board.clear()
+  let setRoundCalls = 0
+  const originalSetRound = board.setRound.bind(board)
+  board.setRound = (...args) => {
+    setRoundCalls += 1
+    return originalSetRound(...args)
+  }
+
+  installTallyAutomation(
+    client,
+    scrimConfig,
+    { brandName: 'PHGG', scrims: [scrimConfig], scorekeeperRoleIds: [] },
+    () => ({ getRegisteredTeams: () => mockRegisteredTeams }),
+    {
+      downloadScoreboardAttachment: async () => ({
+        buffer: Buffer.from('injected-image'),
+        mimeType: 'image/png',
+      }),
+      readScoreboardScreenshots: async () => ({
+        roundNumber: 1,
+        source: 'gemini',
+        entries: [{ rank: 1, teamQuery: 'A', slotCode: '1-A', kills: 44 }],
+        uncertain: [{ rank: 2, slotLetter: 'B', kills: null, reason: 'unreadable_field' }],
+        missingRanks: [],
+        conflicts: [],
+      }),
+    },
+  )
+
+  let reviewPayload
+  let resolveReview
+  const reviewReady = new Promise((resolve) => { resolveReview = resolve })
+  client.emit(Events.MessageCreate, {
+    id: 'score-upload-message',
+    author: { bot: false },
+    content: 'ROUND 1',
+    member: { permissions: { has: () => true } },
+    attachments: new Map([['image', {
+      name: 'round.png',
+      contentType: 'image/png',
+      url: 'https://example.test/round.png',
+    }]]),
+    channel: {
+      id: channelId,
+      sendTyping: async () => {},
+    },
+    reply: async () => ({
+      edit: async (payload) => {
+        reviewPayload = payload
+        resolveReview()
+      },
+    }),
+  })
+  await reviewReady
+
+  const confirm = reviewPayload.components[0].components[0].data
+  assert.equal(confirm.disabled, true)
+  assert.match(reviewPayload.content, /AUTOMATIC SAVE BLOCKED/)
+  assert.deepEqual(board.getRound(1), [])
+
+  let resolveConfirm
+  const confirmHandled = new Promise((resolve) => { resolveConfirm = resolve })
+  client.emit(Events.InteractionCreate, {
+    isChatInputCommand: () => false,
+    isButton: () => true,
+    customId: confirm.custom_id,
+    user: { id: 'scorekeeper' },
+    member: { permissions: { has: () => true } },
+    message: { content: reviewPayload.content },
+    deferUpdate: async () => {},
+    editReply: async () => { resolveConfirm() },
+    reply: async () => {},
+  })
+  await confirmHandled
+
+  assert.equal(setRoundCalls, 0)
+  assert.deepEqual(board.getRound(1), [])
+})
+
+test('unauthorized screenshot submissions never download or invoke a reader', async () => {
+  let downloads = 0
+  let reads = 0
+  const harness = createTallyHandlerHarness({
+    name: 'UNAUTHORIZED_UPLOAD',
+    downloader: async () => {
+      downloads += 1
+      throw new Error('must not download')
+    },
+    reader: async () => {
+      reads += 1
+      throw new Error('must not read')
+    },
+  })
+  const result = await emitTallyUpload(harness.client, harness.channelId, {
+    member: {
+      permissions: { has: () => false },
+      roles: { cache: new Map() },
+    },
+  })
+
+  assert.match(result.directReply, /do not have permission/i)
+  assert.equal(downloads, 0)
+  assert.equal(reads, 0)
+})
+
+test('an explicit round outside 1 through 4 is rejected before image work', async () => {
+  let downloads = 0
+  let reads = 0
+  const harness = createTallyHandlerHarness({
+    name: 'INVALID_ROUND_UPLOAD',
+    downloader: async () => {
+      downloads += 1
+      throw new Error('must not download')
+    },
+    reader: async () => {
+      reads += 1
+      throw new Error('must not read')
+    },
+  })
+  const result = await emitTallyUpload(harness.client, harness.channelId, { content: 'ROUND 99' })
+
+  assert.match(result.directReply, /Round must be 1, 2, 3, or 4/i)
+  assert.equal(downloads, 0)
+  assert.equal(reads, 0)
+})
+
+test('a roster refresh cannot drop an extracted row or remap it at confirmation', async () => {
+  const originalRoster = [mockRegisteredTeams[0]]
+  const changedRoster = [{
+    ...mockRegisteredTeams[0],
+    tag: 'NEW',
+    name: 'REPLACEMENT TEAM',
+  }]
+  let liveRoster = originalRoster
+  let sheetCalls = 0
+  const harness = createTallyHandlerHarness({
+    name: 'ROSTER_SNAPSHOT',
+    getRegisteredTeams: () => liveRoster,
+    reader: async () => {
+      liveRoster = changedRoster
+      return {
+        source: 'gemini',
+        entries: [{ rank: 1, teamQuery: 'A', slotCode: '1-A', kills: 44 }],
+        uncertain: [],
+        missingRanks: [],
+        conflicts: [],
+      }
+    },
+    sheetSync: async () => {
+      sheetCalls += 1
+      return { success: true, teamsTallied: 1, verificationStatus: 'PASSED' }
+    },
+  })
+  const { reviewPayload } = await emitTallyUpload(harness.client, harness.channelId)
+  const confirm = reviewPayload.components[0].components[0].data
+
+  assert.match(reviewPayload.content, /01A/)
+  assert.equal(confirm.disabled, false)
+  const result = await emitTallyButton(harness.client, {
+    customId: confirm.custom_id,
+    content: reviewPayload.content,
+  })
+
+  assert.match(result.editPayload.content, /NOT SAVED.*roster changed|roster changed.*NOT SAVED/is)
+  assert.equal(sheetCalls, 0)
+  assert.deepEqual(harness.board.getRound(1), [])
+})
+
+test('false and thrown sheet writes leave the round untouched and retryable', async (t) => {
+  for (const failure of [
+    { name: 'false result', sync: async () => ({ success: false, error: 'webhook rejected' }) },
+    { name: 'thrown error', sync: async () => { throw new Error('sheet unavailable') } },
+  ]) {
+    await t.test(failure.name, async () => {
+      let sheetCalls = 0
+      const harness = createTallyHandlerHarness({
+        name: `SYNC_FAILURE_${failure.name}`,
+        sheetSync: async (input) => {
+          sheetCalls += 1
+          return failure.sync(input)
+        },
+      })
+      const { reviewPayload } = await emitTallyUpload(harness.client, harness.channelId)
+      const confirm = reviewPayload.components[0].components[0].data
+      const result = await emitTallyButton(harness.client, {
+        customId: confirm.custom_id,
+        content: reviewPayload.content,
+      })
+
+      assert.equal(sheetCalls, 1)
+      assert.deepEqual(harness.board.getRound(1), [])
+      assert.match(result.editPayload.content, /NOT SAVED.*Google Sheet write failed/is)
+      assert.equal(result.editPayload.components[0].components[0].data.disabled, false)
+      assert.equal(result.editPayload.components[0].components[0].data.custom_id, confirm.custom_id)
+    })
+  }
+})
+
+test('concurrent confirm and reject clicks produce one committed sheet write', async () => {
+  let sheetCalls = 0
+  let releaseSync
+  let signalSyncStarted
+  const syncStarted = new Promise((resolve) => { signalSyncStarted = resolve })
+  const syncRelease = new Promise((resolve) => { releaseSync = resolve })
+  const harness = createTallyHandlerHarness({
+    name: 'CONCURRENT_CONFIRM',
+    sheetSync: async ({ entries }) => {
+      sheetCalls += 1
+      signalSyncStarted()
+      await syncRelease
+      return { success: true, teamsTallied: entries.length, verificationStatus: 'PASSED' }
+    },
+  })
+  let setRoundCalls = 0
+  const originalSetRound = harness.board.setRound.bind(harness.board)
+  harness.board.setRound = (...args) => {
+    setRoundCalls += 1
+    return originalSetRound(...args)
+  }
+  const { reviewPayload } = await emitTallyUpload(harness.client, harness.channelId)
+  const confirm = reviewPayload.components[0].components[0].data
+  const reject = reviewPayload.components[0].components[2].data
+  const firstConfirm = emitTallyButton(harness.client, {
+    customId: confirm.custom_id,
+    content: reviewPayload.content,
+  })
+  await syncStarted
+
+  const [secondConfirm, concurrentReject] = await Promise.all([
+    emitTallyButton(harness.client, {
+      customId: confirm.custom_id,
+      content: reviewPayload.content,
+    }),
+    emitTallyButton(harness.client, {
+      customId: reject.custom_id,
+      content: reviewPayload.content,
+    }),
+  ])
+  assert.match(secondConfirm.replyPayload.content, /already being saved/i)
+  assert.match(concurrentReject.replyPayload.content, /cannot be rejected mid-write/i)
+
+  releaseSync()
+  const saved = await firstConfirm
+  assert.match(saved.editPayload.content, /SCORES CONFIRMED/i)
+  assert.equal(sheetCalls, 1)
+  assert.equal(setRoundCalls, 1)
+  assert.equal(harness.board.getRound(1).length, 1)
+
+  const replay = await emitTallyButton(harness.client, {
+    customId: confirm.custom_id,
+    content: reviewPayload.content,
+  })
+  assert.match(replay.replyPayload.content, /already saved/i)
+  assert.equal(sheetCalls, 1)
+  assert.equal(setRoundCalls, 1)
+})
+
+test('restart recovery rejects a valid-looking review older than the TTL', async () => {
+  let sheetCalls = 0
+  const harness = createTallyHandlerHarness({
+    name: 'EXPIRED_RESTART_REVIEW',
+    sheetSync: async () => {
+      sheetCalls += 1
+      return { success: true, teamsTallied: 1, verificationStatus: 'PASSED' }
+    },
+  })
+  const oldTimestamp = Date.now() - 7 * 60 * 60 * 1000
+  const reviewId = `rev_${oldTimestamp}_abcde_${tallyRosterFingerprint(mockRegisteredTeams)}`
+  const content = `PC SCRIM SCORE TALLY REVIEW - ROUND 1\n${buildRoundScoreTable([{
+    rank: 1,
+    slotCode: '01A',
+    kills: 44,
+    totalPoints: 64,
+  }])}`
+  const result = await emitTallyButton(harness.client, {
+    customId: `phgg_tally:confirm:${harness.label}:1:${reviewId}`,
+    content,
+    createdTimestamp: oldTimestamp,
+  })
+
+  assert.match(result.editPayload.content, /NOT saved|more than six hours old/i)
+  assert.equal(sheetCalls, 0)
+  assert.deepEqual(harness.board.getRound(1), [])
+})
+
+test('webhook sheet writes use an explicit success contract and reject non-OK responses', async () => {
+  const originalWebhook = process.env.GOOGLE_SHEETS_WEBHOOK_URL
+  const originalFetch = global.fetch
+  process.env.GOOGLE_SHEETS_WEBHOOK_URL = 'https://example.test/tally-webhook'
+  try {
+    global.fetch = async () => new Response('', { status: 200 })
+    const success = await syncScoresToGoogleSheet({
+      roundNumber: 1,
+      entries: [{ rank: 1, slotCode: '01A', kills: 44 }],
+      registeredTeams: [mockRegisteredTeams[0]],
+    })
+    assert.deepEqual(success, {
+      success: true,
+      roundNumber: 1,
+      teamsTallied: 1,
+      verificationStatus: 'WEBHOOK_ACCEPTED',
+    })
+
+    global.fetch = async () => new Response('upstream unavailable', { status: 503 })
+    await assert.rejects(syncScoresToGoogleSheet({
+      roundNumber: 1,
+      entries: [{ rank: 1, slotCode: '01A', kills: 44 }],
+      registeredTeams: [mockRegisteredTeams[0]],
+    }), /webhook failed \(503\).*upstream unavailable/i)
+  } finally {
+    global.fetch = originalFetch
+    if (originalWebhook === undefined) delete process.env.GOOGLE_SHEETS_WEBHOOK_URL
+    else process.env.GOOGLE_SHEETS_WEBHOOK_URL = originalWebhook
+  }
+})
+
+test('score attachment intake accepts only supported still-image formats', () => {
+  assert.equal(isSupportedScoreboardAttachment({ contentType: 'image/png', name: 'score' }), true)
+  assert.equal(isSupportedScoreboardAttachment({ contentType: '', name: 'score.JPEG' }), true)
+  assert.equal(isSupportedScoreboardAttachment({ contentType: 'application/octet-stream', name: 'score.png' }), true)
+  assert.equal(isSupportedScoreboardAttachment({ contentType: 'image/gif', name: 'score.png' }), false)
+  assert.equal(isSupportedScoreboardAttachment({ contentType: 'application/pdf', name: 'score.png' }), false)
+  assert.equal(isSupportedScoreboardAttachment({ contentType: '', name: 'scores.txt' }), false)
+})
+
+test('score attachment download validates actual bytes and enforces its limit', async () => {
+  const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const downloaded = await downloadScoreboardAttachment({
+    url: 'https://example.test/score.png',
+    name: 'score.png',
+    contentType: 'image/png',
+  }, {
+    fetchImpl: async () => new Response(pngHeader, { status: 200 }),
+    maxBytes: 100,
+  })
+  assert.deepEqual(downloaded.buffer, pngHeader)
+  assert.equal(downloaded.mimeType, 'image/png')
+
+  await assert.rejects(downloadScoreboardAttachment({
+    url: 'https://example.test/too-large.png',
+    name: 'too-large.png',
+    contentType: 'image/png',
+  }, {
+    fetchImpl: async () => new Response(pngHeader, {
+      status: 200,
+      headers: { 'Content-Length': '101' },
+    }),
+    maxBytes: 100,
+  }), /exceeds.*byte download limit/i)
+
+  await assert.rejects(downloadScoreboardAttachment({
+    url: 'https://example.test/fake.png',
+    name: 'fake.png',
+    contentType: 'image/png',
+  }, {
+    fetchImpl: async () => new Response('not an image', { status: 200 }),
+  }), /bytes are not a supported/i)
+})
+
+test('zero-accepted cloud output uses local fallback but remains blocked evidence', async () => {
+  let localCalls = 0
+  const parsed = await readScoreboardScreenshots({
+    provider: 'gemini',
+    images: [{ buffer: Buffer.from('fixture'), mimeType: 'image/png' }],
+    cloudReader: async () => ({ entries: [], uncertain: [{ rank: null }] }),
+    localReader: async () => {
+      localCalls += 1
+      return {
+        source: 'glyphs',
+        entries: [{ rank: 1, teamQuery: 'A', kills: 44 }],
+        uncertain: [],
+      }
+    },
+  })
+
+  assert.equal(localCalls, 1)
+  assert.equal(parsed.source, 'glyphs')
+  assert.equal(parsed.entries[0].kills, 44)
+  assert.equal(parsed.uncertain.some((item) => item.reason === 'provider_fallback_used'), true)
+})
+
+test('a partial cloud read remains blocked evidence and is not mixed with local OCR', async () => {
+  let localCalls = 0
+  const parsed = await readScoreboardScreenshots({
+    provider: 'gemini',
+    images: [{ buffer: Buffer.from('fixture'), mimeType: 'image/png' }],
+    cloudReader: async () => ({
+      source: 'gemini',
+      entries: [{ rank: 1, teamQuery: 'A', kills: 44 }],
+      uncertain: [{ rank: 2, reason: 'unreadable_field' }],
+    }),
+    localReader: async () => {
+      localCalls += 1
+      throw new Error('must not be called')
+    },
+  })
+
+  assert.equal(localCalls, 0)
+  assert.equal(parsed.uncertain.length, 1)
 })
 
 test('View Standings is a link straight to the scoresheet', () => {

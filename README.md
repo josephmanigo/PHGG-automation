@@ -6,6 +6,7 @@ tallying from Bloodstrike endgame screenshots.
     npm install
     npm start          # reads .env / .env.local if present
     npm test
+    npm run test:visual # requires the ignored labelled screenshot corpus
     npm run check      # syntax check every module
 
 ## /announce
@@ -28,18 +29,59 @@ public output, and it links back to the posted message.
 
 ## Reading scoreboards
 
-Screenshots are read locally by template matching — no API key, no quota. The
-endgame screen is a fixed grid in a fixed bitmap font, so every glyph is
-pixel-identical between captures and reading it is a lookup with an exact
-answer rather than a recognition problem.
+When `GEMINI_API_KEY` is configured, screenshots use the same evidence-first
+approach as NIGHTRAID's production tally reader:
 
-The rule the whole design serves: **it never guesses.** A cell that does not
-match a template outright is reported instead of being resolved to a plausible
-value. A flagged row costs a scorekeeper ten seconds; a wrong row costs a team
+- ask only for rank, the colored slot letter, and the displayed team total;
+- send the untouched screenshot plus a deterministic 1920×1080 enhanced copy;
+- require structured JSON and enforce stricter ranges and object shape locally;
+- keep unreadable values as `null` instead of converting them to zero;
+- define row boxes against the untouched original, then map them through the
+  enhanced image's letterbox transform so both crops cover the same pixels;
+- enlarge an uncertain row and require two separately processed
+  original/enhanced crop reads to agree exactly before recovery;
+- require a screenshot to visibly prove the end of the leaderboard, so a clean
+  ranks 1–10 crop cannot masquerade as a complete round; and
+- read every uploaded screenshot independently, collapsing exact overlaps while
+  sending every disagreement on rows linked by rank or slot identity to review.
+
+Exact duplicate attachments are hashed and model-read once. If any screenshot
+fails, any required field stays unreadable, the final row is not proven, or two
+linked observations conflict, **Confirm & Save is disabled** and the same block
+is enforced again server-side. Only PNG, JPG/JPEG, and WEBP attachments are
+accepted; downloads are timed and byte-limited, and their actual file signature
+must match a supported image.
+
+The local glyph-template reader remains the no-key and provider-failure
+fallback. It is fast, free, and exact on the labelled captures used to build
+its atlas. Recognition considers the full A–Y alphabet first; the current
+registered roster validates the result afterwards and never forces the visual
+classifier toward a letter. Because local pixels cannot semantically prove a
+scroll reached the bottom, a local result whose highest visible rank is below
+the registered-team count is blocked for manual/text submission rather than
+treated as complete.
+
+The rule the whole design serves: **it never guesses.** A model confidence value
+does not settle a conflict, two repeated low-confidence glyph guesses are not
+treated as independent proof, and a roster is never used to invent a missing
+slot. A flagged row costs a scorekeeper ten seconds; a wrong row costs a team
 its placement.
 
-Cloud vision (`TALLY_VISION_PROVIDER=gemini`) remains as a fallback for a layout
-the templates do not know, such as a Bloodstrike UI restyle.
+Useful settings:
+
+    TALLY_VISION_PROVIDER=gemini              # default when a key exists
+    GEMINI_VISION_MODEL=gemini-3.6-flash
+    TALLY_GEMINI_MIN_CONFIDENCE=0.82
+    TALLY_TARGETED_RECOVERY_MAX_TEAMS=8
+
+Set `TALLY_VISION_PROVIDER=local` to force the offline reader. With no Gemini
+key, the bot falls back locally automatically.
+
+The previous permissive `OPENAI_API_KEY` screenshot fallback is intentionally
+not used by this score path: it accepted free-form team names, guessed absent
+slots, and coerced unreadable kills to zero. Provider failure now falls back to
+the stricter local reader; adding another cloud provider would require the same
+schema, `null`, coverage, recovery-identity, and conflict guarantees.
 
 ### Teaching it a new screenshot
 
@@ -72,11 +114,14 @@ how slot letters `P`, `R` and `S` went from unreadable to exact.
 4. Rebuild and confirm nothing regressed:
 
        node scripts/build-glyph-atlas.mjs
-       node scripts/ocr-calibrate.mjs
+       npm run test:visual
        npm test
 
-   Calibration reports accuracy and coverage separately. **Wrong must stay at
-   zero** — coverage going up is good, but never at the cost of a wrong answer.
+   The visual command fails if any expected capture is absent, any row count is
+   wrong, or any accepted rank/slot/kill is wrong; an ordinary unit-test pass
+   therefore cannot be mistaken for a real-image accuracy run. Calibration
+   reports accuracy and coverage separately. **Wrong must stay at zero** —
+   coverage going up is good, but never at the cost of a wrong answer.
 
 The captures themselves stay out of git (they are large binaries); the atlas
 built from them is committed, so production gets the accuracy without the files.
@@ -97,6 +142,9 @@ built from them is committed, so production gets the accuracy without the files.
   confidence threshold rejects all of them. The durable fix is checking each
   team total against the sum of its four players' kills, which the scoreboard
   also shows. Not built yet.
-- Slot deduction by elimination depends on the scrim board's roster being
-  accurate. A team in the wrong slot makes it confidently wrong, so a deduced
-  slot always says so in the review message.
+- The local 100% calibration is in-corpus: the same labelled captures are used
+  to build the glyph atlas. Keep new Discord-downloaded captures aside as a true
+  holdout before using them to rebuild the atlas.
+- Gemini behavior cannot be measured offline. The request, validation, recovery,
+  and merge contracts are covered with deterministic mocks; a real holdout run
+  still requires a configured key and hand-verified screenshots.

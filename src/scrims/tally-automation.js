@@ -6,13 +6,111 @@ import {
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
+import { createHash } from 'node:crypto'
 import { TallyBoard, TALLY_EMOJI, renderAlignedTable, getPlacementPoints } from './tally-core.js'
-import { parseScreenshotWithGemini, parseTextScoreInput } from './tally-vision.js'
+import { parseScreenshotWithGemini } from './tally-gemini.js'
+import { parseTextScoreInput } from './tally-vision.js'
 import { parseScreenshotLocally } from './tally-ocr.js'
 import { syncScoresToGoogleSheet, fetchLiveStandingsFromSheet, clearGoogleSheetScores, formatSheetTeamName, getSpreadsheetUrl } from './tally-sheet.js'
 
 const activeTallyBoards = new Map()
 const pendingReviews = new Map()
+const activeConfirmations = new Set()
+const completedReviews = new Map()
+const SUPPORTED_SCOREBOARD_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp'])
+const DEFAULT_SCOREBOARD_DOWNLOAD_TIMEOUT_MS = 30_000
+const DEFAULT_SCOREBOARD_MAX_BYTES = 15 * 1024 * 1024
+const DEFAULT_SCOREBOARD_MAX_ATTACHMENTS = 6
+const DEFAULT_SCOREBOARD_MAX_TOTAL_BYTES = 45 * 1024 * 1024
+
+function normalizedAttachmentMime(value) {
+  const mime = String(value ?? '').split(';', 1)[0].trim().toLowerCase()
+  return mime === 'image/jpg' ? 'image/jpeg' : mime
+}
+
+function detectedImageMime(buffer) {
+  if (!Buffer.isBuffer(buffer)) return null
+  if (
+    buffer.length >= 8
+    && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) return 'image/png'
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (
+    buffer.length >= 12
+    && buffer.toString('ascii', 0, 4) === 'RIFF'
+    && buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) return 'image/webp'
+  return null
+}
+
+export function isSupportedScoreboardAttachment(attachment = {}) {
+  const mime = normalizedAttachmentMime(attachment.contentType)
+  if (SUPPORTED_SCOREBOARD_MIME_TYPES.has(mime)) return true
+  if (mime && !['application/octet-stream', 'binary/octet-stream'].includes(mime)) return false
+  return /\.(?:png|jpe?g|webp)$/i.test(String(attachment.name ?? ''))
+}
+
+export async function downloadScoreboardAttachment(attachment, options = {}) {
+  if (!isSupportedScoreboardAttachment(attachment)) {
+    throw new Error('Score screenshots must be PNG, JPG, JPEG, or WEBP files.')
+  }
+  const fetchImpl = options.fetchImpl ?? fetch
+  const timeoutMs = Number(options.timeoutMs ?? DEFAULT_SCOREBOARD_DOWNLOAD_TIMEOUT_MS)
+  const maxBytes = Number(options.maxBytes ?? DEFAULT_SCOREBOARD_MAX_BYTES)
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('Image download timeout must be positive.')
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0) throw new Error('Image download byte limit must be positive.')
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  timer.unref?.()
+  try {
+    const response = await fetchImpl(attachment.url, { signal: controller.signal })
+    if (!response.ok) {
+      throw new Error(`Failed to download attachment ${attachment.name ?? 'image'}: HTTP ${response.status}`)
+    }
+    const declaredLength = Number(response.headers.get('content-length'))
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      throw new Error(`Score screenshot exceeds the ${maxBytes}-byte download limit.`)
+    }
+
+    const chunks = []
+    let total = 0
+    if (response.body?.getReader) {
+      const reader = response.body.getReader()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = Buffer.from(value)
+        total += chunk.length
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => {})
+          throw new Error(`Score screenshot exceeds the ${maxBytes}-byte download limit.`)
+        }
+        chunks.push(chunk)
+      }
+    } else {
+      const chunk = Buffer.from(await response.arrayBuffer())
+      total = chunk.length
+      if (total > maxBytes) throw new Error(`Score screenshot exceeds the ${maxBytes}-byte download limit.`)
+      chunks.push(chunk)
+    }
+    const buffer = Buffer.concat(chunks, total)
+    const mimeType = detectedImageMime(buffer)
+    if (!mimeType) {
+      throw new Error('Attachment bytes are not a supported PNG, JPEG, or WEBP image.')
+    }
+    return { buffer, mimeType }
+  } catch (reason) {
+    if (reason?.name === 'AbortError') {
+      throw new Error(`Score screenshot download timed out after ${Math.round(timeoutMs / 1000)}s.`)
+    }
+    throw reason
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 /**
  * Every scrim scope registers itself here.
@@ -38,6 +136,62 @@ function resolveScopeForChannel(channelId) {
 
 const PENDING_REVIEW_TTL_MS = 6 * 60 * 60 * 1000 // 6 hours — one scrim night
 
+function clonedRoster(teams = []) {
+  return Array.isArray(teams) ? teams.map((team) => ({ ...team })) : []
+}
+
+export function tallyRosterFingerprint(teams = []) {
+  const normalized = clonedRoster(teams)
+    .map((team) => ({
+      slotIndex: Number.isInteger(Number(team.slotIndex)) ? Number(team.slotIndex) : null,
+      slotCode: String(team.slotCode ?? '').trim().toUpperCase(),
+      slotLetter: String(team.slotLetter ?? '').trim().toUpperCase(),
+      tag: String(team.tag ?? '').trim(),
+      name: String(team.name ?? '').trim(),
+    }))
+    .sort((left, right) => (
+      (left.slotIndex ?? Number.MAX_SAFE_INTEGER) - (right.slotIndex ?? Number.MAX_SAFE_INTEGER)
+      || left.slotCode.localeCompare(right.slotCode)
+    ))
+  return createHash('sha256').update(JSON.stringify(normalized)).digest('hex').slice(0, 16)
+}
+
+function createReviewId(registeredTeams, now = Date.now()) {
+  return `rev_${now}_${Math.random().toString(36).slice(2, 7)}_${tallyRosterFingerprint(registeredTeams)}`
+}
+
+function tallyScopeToken(scrimLabel) {
+  const label = String(scrimLabel ?? '').trim()
+  if (/^[A-Za-z0-9_-]{1,16}$/.test(label)) return label
+  return `s_${createHash('sha256').update(label).digest('hex').slice(0, 12)}`
+}
+
+function parseReviewId(reviewId) {
+  const match = /^rev_(\d{10,})_[a-z0-9]+_([a-f0-9]{16})$/i.exec(String(reviewId ?? ''))
+  if (!match) return null
+  const createdAt = Number(match[1])
+  return Number.isSafeInteger(createdAt)
+    ? { createdAt, rosterFingerprint: match[2].toLowerCase() }
+    : null
+}
+
+function reviewIsExpired(reviewId, reviewData, message, now = Date.now()) {
+  const parsed = parseReviewId(reviewId)
+  if (!parsed) return true
+  const timestamps = [parsed.createdAt, reviewData?.createdAt, message?.createdTimestamp]
+    .map(Number)
+    .filter(Number.isFinite)
+  return timestamps.some((timestamp) => (
+    timestamp > now + 5 * 60 * 1000 || now - timestamp > PENDING_REVIEW_TTL_MS
+  ))
+}
+
+function cleanupCompletedReviews(now = Date.now()) {
+  for (const [reviewId, completedAt] of completedReviews) {
+    if (now - completedAt > PENDING_REVIEW_TTL_MS) completedReviews.delete(reviewId)
+  }
+}
+
 export function getOrCreateTallyBoard(scrimLabel, customPlacementPoints) {
   const key = String(scrimLabel || 'DEFAULT').toUpperCase()
   if (!activeTallyBoards.has(key)) {
@@ -53,6 +207,7 @@ function rememberReview(reviewId, data) {
   for (const [id, entry] of pendingReviews) {
     if ((entry.createdAt ?? 0) < cutoff) pendingReviews.delete(id)
   }
+  cleanupCompletedReviews()
   pendingReviews.set(reviewId, { ...data, createdAt: Date.now() })
 }
 
@@ -96,19 +251,13 @@ export function formatClearReply(scrimLabel, result) {
 /**
  * Which reader parses screenshots.
  *
- * Local glyph template matching is the default: the endgame screen is a fixed
- * grid in a fixed bitmap font, so reading it is a lookup with an exact answer.
- * Measured against the six real captures in test/fixtures it gets 60/60 on
- * rank, slot letter and kills, and — the part that matters for scoring — it
- * reports a cell it cannot match instead of guessing. No API key, no quota.
- * See scripts/ocr-calibrate.mjs for the harness.
- *
- * Cloud vision is kept as the fallback for anything the templates cannot read,
- * such as a Bloodstrike UI restyle. Set TALLY_VISION_PROVIDER=gemini to put it
- * back in front.
+ * NIGHTRAID-style score-only Gemini is primary whenever a key is configured:
+ * original plus enhanced evidence, strict local validation, two-crop recovery,
+ * and conflict-safe overlap merging. The exact local glyph reader remains the
+ * no-key and provider-failure fallback.
  */
 function resolveVisionProvider(globalConfig) {
-  const configured = String(process.env.TALLY_VISION_PROVIDER || 'local').toLowerCase()
+  const configured = String(process.env.TALLY_VISION_PROVIDER || 'gemini').toLowerCase()
   const apiKey = globalConfig?.geminiApiKey || process.env.GEMINI_API_KEY
   if (configured === 'gemini' && apiKey) return 'gemini'
   if (configured === 'gemini') {
@@ -117,8 +266,87 @@ function resolveVisionProvider(globalConfig) {
   return 'local'
 }
 
+/**
+ * Keep provider selection and fallback testable outside Discord. A cloud read
+ * that accepts zero rows is a failed read, not a successful empty round.
+ */
+export async function readScoreboardScreenshots({
+  provider,
+  images,
+  apiKey,
+  maxSlots,
+  allowedLetters,
+  cloudReader = parseScreenshotWithGemini,
+  localReader = parseScreenshotLocally,
+}) {
+  const localOptions = {
+    images,
+    maxSlots,
+    ...(allowedLetters?.length ? { allowedLetters } : {}),
+  }
+  const callCloud = async () => {
+    const parsed = await cloudReader({
+      images,
+      apiKey,
+      maxSlots,
+      allowedLetters: localOptions.allowedLetters,
+    })
+    if (!Array.isArray(parsed?.entries) || parsed.entries.length === 0) {
+      throw new Error('Cloud vision did not accept any scoreboard rows.')
+    }
+    return { source: 'gemini', ...parsed }
+  }
+  const callLocal = async () => localReader(localOptions)
+  const markProviderFallback = (parsed, failedProvider, reason) => ({
+    ...parsed,
+    providerFallback: {
+      failedProvider,
+      reason: String(reason?.message ?? reason ?? 'unknown provider failure'),
+    },
+    uncertain: [
+      ...(parsed?.uncertain ?? []),
+      {
+        rank: null,
+        slotLetter: null,
+        kills: null,
+        reason: 'provider_fallback_used',
+        failedProvider,
+        error: String(reason?.message ?? reason ?? 'unknown provider failure'),
+      },
+    ],
+  })
+
+  if (provider === 'gemini') {
+    try {
+      return await callCloud()
+    } catch (visionError) {
+      console.warn(`[TALLY] Cloud vision failed, reading locally: ${visionError.message}`)
+      try {
+        return markProviderFallback(await callLocal(), 'gemini', visionError)
+      } catch (localError) {
+        throw new Error(
+          `Cloud vision failed: ${visionError.message}\n\nLocal fallback also failed: ${localError.message}`,
+        )
+      }
+    }
+  }
+
+  try {
+    return await callLocal()
+  } catch (localError) {
+    console.warn(`[TALLY] Local reader failed, trying cloud vision: ${localError.message}`)
+    try {
+      return markProviderFallback(await callCloud(), 'local', localError)
+    } catch (visionError) {
+      throw new Error(
+        `${localError.message}\n\nCloud vision fallback also failed: ${visionError.message}`,
+      )
+    }
+  }
+}
+
 function canManageTally(member, allowedRoleIds = new Set()) {
-  if (!member) return true
+  if (!member) return false
   if (member.permissions?.has(PermissionFlagsBits.Administrator)) return true
   if (member.permissions?.has(PermissionFlagsBits.ManageGuild)) return true
   if (member.permissions?.has(PermissionFlagsBits.ManageMessages)) return true
@@ -167,9 +395,22 @@ export function buildRoundScoreTable(entries = []) {
  * needed, so it is parsed back rather than making the scorekeeper redo it.
  */
 export function parseRoundTableFromMessage(content) {
+  const rawLines = String(content || '').split('\n')
+  const cleanLine = (raw) => raw.trim().replace(/^`+/, '').replace(/`+$/, '').trim()
+  const headerIndex = rawLines.findIndex((raw) => {
+    const line = cleanLine(raw)
+    return /^(?:RK|RANK|PLACE)\s+SLOT\s+(?:TEAM\s+)?KILLS\s+PTS$/i.test(line)
+  })
+  if (headerIndex === -1) return []
+
   const entries = []
-  for (const raw of String(content || '').split('\n')) {
-    const line = raw.trim().replace(/^`+/, '').replace(/`+$/, '').trim()
+  // Only read the contiguous inline-code table immediately below its exact
+  // header. Notice/error prose before or after the table is untrusted and must
+  // never become restart-recovered score data.
+  for (const raw of rawLines.slice(headerIndex + 1)) {
+    const trimmed = raw.trim()
+    if (!trimmed.startsWith('`') || !trimmed.endsWith('`')) break
+    const line = cleanLine(raw)
     // Skip the header, whatever it was called when the message was posted.
     if (!line || /^(RK|RANK|PLACE)\b/.test(line) || /^[─-]+$/.test(line)) continue
 
@@ -182,17 +423,29 @@ export function parseRoundTableFromMessage(content) {
     const rank = Number(tokens[0])
     const slotCode = tokens[1]
     const kills = Number(tokens[tokens.length - 2])
+    const points = Number(tokens[tokens.length - 1])
 
     if (!Number.isInteger(rank) || rank < 1 || rank > 25) continue
-    if (!/^\d{1,2}[A-Z]$/i.test(slotCode)) continue
-    if (!Number.isInteger(kills) || kills < 0) continue
+    const slotMatch = /^(\d{1,2})([A-Z])$/i.exec(slotCode)
+    if (!slotMatch || Number(slotMatch[1]) !== slotMatch[2].toUpperCase().charCodeAt(0) - 64) continue
+    if (!Number.isInteger(kills) || kills < 0 || kills > 999) continue
+    if (!Number.isInteger(points) || points !== getPlacementPoints(rank) + kills) continue
 
     entries.push({ rank, slotCode, teamQuery: slotCode, kills })
   }
   return entries
 }
 
-export function buildReviewMessage({ roundNumber, entries, registeredTeams, reviewId, scrimLabel = 'PC', notice = '' }) {
+export function buildReviewMessage({
+  roundNumber,
+  entries,
+  registeredTeams,
+  reviewId,
+  scrimLabel = 'PC',
+  notice = '',
+  blocked = false,
+}) {
+  const scopeToken = tallyScopeToken(scrimLabel)
   const lines = [
     `📋 **${scrimLabel.toUpperCase()} SCRIM SCORE TALLY REVIEW — ROUND ${roundNumber}**`,
     `*Please verify extracted team ranks and kills before confirming.*`,
@@ -204,9 +457,10 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`phgg_tally:confirm:${scrimLabel}:${roundNumber}:${reviewId}`)
+      .setCustomId(`phgg_tally:confirm:${scopeToken}:${roundNumber}:${reviewId}`)
       .setLabel('Confirm & Save Scores')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(blocked),
     // Link buttons open the scoresheet directly; they carry a URL instead of a
     // custom id and so never round-trip to the bot.
     new ButtonBuilder()
@@ -214,7 +468,7 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
       .setStyle(ButtonStyle.Link)
       .setURL(getSpreadsheetUrl()),
     new ButtonBuilder()
-      .setCustomId(`phgg_tally:reject:${scrimLabel}:${roundNumber}:${reviewId}`)
+      .setCustomId(`phgg_tally:reject:${scopeToken}:${roundNumber}:${reviewId}`)
       .setLabel('Reject')
       .setStyle(ButtonStyle.Danger),
   )
@@ -222,8 +476,27 @@ export function buildReviewMessage({ roundNumber, entries, registeredTeams, revi
   return { content: lines.join('\n'), components: [row] }
 }
 
-export function installTallyAutomation(client, scrimConfig, globalConfig, getScrimBoard) {
+export function isBlockedTallyReview(reviewData, renderedContent = '') {
+  return Boolean(
+    reviewData?.blocked
+    || /AUTOMATIC SAVE BLOCKED/i.test(String(renderedContent ?? '')),
+  )
+}
+
+export function installTallyAutomation(
+  client,
+  scrimConfig,
+  globalConfig,
+  getScrimBoard,
+  dependencies = {},
+) {
   const tallyBoard = getOrCreateTallyBoard(scrimConfig.label, scrimConfig.placementPoints)
+  const attachmentDownloader = dependencies.downloadScoreboardAttachment
+    ?? downloadScoreboardAttachment
+  const scoreboardReader = dependencies.readScoreboardScreenshots
+    ?? readScoreboardScreenshots
+  const sheetSync = dependencies.syncScoresToGoogleSheet
+    ?? syncScoresToGoogleSheet
   const tallyChannelId = scrimConfig.tallyChannelId || scrimConfig.channels?.tally || globalConfig?.tallyChannelId
   const allowedRoleIds = new Set([
     ...(scrimConfig.scorekeeperRoleIds || []),
@@ -390,14 +663,35 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       }
 
       const allAttachments = [...message.attachments.values()]
-      const imageAttachments = allAttachments.filter((att) => {
-        const contentType = att.contentType ?? ''
-        const name = att.name ?? ''
-        const isImageExt = /\.(png|jpe?g|webp|gif|bmp)$/i.test(name)
-        const isImageMime = contentType.startsWith('image/')
-        const hasDimensions = Boolean(att.width || att.height)
-        return isImageMime || isImageExt || hasDimensions || allAttachments.length > 0
-      })
+      const looksLikeTextScore = content.toLowerCase().startsWith('round') || /^#?\d+[.\s\-]/m.test(content)
+      if (
+        (allAttachments.length > 0 || looksLikeTextScore)
+        && !canManageTally(message.member, allowedRoleIds)
+      ) {
+        await message.reply('❌ You do not have permission to submit tally scores.').catch(() => {})
+        return
+      }
+      if (
+        roundOverrideMatch
+        && (!Number.isInteger(userSpecifiedRound) || userSpecifiedRound < 1 || userSpecifiedRound > 4)
+      ) {
+        await message.reply('❌ Round must be 1, 2, 3, or 4. Nothing was read or saved.').catch(() => {})
+        return
+      }
+      const imageAttachments = allAttachments.filter(isSupportedScoreboardAttachment)
+
+      if (allAttachments.length > imageAttachments.length) {
+        await message.reply(
+          '❌ Every tally attachment must be a PNG, JPG, JPEG, or WEBP screenshot. GIF, BMP, documents, and unknown attachments are not processed.',
+        ).catch(() => {})
+        return
+      }
+      if (imageAttachments.length > DEFAULT_SCOREBOARD_MAX_ATTACHMENTS) {
+        await message.reply(
+          `❌ Upload at most ${DEFAULT_SCOREBOARD_MAX_ATTACHMENTS} scoreboard screenshots in one tally submission.`,
+        ).catch(() => {})
+        return
+      }
 
       if (imageAttachments.length > 0) {
         // Reading a screenshot takes several seconds. Acknowledge immediately —
@@ -417,80 +711,88 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           const startedAt = Date.now()
           console.log(`[TALLY] Processing ${imageAttachments.length} attached images for ${scrimConfig.label} scrim...`)
 
-          const downloadedImages = await Promise.all(
-            imageAttachments.map(async (att) => {
-              const resp = await fetch(att.url)
-              if (!resp.ok) throw new Error(`Failed to download attachment ${att.name}: HTTP ${resp.status}`)
-              const buf = Buffer.from(await resp.arrayBuffer())
-              return { buffer: buf, mimeType: att.contentType || 'image/png' }
-            }),
-          )
+          const downloadedImages = []
+          let totalDownloadedBytes = 0
+          for (const attachment of imageAttachments) {
+            const remainingBytes = DEFAULT_SCOREBOARD_MAX_TOTAL_BYTES - totalDownloadedBytes
+            if (remainingBytes <= 0) {
+              throw new Error('Combined scoreboard screenshots exceed the 45 MiB submission limit.')
+            }
+            const downloaded = await attachmentDownloader(attachment, {
+              maxBytes: Math.min(DEFAULT_SCOREBOARD_MAX_BYTES, remainingBytes),
+            })
+            totalDownloadedBytes += downloaded.buffer.length
+            downloadedImages.push(downloaded)
+          }
           console.log(`[TALLY] Downloaded ${downloadedImages.length} image(s) in ${Date.now() - startedAt}ms`)
 
           let parsed
           let degradedNotice = ''
-          // Only registered slots can appear on the board, so the reader is
-          // told which letters are possible rather than considering all 25.
-          const allowedLetters = (getScrimBoard ? getScrimBoard().getRegisteredTeams() : [])
+          let reviewBlocked = false
+          // Recognition still considers A..Y. The registered letters are a
+          // post-read validation boundary, never a way to force classification.
+          // Keep this exact roster snapshot through extraction, preview, and
+          // confirmation. Re-fetching after a slow model call can otherwise
+          // drop a correctly read slot or silently resolve it to a new team.
+          const registeredTeams = clonedRoster(
+            getScrimBoard ? getScrimBoard().getRegisteredTeams() : [],
+          )
+          const rosterFingerprint = tallyRosterFingerprint(registeredTeams)
+          const allowedLetters = registeredTeams
             .map((team) => team.slotLetter)
             .filter(Boolean)
-          const localOptions = {
+          parsed = await scoreboardReader({
+            provider,
             images: downloadedImages,
+            apiKey: globalConfig?.geminiApiKey || process.env.GEMINI_API_KEY,
             // Mobile scrims run 20 slots (A..T), PC 25 (A..Y). Past that the
             // letters and placings are impossible, not merely unlikely.
             maxSlots: Number(scrimConfig.maxSlots) || undefined,
-            ...(allowedLetters.length > 0 ? { allowedLetters } : {}),
-          }
-          // Tagged so the log and the review notice name the reader that
-          // actually produced the round, not the one that was tried first.
-          const callCloud = async () => ({
-            source: 'gemini',
-            ...(await parseScreenshotWithGemini({
-              images: downloadedImages,
-              apiKey: globalConfig.geminiApiKey || process.env.GEMINI_API_KEY,
-            })),
+            allowedLetters,
           })
-
-          if (provider === 'local') {
-            try {
-              parsed = await parseScreenshotLocally(localOptions)
-            } catch (localErr) {
-              // The templates only know the current Bloodstrike endgame layout.
-              // Anything else — a UI restyle, a cropped capture — is what cloud
-              // vision is kept around for.
-              console.warn(`[TALLY] Local reader failed, trying cloud vision: ${localErr.message}`)
-              try {
-                parsed = await callCloud()
-              } catch (visionErr) {
-                throw new Error(`${localErr.message}\n\nCloud vision fallback also failed: ${visionErr.message}`)
-              }
-            }
-          } else {
-            try {
-              parsed = await callCloud()
-            } catch (visionErr) {
-              console.warn(`[TALLY] Cloud vision failed, reading locally: ${visionErr.message}`)
-              parsed = await parseScreenshotLocally(localOptions)
-            }
-          }
 
           const usedProvider = parsed.source || provider
           if (usedProvider === 'ocr') {
+            reviewBlocked = true
             degradedNotice =
-              '⚠️ **Read with fallback OCR** — the glyph reader could not parse this layout, so slot letters and kill counts are frequently wrong here. **Check every row** before confirming.'
+              '⛔ **AUTOMATIC SAVE BLOCKED** — fallback OCR is not strong enough for an automatic write. Check the screenshot and submit the complete round as text.'
           } else {
             const warnings = []
             if (parsed.uncertain?.length) {
-              const ranks = parsed.uncertain.map((u) => `#${u.rank ?? '?'}`).join(', ')
-              warnings.push(
-                `⚠️ **${parsed.uncertain.length} row(s) could not be read confidently** (${ranks}) and were left out. Add them manually before confirming.`,
+              const coverageWarnings = parsed.uncertain.filter(
+                (item) => item.reason === 'leaderboard_end_not_visible',
               )
+              const fallbackWarnings = parsed.uncertain.filter(
+                (item) => item.reason === 'provider_fallback_used',
+              )
+              const rowWarnings = parsed.uncertain.filter(
+                (item) => ![
+                  'leaderboard_end_not_visible',
+                  'provider_fallback_used',
+                ].includes(item.reason),
+              )
+              if (rowWarnings.length) {
+                const ranks = rowWarnings.map((u) => `#${u.rank ?? '?'}`).join(', ')
+                warnings.push(
+                  `⚠️ **${rowWarnings.length} row(s) could not be read confidently** (${ranks}) and were left out. Add them manually before confirming.`,
+                )
+              }
+              if (coverageWarnings.length) {
+                warnings.push(
+                  '⚠️ **The uploaded screenshots do not prove the final leaderboard row is visible.** Include the bottom of the leaderboard so a clean top-only crop cannot be mistaken for the whole round.',
+                )
+              }
+              if (fallbackWarnings.length) {
+                warnings.push(
+                  '⚠️ **The configured primary reader failed and a fallback reader produced this table.** The result is shown for comparison, but automatic save stays blocked so a provider failure cannot hide conflicting visual evidence.',
+                )
+              }
               // A pasted screenshot arrives at whatever size it was displayed
               // at, not its original resolution, and the lost pixels are the
               // glyph detail the reader needs. Losing a quarter of the rows is
               // the signature of that, and it costs nothing to fix.
-              const detected = parsed.entries.length + parsed.uncertain.length
-              if (detected > 0 && parsed.uncertain.length / detected > 0.25) {
+              const detected = parsed.entries.length + rowWarnings.length
+              if (detected > 0 && rowWarnings.length / detected > 0.25) {
                 warnings.push(
                   '💡 That many unread rows usually means the screenshot was **pasted** rather than attached. ' +
                     'Copying an image sends it at the size it was displayed, not its full resolution. ' +
@@ -498,25 +800,11 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
                 )
               }
             }
-            // Deduction is only as good as the roster: if a team's slot changed
-            // and the board was not updated, elimination will confidently
-            // produce the wrong letter. It is still worth doing — it turns a
-            // dropped row into a filled one — but it always says so.
-            // Read below the normal bar and accepted only because a second
-            // screenshot agreed. Worth stating, since it is weaker evidence
-            // than a row that read cleanly on its own.
-            const corroborated = parsed.entries?.filter((e) => e.corroborated) || []
-            if (corroborated.length) {
-              const which = corroborated.map((e) => `#${e.rank}`).join(', ')
+            const recovered = parsed.entries?.filter((e) => e.recovered) || []
+            if (recovered.length) {
+              const which = recovered.map((e) => `#${e.rank}`).join(', ')
               warnings.push(
-                `ℹ️ **${which}** was faint in every screenshot, but two of them read it the same way. Worth a glance.`,
-              )
-            }
-            const deduced = parsed.entries?.filter((e) => e.deduced) || []
-            if (deduced.length) {
-              const which = deduced.map((e) => `#${e.rank} → ${e.slotCode}`).join(', ')
-              warnings.push(
-                `ℹ️ **Slot inferred by elimination** (${which}) — it was the only registered slot left unclaimed. Check it against the screenshot.`,
+                `ℹ️ **${which}** required two enlarged row reads. Both separately processed crop variants agreed exactly.`,
               )
             }
             // A hole in the placements means a row never made it in at all.
@@ -525,6 +813,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
               const ranks = parsed.missingRanks.map((r) => `#${r}`).join(', ')
               warnings.push(
                 `⚠️ **No row found for ${ranks}.** Post the screenshot covering those placements, or add them manually.`,
+              )
+            }
+            reviewBlocked = Boolean(
+              parsed.uncertain?.length
+              || parsed.missingRanks?.length
+              || parsed.conflicts?.length,
+            )
+            if (reviewBlocked) {
+              warnings.unshift(
+                '⛔ **AUTOMATIC SAVE BLOCKED** — at least one required row is unreadable, missing, or conflicts with another screenshot. Re-upload clearer coverage or submit the complete round as text.',
               )
             }
             degradedNotice = warnings.join('\n')
@@ -538,22 +836,39 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           const effectiveRound = userSpecifiedRound
             ? userSpecifiedRound
             : (parsed.roundNumber && parsed.roundNumber !== 1 ? parsed.roundNumber : getNextRound())
+          if (!Number.isInteger(effectiveRound) || effectiveRound < 1 || effectiveRound > 4) {
+            throw new Error(`Round ${effectiveRound} is invalid. Supported rounds are 1, 2, 3, or 4.`)
+          }
 
           console.log(`[TALLY] Screenshot parsed: ${usedProvider} returned ${parsed.entries.length} teams. Round: ${effectiveRound}`)
 
-          const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
-          const previewEntries = tallyBoard.setRound(
+          const previewEntries = tallyBoard.previewRound(
             effectiveRound,
             parsed.entries,
             registeredTeams,
             message.id,
           )
+          if (previewEntries.length !== parsed.entries.length) {
+            reviewBlocked = true
+            const rosterWarning =
+              '⚠️ **At least one extracted slot did not resolve against the reviewed roster snapshot.** ' +
+              'Refresh the slot board and re-upload the complete round.'
+            const blockedWarning =
+              '⛔ **AUTOMATIC SAVE BLOCKED** — the extraction cannot be mapped one-to-one to the reviewed roster.'
+            degradedNotice = [
+              ...(degradedNotice.includes('AUTOMATIC SAVE BLOCKED') ? [] : [blockedWarning]),
+              rosterWarning,
+              degradedNotice,
+            ].filter(Boolean).join('\n')
+          }
 
-          const reviewId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+          const reviewId = createReviewId(registeredTeams)
           rememberReview(reviewId, {
             roundNumber: effectiveRound,
             entries: previewEntries,
             scrimLabel: scrimConfig.label,
+            blocked: reviewBlocked,
+            rosterFingerprint,
           })
 
           const reviewMsg = buildReviewMessage({
@@ -563,6 +878,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             reviewId,
             scrimLabel: scrimConfig.label,
             notice: degradedNotice,
+            blocked: reviewBlocked,
           })
 
           await respond(reviewMsg)
@@ -582,19 +898,25 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             ? parsed.roundNumber
             : getNextRound()
 
-          const registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
-          const previewEntries = tallyBoard.setRound(
+          const registeredTeams = clonedRoster(
+            getScrimBoard ? getScrimBoard().getRegisteredTeams() : [],
+          )
+          const rosterFingerprint = tallyRosterFingerprint(registeredTeams)
+          const previewEntries = tallyBoard.previewRound(
             effectiveRound,
             parsed.entries,
             registeredTeams,
             message.id,
           )
+          const reviewBlocked = previewEntries.length !== parsed.entries.length
 
-          const reviewId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+          const reviewId = createReviewId(registeredTeams)
           rememberReview(reviewId, {
             roundNumber: effectiveRound,
             entries: previewEntries,
             scrimLabel: scrimConfig.label,
+            blocked: reviewBlocked,
+            rosterFingerprint,
           })
 
           const reviewMsg = buildReviewMessage({
@@ -603,6 +925,10 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             registeredTeams,
             reviewId,
             scrimLabel: scrimConfig.label,
+            notice: reviewBlocked
+              ? '⛔ **AUTOMATIC SAVE BLOCKED** — at least one pasted score row does not match the reviewed roster snapshot.'
+              : '',
+            blocked: reviewBlocked,
           })
 
           await message.reply(reviewMsg).catch(() => {})
@@ -687,7 +1013,13 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
 
     const parts = customId.split(':')
     const [, action, targetLabel, roundStr, reviewId] = parts
-    if (targetLabel && targetLabel.toUpperCase() !== scrimConfig.label.toUpperCase()) return
+    if (
+      targetLabel
+      && ![
+        scrimConfig.label.toUpperCase(),
+        tallyScopeToken(scrimConfig.label).toUpperCase(),
+      ].includes(targetLabel.toUpperCase())
+    ) return
 
     // Log every button this scope accepts. "This interaction failed" in Discord
     // gives no detail, so without this there is nothing to diagnose from.
@@ -700,7 +1032,9 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     // interaction with no explanation.
     let registeredTeams = []
     try {
-      registeredTeams = getScrimBoard ? getScrimBoard().getRegisteredTeams() : []
+      registeredTeams = clonedRoster(
+        getScrimBoard ? getScrimBoard().getRegisteredTeams() : [],
+      )
     } catch (boardErr) {
       console.error('[TALLY] Could not read the slot board:', boardErr.message)
       await interaction
@@ -727,10 +1061,14 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
     }
 
     if (action === 'confirm') {
+      cleanupCompletedReviews()
       // A second press on a round that is already saved. Discord keeps showing
       // the old buttons until the client catches up, so this is easy to do by
       // accident — answer it plainly instead of letting it fail.
-      if (/SCORES CONFIRMED/i.test(interaction.message?.content || '')) {
+      if (
+        /SCORES CONFIRMED/i.test(interaction.message?.content || '')
+        || completedReviews.has(reviewId)
+      ) {
         console.log(`[TALLY] Ignoring repeat confirm for ${reviewId}; round ${roundStr} is already saved.`)
         await interaction
           .reply({
@@ -740,6 +1078,16 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
           .catch(() => {})
         return
       }
+
+      if (activeConfirmations.has(reviewId)) {
+        await interaction.reply({
+          content: `Round ${roundStr} is already being saved. No second write was started.`,
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {})
+        return
+      }
+      activeConfirmations.add(reviewId)
+      try {
 
       try {
         await interaction.deferUpdate()
@@ -767,6 +1115,7 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       // gone, so a restart between posting and confirming no longer costs the
       // round. The review is the source of truth either way: the scorekeeper
       // approved exactly what is rendered there.
+      const reviewToken = parseReviewId(reviewId)
       let reviewData = pendingReviews.get(reviewId)
       if (!reviewData) {
         const recovered = parseRoundTableFromMessage(interaction.message?.content)
@@ -778,16 +1127,68 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             roundNumber: Number(roundStr || 1),
             entries: recovered,
             scrimLabel: scrimConfig.label,
+            rosterFingerprint: reviewToken?.rosterFingerprint,
+            createdAt: reviewToken?.createdAt,
           }
         }
+      }
+      if (isBlockedTallyReview(reviewData, interaction.message?.content)) {
+        pendingReviews.delete(reviewId)
+        await interaction.editReply({
+          content:
+            `${interaction.message?.content || `📋 Round ${roundStr} review`}` +
+            '\n\n⛔ **NOT SAVED.** This extraction contains unreadable, missing, or conflicting rows. ' +
+            'Re-upload clearer screenshots or submit the complete round as text.',
+          components: [],
+        }).catch(() => {})
+        return
+      }
+      if (reviewIsExpired(reviewId, reviewData, interaction.message)) {
+        pendingReviews.delete(reviewId)
+        await interaction.editReply({
+          content:
+            `Round ${roundStr} was NOT saved.\n` +
+            'This review is invalid or more than six hours old. Nothing was written to the Google Sheet.\n' +
+            'Post the screenshot again to create a fresh review.',
+          components: [],
+        }).catch(() => {})
+        return
       }
       let roundNumInt = Number(roundStr || 1)
       let confirmedEntries = []
       let syncResult = null
-      let syncError = null
 
       if (reviewData) {
         roundNumInt = reviewData.roundNumber
+        if (
+          !Number.isInteger(Number(roundNumInt))
+          || Number(roundNumInt) < 1
+          || Number(roundNumInt) > 4
+          || Number(roundNumInt) !== Number(roundStr)
+        ) {
+          pendingReviews.delete(reviewId)
+          await interaction.editReply({
+            content: 'NOT SAVED. The review has an invalid or mismatched round number.',
+            components: [],
+          }).catch(() => {})
+          return
+        }
+        const expectedRosterFingerprint = reviewData.rosterFingerprint
+          || reviewToken?.rosterFingerprint
+        if (
+          !expectedRosterFingerprint
+          || expectedRosterFingerprint !== tallyRosterFingerprint(registeredTeams)
+        ) {
+          pendingReviews.delete(reviewId)
+          await interaction.editReply({
+            content:
+              `${interaction.message?.content || `Round ${roundStr} review`}` +
+              '\n\nNOT SAVED. The registered slot roster changed after this review was created. ' +
+              'Refresh the roster and re-upload the complete round.',
+            components: [],
+          }).catch(() => {})
+          return
+        }
         console.log(`[TALLY] Confirm pressed for Round ${roundNumInt} with ${reviewData.entries.length} entries`)
 
         // Use what setRound returns, not what went in. Entries recovered from
@@ -795,14 +1196,25 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         // them raw showed the slot code in the TEAM column and 0 points.
         // setRound resolves each row against the roster and works out the
         // placement points.
-        confirmedEntries = tallyBoard.setRound(
+        confirmedEntries = tallyBoard.previewRound(
           reviewData.roundNumber,
           reviewData.entries,
           registeredTeams,
         )
+        if (
+          reviewData.entries.length === 0
+          || confirmedEntries.length !== reviewData.entries.length
+        ) {
+          pendingReviews.delete(reviewId)
+          await interaction.editReply({
+            content: 'NOT SAVED. One or more reviewed rows no longer map one-to-one to the slot roster.',
+            components: [],
+          }).catch(() => {})
+          return
+        }
 
         try {
-          syncResult = await syncScoresToGoogleSheet({
+          syncResult = await sheetSync({
             ...sheetTarget(scrimConfig),
             roundNumber: reviewData.roundNumber,
             entries: confirmedEntries,
@@ -816,13 +1228,33 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
             roundsLabel: scrimConfig.roundsLabel || '4 ROUNDS',
             actorUserId: interaction.user.id,
           })
+          if (syncResult?.success !== true) {
+            throw new Error(syncResult?.error || 'The sheet writer did not return an explicit success result.')
+          }
           console.log(`[TALLY] Sheet sync success:`, syncResult)
         } catch (err) {
           console.error('[TALLY] Google Sheets sync error:', err)
-          syncError = err.message
+          const retryReview = buildReviewMessage({
+            roundNumber: roundNumInt,
+            entries: confirmedEntries,
+            registeredTeams,
+            reviewId,
+            scrimLabel: scrimConfig.label,
+            notice:
+              `NOT SAVED - Google Sheet write failed: ${err.message}\n` +
+              'The tally board was not changed. Fix the sheet connection, then press Confirm again.',
+          })
+          await interaction.editReply(retryReview).catch(() => {})
+          return
         }
 
+        confirmedEntries = tallyBoard.setRound(
+          reviewData.roundNumber,
+          confirmedEntries,
+          registeredTeams,
+        )
         pendingReviews.delete(reviewId)
+        completedReviews.set(reviewId, Date.now())
       } else {
         // Nothing was tallied and nothing was written to the sheet. Saying
         // "SCORES CONFIRMED" here was actively misleading: the round looked
@@ -852,15 +1284,12 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
       // resolves the roster and computes the placement points.
       const confirmedTable = `📋 **ROUND ${roundNumInt} RESULTS**\n${buildRoundScoreTable(confirmedEntries)}`
 
-      const statusNotice = syncError
-        ? `⚠️ **Sheet Write Error**: ${syncError}`
-        : (syncResult && syncResult.success
-            ? [
-                // The audit id stays in the audit store and the logs; it is not
-                // something the scorekeeper needs to read on every round.
-                `*(Scores written & verified in Google Sheet — ${syncResult.teamsTallied} teams tallied)*`,
-              ].join('\n')
-            : `*(Scores saved to leaderboard)*`)
+      const teamsTallied = Number.isInteger(syncResult?.teamsTallied)
+        ? syncResult.teamsTallied
+        : confirmedEntries.length
+      const statusNotice = syncResult?.verificationStatus === 'WEBHOOK_ACCEPTED'
+        ? `*(Google Sheets webhook accepted ${teamsTallied} teams)*`
+        : `*(Scores written & verified in Google Sheet — ${teamsTallied} teams tallied)*`
 
       // Confirm and Reject are gone, but keep View Standings so the cumulative
       // table is still one click away.
@@ -880,9 +1309,26 @@ export function installTallyAutomation(client, scrimConfig, globalConfig, getScr
         console.error('[TALLY] Failed to edit reply after confirm:', editErr.message)
       }
       return
+      } finally {
+        activeConfirmations.delete(reviewId)
+      }
     }
 
     if (action === 'reject') {
+      if (activeConfirmations.has(reviewId)) {
+        await interaction.reply({
+          content: `Round ${roundStr} is already being saved and cannot be rejected mid-write.`,
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {})
+        return
+      }
+      if (completedReviews.has(reviewId)) {
+        await interaction.reply({
+          content: `Round ${roundStr} is already saved and cannot be rejected.`,
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {})
+        return
+      }
       await interaction.deferUpdate().catch(() => {})
       pendingReviews.delete(reviewId)
       await interaction.editReply({

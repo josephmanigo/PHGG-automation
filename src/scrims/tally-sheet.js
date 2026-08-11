@@ -432,7 +432,18 @@ export async function syncScoresToGoogleSheet({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    return response.ok
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      throw new Error(
+        `Google Sheets webhook failed (${response.status})${detail ? `: ${detail}` : '.'}`,
+      )
+    }
+    return {
+      success: true,
+      roundNumber: roundNum,
+      teamsTallied: entries.length,
+      verificationStatus: 'WEBHOOK_ACCEPTED',
+    }
   }
 
   if (!clientEmail || !privateKey) {
@@ -457,19 +468,25 @@ export async function syncScoresToGoogleSheet({
 
   // 2. Read Current Scoresheet State for Backup & Pre-Write Validation
   const readRange = `'${sheetName}'!H${startRow}:V${startRow + totalSlots - 1}`
-  const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(readRange)}`
+  const readUrl =
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(readRange)}` +
+    '?valueRenderOption=FORMULA'
 
-  let currentCells = []
+  let currentCells
   try {
     const readResponse = await fetch(readUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
-    if (readResponse.ok) {
-      const readData = await readResponse.json()
-      currentCells = readData.values || []
+    if (!readResponse.ok) {
+      const detail = await readResponse.text().catch(() => '')
+      throw new Error(
+        `Google Sheets pre-read failed (${readResponse.status})${detail ? `: ${detail}` : '.'}`,
+      )
     }
+    const readData = await readResponse.json()
+    currentCells = readData.values || []
   } catch (err) {
-    console.warn('Could not pre-read sheet state; proceeding with write plan:', err.message)
+    throw new Error(`Could not safely read the sheet before writing: ${err.message}`)
   }
 
   const updateData = []
@@ -687,27 +704,51 @@ export async function syncScoresToGoogleSheet({
     console.warn('[TALLY] Could not apply rank highlight conditional formatting:', err.message)
   }
 
-  // 5. Post-Write Re-read & Verification Loop
-  let verifySuccess = false
+  // 5. Post-write re-read and exact verification. An HTTP 200 alone does not
+  // prove that the requested cells contain the values we approved.
   try {
     const verifyResponse = await fetch(readUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
-    if (verifyResponse.ok) {
-      const verifyData = await verifyResponse.json()
-      auditRecord.afterSnapshot = verifyData.values || []
-      verifySuccess = true
+    if (!verifyResponse.ok) {
+      const detail = await verifyResponse.text().catch(() => '')
+      throw new Error(
+        `Google Sheets verification read failed (${verifyResponse.status})${detail ? `: ${detail}` : '.'}`,
+      )
     }
-  } catch (err) {
-    console.warn('Post-write verification re-read error:', err.message)
-  }
+    const verifyData = await verifyResponse.json()
+    auditRecord.afterSnapshot = verifyData.values || []
 
-  if (verifySuccess) {
+    const mismatches = writePlanTargets.flatMap((target) => {
+      const match = /^([A-Z]+)(\d+)$/.exec(target.cell)
+      if (!match) return [{ ...target, actual: '<invalid cell reference>' }]
+      const columnNumber = [...match[1]].reduce(
+        (value, letter) => value * 26 + letter.charCodeAt(0) - 64,
+        0,
+      )
+      const rowOffset = Number(match[2]) - startRow
+      const columnOffset = columnNumber - 8 // H is column 8 and index zero here.
+      const actual = auditRecord.afterSnapshot[rowOffset]?.[columnOffset] ?? ''
+      return String(actual ?? '') === String(target.value ?? '')
+        ? []
+        : [{ ...target, actual }]
+    })
+    if (mismatches.length > 0) {
+      const sample = mismatches.slice(0, 5)
+        .map((item) => `${item.cell}: expected ${JSON.stringify(item.value)}, got ${JSON.stringify(item.actual)}`)
+        .join('; ')
+      throw new Error(
+        `Google Sheets verification found ${mismatches.length} mismatched cells. ${sample}`,
+      )
+    }
+
     auditRecord.status = 'verified'
     auditRecord.verificationResult = 'PASSED'
-  } else {
-    auditRecord.status = 'verified' // API write accepted
-    auditRecord.verificationResult = 'PASSED'
+  } catch (err) {
+    auditRecord.status = 'verification_failed'
+    auditRecord.verificationResult = 'FAILED'
+    auditRecord.errorDetails = err.message
+    throw new Error(`Google Sheets write could not be verified: ${err.message}`)
   }
 
   return {
@@ -894,4 +935,3 @@ export async function clearGoogleSheetScores({
     return { success: false, error: err.message }
   }
 }
-

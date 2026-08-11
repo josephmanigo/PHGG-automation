@@ -232,8 +232,7 @@ export class TallyBoard {
     return this.rounds.get(Number(roundNumber)) ?? []
   }
 
-  setRound(roundNumber, entries, registeredTeams = [], sourceMessageId = null) {
-    const roundNum = Number(roundNumber)
+  previewRound(_roundNumber, entries, registeredTeams = [], sourceMessageId = null) {
     const rawProcessed = entries
       .map((entry) => {
         const rank = Number(entry.rank || 0)
@@ -291,6 +290,17 @@ export class TallyBoard {
       deduplicated.push(item)
     }
 
+    return deduplicated
+  }
+
+  setRound(roundNumber, entries, registeredTeams = [], sourceMessageId = null) {
+    const roundNum = Number(roundNumber)
+    const deduplicated = this.previewRound(
+      roundNum,
+      entries,
+      registeredTeams,
+      sourceMessageId,
+    )
     this.rounds.set(roundNum, deduplicated)
     return deduplicated
   }

@@ -88,6 +88,28 @@ export function slotCodeFromLetter(letter) {
   return `${index + 1}-${normalized}`
 }
 
+export function partitionDuplicateSlotEntries(entries = []) {
+  const counts = new Map()
+  for (const entry of entries) {
+    counts.set(entry.teamQuery, (counts.get(entry.teamQuery) ?? 0) + 1)
+  }
+  const duplicateLetters = new Set(
+    [...counts].filter(([, count]) => count > 1).map(([letter]) => letter),
+  )
+  return {
+    entries: entries.filter((entry) => !duplicateLetters.has(entry.teamQuery)),
+    uncertain: entries
+      .filter((entry) => duplicateLetters.has(entry.teamQuery))
+      .map((entry) => ({
+        rank: entry.rank,
+        slotLetter: entry.teamQuery,
+        kills: entry.kills,
+        reason: 'duplicate_teamCode',
+        duplicate: true,
+      })),
+  }
+}
+
 /**
  * Crop to the left strip and make it legible: light-on-dark game UI inverted to
  * dark-on-light, contrast pushed, and upscaled because the glyphs are small.
@@ -301,24 +323,12 @@ export async function parseScreenshotWithOcr({
   return { roundNumber: 1, entries, source: 'ocr', uncertain: [] }
 }
 
-/** Every read of each placing, across all the captures posted together. */
-function groupByRank(rows) {
-  const byRank = new Map()
-  for (const row of rows) {
-    if (!Number.isInteger(row.rank)) continue
-    if (!byRank.has(row.rank)) byRank.set(row.rank, [])
-    byRank.get(row.rank).push(row)
-  }
-  return byRank
-}
-
 /**
  * Read captures with the glyph template matcher.
  *
- * Measured 60/60 on rank, slot letter and team kills across the six fixture
- * captures, with nothing guessed: a cell that does not match a template
- * outright is reported in `uncertain` instead of being resolved to a plausible
- * value. That distinction is the whole point — a flagged row costs a
+ * A cell that does not match a template outright is reported in `uncertain`
+ * instead of being resolved to a plausible value. That distinction is the
+ * whole point — a flagged row costs a
  * scorekeeper a glance, a wrong row costs a team its placement.
  */
 export async function parseScreenshotWithGlyphs({
@@ -348,13 +358,9 @@ export async function parseScreenshotWithGlyphs({
     )
   }
 
-  // Scrolled captures overlap and each repeats rank 1 as a sticky header, so
-  // the same rank appears more than once. Keep the confident read of each.
-  //
-  // A row whose rank could not be resolved used to be skipped here, which meant
-  // it disappeared from the tally with nothing said about it — a whole capture
-  // could contribute no rows and the scorekeeper would only notice by spotting
-  // the gap in the placements by eye. Every detected row is now accounted for.
+  // Read every overlap as evidence. Exact confident repeats collapse to one;
+  // confident disagreements invalidate the placement instead of silently
+  // keeping whichever capture happened to be processed first.
   const byRank = new Map()
   const rankless = []
   for (const row of collected) {
@@ -362,21 +368,47 @@ export async function parseScreenshotWithGlyphs({
       rankless.push(row)
       continue
     }
-    const existing = byRank.get(row.rank)
-    if (!existing || (row.certain && !existing.certain)) byRank.set(row.rank, row)
+    const rows = byRank.get(row.rank) || []
+    rows.push(row)
+    byRank.set(row.rank, rows)
   }
 
-  const ordered = [...byRank.values()].sort((a, b) => a.rank - b.rank)
   const entries = []
   const uncertain = []
+  const allowed = allowedLetters
+    ? new Set([...allowedLetters].map((letter) => String(letter).trim().toUpperCase()))
+    : null
 
-  for (const row of ordered) {
-    if (!row.certain || !row.slotLetter || row.kills === null) {
-      uncertain.push({ rank: row.rank, slotLetter: row.slotLetter, kills: row.kills })
+  for (const [rank, seenRows] of [...byRank].sort(([left], [right]) => left - right)) {
+    const confident = seenRows.filter((row) => row.certain && row.slotLetter && row.kills !== null)
+    const distinct = new Map()
+    for (const row of confident) distinct.set(`${row.slotLetter}:${row.kills}`, row)
+
+    if (distinct.size !== 1) {
+      const diagnostic = confident[0] || seenRows[0]
+      uncertain.push({
+        rank,
+        slotLetter: diagnostic?.slotLetter ?? null,
+        kills: diagnostic?.kills ?? null,
+        reason: distinct.size > 1 ? 'overlap_conflict' : 'unreadable_field',
+        candidates: distinct.size > 1
+          ? [...distinct.values()].map((row) => ({ slotLetter: row.slotLetter, kills: row.kills }))
+          : undefined,
+      })
+      continue
+    }
+    const row = [...distinct.values()][0]
+    if (allowed && !allowed.has(row.slotLetter)) {
+      uncertain.push({
+        rank,
+        slotLetter: row.slotLetter,
+        kills: row.kills,
+        reason: 'unregistered_slot',
+      })
       continue
     }
     entries.push({
-      rank: row.rank,
+      rank,
       slotCode: slotCodeFromLetter(row.slotLetter),
       teamQuery: row.slotLetter,
       kills: row.kills,
@@ -387,99 +419,41 @@ export async function parseScreenshotWithGlyphs({
     uncertain.push({ rank: null, slotLetter: row.slotLetter, kills: row.kills })
   }
 
-  // Rescue rows no single capture could read, using the overlap between
-  // screenshots. Two captures show a placing at different scroll positions —
-  // different pixels, different compression blocks — so when both arrive at the
-  // same letter and the same kill count independently, that agreement is
-  // evidence in a way one sub-threshold read never is.
-  //
-  // Both reads still have to be plausible on their own; this lowers the bar for
-  // corroborated rows, it does not remove it.
-  const corroborated = []
-  for (const [rank, seenRows] of groupByRank(collected)) {
-    if (byRank.get(rank)?.certain) continue
-
-    const votes = new Map()
-    for (const row of seenRows) {
-      const { slotLetter, kills } = row.candidate || {}
-      if (!slotLetter || kills === null || kills === undefined) continue
-      const key = `${slotLetter}:${kills}`
-      votes.set(key, (votes.get(key) || 0) + 1)
-    }
-
-    const agreed = [...votes.entries()].filter(([, n]) => n >= 2)
-    // Exactly one reading may have two or more captures behind it. If two
-    // different readings each do, the captures disagree and neither is safe.
-    if (agreed.length !== 1) continue
-
-    const [letter, kills] = agreed[0][0].split(':')
-    if (allowedLetters && ![...allowedLetters].map((l) => String(l).toUpperCase()).includes(letter)) continue
-
-    corroborated.push({
-      rank,
-      slotCode: slotCodeFromLetter(letter),
-      teamQuery: letter,
-      kills: Number(kills),
-      corroborated: agreed[0][1],
-    })
-  }
-
-  for (const entry of corroborated) {
-    const index = uncertain.findIndex((u) => u.rank === entry.rank)
-    if (index >= 0) uncertain.splice(index, 1)
-    entries.push(entry)
-  }
-  if (corroborated.length) entries.sort((a, b) => a.rank - b.rank)
-
-  // Every team occupies exactly one slot, so a letter already claimed by a
-  // confident row cannot belong to another. If that leaves a single unclaimed
-  // slot and a single row missing only its letter, the answer is forced — no
-  // guessing involved, it is the only value the board can hold.
-  if (allowedLetters) {
-    const claimed = new Set(entries.map((e) => e.teamQuery))
-    const free = [...allowedLetters].map((l) => String(l).toUpperCase()).filter((l) => !claimed.has(l))
-    const needsLetter = uncertain.filter((u) => !u.slotLetter && u.kills !== null && Number.isInteger(u.rank))
-
-    if (free.length === 1 && needsLetter.length === 1) {
-      const row = needsLetter[0]
-      entries.push({
-        rank: row.rank,
-        slotCode: slotCodeFromLetter(free[0]),
-        teamQuery: free[0],
-        kills: row.kills,
-        deduced: true,
-      })
-      entries.sort((a, b) => a.rank - b.rank)
-      uncertain.splice(uncertain.indexOf(row), 1)
-    }
-  }
-
   // Two rows claiming the same slot means one of them is misread, and there is
   // nothing in the image to say which. Both are pulled for checking rather than
   // letting a team be scored twice and another not at all.
-  const seen = new Map()
-  for (const entry of entries) {
-    seen.set(entry.teamQuery, (seen.get(entry.teamQuery) || 0) + 1)
-  }
-  for (const [letter, count] of seen) {
-    if (count < 2) continue
-    for (let i = entries.length - 1; i >= 0; i--) {
-      if (entries[i].teamQuery !== letter) continue
-      uncertain.push({ rank: entries[i].rank, slotLetter: letter, kills: entries[i].kills, duplicate: true })
-      entries.splice(i, 1)
-    }
-  }
+  const uniqueSlots = partitionDuplicateSlotEntries(entries)
+  entries.splice(0, entries.length, ...uniqueSlots.entries)
+  uncertain.push(...uniqueSlots.uncertain)
 
-  // Placements run consecutively, so a hole between the lowest and highest rank
-  // read means a row was missed outright — usually a screenshot that was never
-  // posted, or one whose rows could not be placed.
+  // Placements run consecutively from rank 1. Starting at the lowest observed
+  // rank would let a cropped continuation (#10 onward) look complete and write
+  // every omitted team as X.
   const ranks = entries.map((e) => e.rank)
   const missingRanks = []
   if (ranks.length > 0) {
     const flagged = new Set(uncertain.map((u) => u.rank).filter(Number.isInteger))
-    for (let r = Math.min(...ranks); r <= Math.max(...ranks); r++) {
+    for (let r = 1; r <= Math.max(...ranks); r++) {
       if (!ranks.includes(r) && !flagged.has(r)) missingRanks.push(r)
     }
+  }
+
+  // A contiguous prefix is not proof that the screenshot set reached the
+  // bottom. With the local reader there is no semantic end-of-board signal, so
+  // the registered roster is the conservative upper bound. This may require a
+  // text submission when a registered team did not play, but it prevents a
+  // clean ranks 1..10 crop from silently clearing teams below it.
+  const observedRanks = collected.map((row) => row.rank).filter(Number.isInteger)
+  const highestObservedRank = observedRanks.length > 0 ? Math.max(...observedRanks) : 0
+  if (allowed?.size && highestObservedRank < allowed.size) {
+    uncertain.push({
+      rank: null,
+      slotLetter: null,
+      kills: null,
+      reason: 'leaderboard_end_not_visible',
+      highestObservedRank,
+      registeredTeamCount: allowed.size,
+    })
   }
 
   if (entries.length === 0) {

@@ -58,12 +58,15 @@ let killAnswered = 0
 let wrongSlot = 0
 let wrongKills = 0
 let rowMismatch = 0
+let missingCaptures = 0
+const requireFixtures = process.argv.includes('--require-fixtures')
 
 for (const round of ALL_ROUNDS) {
   for (const capture of round.captures) {
     const file = path.join(SHOT_DIR, capture.file)
     if (!fs.existsSync(file)) {
       console.log(`${capture.file}  MISSING`)
+      missingCaptures++
       continue
     }
 
@@ -116,3 +119,20 @@ console.log(`rank   ${rankHits}/${total} (${pct(rankHits, total)})`)
 console.log(`slot   ${slotHits}/${total} correct, answered ${slotAnswered}, WRONG ${wrongSlot} (accuracy when answered ${pct(slotHits, slotAnswered)})`)
 console.log(`kills  ${killHits}/${total} correct, answered ${killAnswered}, WRONG ${wrongKills} (accuracy when answered ${pct(killHits, killAnswered)})`)
 console.log('\nA wrong answer is the only unacceptable outcome; a flagged row just needs a human glance.')
+
+if (
+  requireFixtures
+  && (
+    missingCaptures > 0
+    || total === 0
+    || rowMismatch > 0
+    || rankHits !== total
+    || wrongSlot > 0
+    || wrongKills > 0
+  )
+) {
+  console.error(
+    `Visual gate failed: missing=${missingCaptures}, rows=${total}, wrong ranks=${total - rankHits}, row mismatches=${rowMismatch}, wrong slots=${wrongSlot}, wrong kills=${wrongKills}.`,
+  )
+  process.exitCode = 1
+}

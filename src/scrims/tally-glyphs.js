@@ -599,18 +599,13 @@ function confident(match, minScore = MIN_MATCH_SCORE, minMargin = MIN_MATCH_MARG
 export const MIN_RELIABLE_SCALE = 0.95
 
 export function readCapture(bitmap, atlas, thresholds = {}) {
-  // Only slots with a team registered for this scrim can appear on the board.
-  // Narrowing the candidate set is not a shortcut — it removes letters that are
-  // impossible answers, which both widens the margin on every remaining match
-  // and makes a confident-but-wrong letter far less likely.
-  //
-  // A scrim's slot count sets both bounds: mobile runs 20 slots (A..T) and PC
-  // runs 25 (A..Y), so on mobile the letters U..Y and any placing past 20 are
-  // impossible answers rather than unlikely ones.
+  // Recognition must see the full visual alphabet. Restricting templates to the
+  // current roster can turn an ambiguous glyph into a false high-margin match.
+  // The caller validates the independently read letter against the roster after
+  // recognition; roster data never changes what the pixels classify as.
   const maxSlots = Math.min(SLOT_LETTERS.length, Math.max(1, thresholds.maxSlots || SLOT_LETTERS.length))
   const maxPlacing = maxSlots
-  const allowed = thresholds.allowedLetters || SLOT_LETTERS.slice(0, maxSlots)
-  const letters = restrictTemplates(loadTemplates(atlas.letters), allowed)
+  const letters = loadTemplates(atlas.letters)
   const digits = loadTemplates(atlas.digits)
   // Rank digits are drawn far larger than kill digits. Normalisation aliases
   // an upscaled small glyph differently from a downscaled large one, so mixing
@@ -675,9 +670,9 @@ export function readCapture(bitmap, atlas, thresholds = {}) {
     if (!readable) rank = null
 
     // The best reading regardless of confidence, kept alongside the confident
-    // one. A single sub-threshold read is a guess and must never be scored, but
-    // the same guess arrived at independently from a different capture is
-    // corroboration — and that is what rescues a row nobody could read alone.
+    // one. It is diagnostic evidence only: repeated resized captures can share
+    // the same systematic error, so the caller never promotes this candidate
+    // into an accepted score merely because it appeared twice.
     const plausible = (m) => Boolean(m) && m.score >= MIN_MATCH_SCORE
     const candidateKills =
       killMatches.length > 0 && killMatches.every((m) => plausible(m) && /^\d$/.test(m.label))

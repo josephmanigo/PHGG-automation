@@ -35,6 +35,18 @@ installAnnounceCommand(client, config)
 installGuessTheEmojiCommand(client, config)
 
 client.once(Events.ClientReady, (readyClient) => {
+  // Gemini accepts a comma-separated key list. Resolve the same effective
+  // provider used by tally automation so boot logs cannot claim Gemini while
+  // a missing key (or an explicit local setting) actually selects glyphs.
+  const countKeys = (value) =>
+    String(value || '')
+      .split(',')
+      .map((key) => key.trim())
+      .filter(Boolean).length
+  const geminiKeys = countKeys(config.geminiApiKey || process.env.GEMINI_API_KEY)
+  const configuredReader = String(process.env.TALLY_VISION_PROVIDER || 'gemini').toLowerCase()
+  const effectiveReader = configuredReader === 'gemini' && geminiKeys > 0 ? 'gemini' : 'local'
+
   console.log(`${config.brandName} bot connected as ${readyClient.user.tag}.`)
   console.log(
     [
@@ -49,23 +61,12 @@ client.once(Events.ClientReady, (readyClient) => {
         .map((group) => group.label.toLowerCase())
         .join('+') || 'off'}`,
       `server-invite-keyword=${config.serverInvite.enabled ? 'on' : 'off'}`,
-      `tally-score=${config.geminiApiKey ? 'ai-vision' : 'text-fallback'}`,
+      `tally-score=${effectiveReader === 'gemini' ? 'gemini-score-only' : 'local-glyphs'}`,
     ].join(', '),
   )
-
-  // Both keys accept a comma-separated list and are rotated on quota errors.
-  // Print the counts so a mistyped list is obvious at boot rather than at 429.
-  const countKeys = (value) =>
-    String(value || '')
-      .split(',')
-      .map((key) => key.trim())
-      .filter(Boolean).length
-
-  const geminiKeys = countKeys(config.geminiApiKey || process.env.GEMINI_API_KEY)
-  const openaiKeys = countKeys(process.env.OPENAI_API_KEY)
   console.log(
-    `vision providers: ${geminiKeys} Gemini key(s), ${openaiKeys} OpenAI key(s), ` +
-      `reader=${String(process.env.TALLY_VISION_PROVIDER || 'gemini').toLowerCase()}`,
+    `vision provider: ${geminiKeys} Gemini key(s), ` +
+      `configured=${configuredReader}, reader=${effectiveReader}`,
   )
 })
 
