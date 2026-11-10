@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { loadConfig } from '../src/config.js'
+import { makeTeam, ScrimBoard } from '../src/scrims/core.js'
 
 test('loads independent mobile and PC scrim channel sets', () => {
   const keys = [
@@ -279,21 +280,19 @@ test('uses PHGG Mobile and PC channel IDs with NightRaid flow defaults', () => {
     assert.equal(pc.roundsLabel, '4 Rounds | 1SB-1DV-2SI')
     assert.deepEqual(pc.fixedTeams, [
       {
-        tag: 'NR',
-        name: 'NIGHTRAID ESPORTS',
-        countryLabel: 'PH',
-      },
-      {
         tag: 'SS',
         name: 'RAMPAGE SENTINELS',
         countryLabel: 'PH',
       },
-      {
-        tag: 'APXS',
-        name: 'SYNDICATE',
-        countryLabel: 'PH',
-      },
     ])
+    const pcBoard = new ScrimBoard(pc.maxSlots, pc.fixedTeams)
+    assert.equal(pcBoard.slots.filter(Boolean).length, 1)
+    assert.equal(pcBoard.slots[0].tag, 'SS')
+    assert.equal(pcBoard.register(makeTeam('NR', 'NIGHTRAID ESPORTS')).status, 'slot')
+    assert.equal(pcBoard.register(makeTeam('APXS', 'SYNDICATE')).status, 'slot')
+    pcBoard.reset()
+    assert.deepEqual(pcBoard.slots.filter(Boolean).map(({ tag }) => tag), ['SS'])
+    assert.deepEqual(mobile.fixedTeams, [])
     assert.equal(loadConfig().serverInvite.guildId, 'test-guild')
 
     assert.deepEqual(

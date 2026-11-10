@@ -103,18 +103,8 @@ const DEFAULT_SCRIMS = {
     fixedRoundsLabel: true,
     fixedTeams: [
       {
-        tag: 'NR',
-        name: 'NIGHTRAID ESPORTS',
-        countryLabel: 'PH',
-      },
-      {
         tag: 'SS',
         name: 'RAMPAGE SENTINELS',
-        countryLabel: 'PH',
-      },
-      {
-        tag: 'APXS',
-        name: 'SYNDICATE',
         countryLabel: 'PH',
       },
     ],

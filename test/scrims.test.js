@@ -505,41 +505,30 @@ test('allows registration with same team name if clan tags differ', () => {
   assert.equal(board.slots[1].name, 'ALPHA TEAM')
 })
 
-test('seeds the first three PC slots and allows their cancellation', () => {
+test('seeds only the remaining PC reserved team and allows cancellation', () => {
   const fixedTeams = [
-    {
-      tag: 'NR',
-      name: 'NIGHTRAID ESPORTS',
-      countryLabel: 'PH',
-    },
     {
       tag: 'SS',
       name: 'RAMPAGE SENTINELS',
       countryLabel: 'PH',
     },
-    {
-      tag: 'APXS',
-      name: 'SYNDICATE',
-      countryLabel: 'PH',
-    },
   ]
   const board = new ScrimBoard(25, fixedTeams)
-  assert.equal(board.slots[0].name, 'NIGHTRAID ESPORTS')
-  assert.equal(board.slots[1].name, 'RAMPAGE SENTINELS')
-  assert.equal(board.slots[2].name, 'SYNDICATE')
-  assert.equal(board.register(makeTeam('NEW', 'NEW TEAM')).slotIndex, 3)
-  assert.equal(board.register(makeTeam('NR', 'NIGHTRAID ESPORTS')).status, 'duplicate')
+  assert.equal(board.slots[0].name, 'RAMPAGE SENTINELS')
+  assert.equal(board.slots.filter(Boolean).length, 1)
+  assert.equal(board.register(makeTeam('NEW', 'NEW TEAM')).slotIndex, 1)
+  assert.equal(board.register(makeTeam('NR', 'NIGHTRAID ESPORTS')).status, 'slot')
+  assert.equal(board.register(makeTeam('APXS', 'SYNDICATE')).status, 'slot')
   assert.equal(board.register(makeTeam('SS', 'RAMPAGE SENTINELS')).status, 'duplicate')
   assert.equal(
-    board.cancel('NIGHTRAID ESPORTS', 'cancel-seeded').status,
+    board.cancel('RAMPAGE SENTINELS', 'cancel-seeded').status,
     'slot_removed',
   )
   assert.equal(board.slots[0], null)
 
   board.reset()
-  assert.equal(board.slots[0].name, 'NIGHTRAID ESPORTS')
-  assert.equal(board.slots[1].name, 'RAMPAGE SENTINELS')
-  assert.equal(board.slots[2].name, 'SYNDICATE')
+  assert.equal(board.slots[0].name, 'RAMPAGE SENTINELS')
+  assert.equal(board.slots.filter(Boolean).length, 1)
 })
 
 test('renders the exact 20-slot PHGG board layout', () => {
@@ -595,18 +584,8 @@ test('renders the exact 20-slot PHGG board layout', () => {
 test('renders the exact 25-slot PC board layout', () => {
   const board = new ScrimBoard(25, [
     {
-      tag: 'NR',
-      name: 'NIGHTRAID ESPORTS',
-      countryLabel: 'PH',
-    },
-    {
       tag: 'SS',
       name: 'RAMPAGE SENTINELS',
-      countryLabel: 'PH',
-    },
-    {
-      tag: 'APXS',
-      name: 'SYNDICATE',
       countryLabel: 'PH',
     },
   ])
@@ -636,9 +615,11 @@ test('renders the exact 25-slot PC board layout', () => {
   )
   assert.match(rendered, /\*\*TIME:\*\* 10:00PM PH Time/)
   assert.match(rendered, /\*\*ROUNDS:\*\* 4 Rounds \| 1SB-1DV-2SI/)
-  assert.ok(rendered.includes('01A  :  NR  - NIGHTRAID ESPORTS | PH'))
-  assert.ok(rendered.includes('02B  :  SS  - RAMPAGE SENTINELS | PH'))
-  assert.ok(rendered.includes('03C  :  APXS  - SYNDICATE | PH'))
+  assert.ok(rendered.includes('01A  :  SS  - RAMPAGE SENTINELS | PH'))
+  assert.match(rendered, /^02B  :$/m)
+  assert.match(rendered, /^03C  :$/m)
+  assert.ok(!rendered.includes('NIGHTRAID ESPORTS'))
+  assert.ok(!rendered.includes('SYNDICATE'))
   assert.ok(rendered.includes('25Y  :'))
   assert.ok(rendered.includes('00   :'))
   assert.ok(rendered.includes('10   :'))
